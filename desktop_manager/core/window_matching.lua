@@ -12,11 +12,13 @@ local window_matching = {}
 ---@field desktop_number integer|nil
 ---@field unit_frame Rect|nil
 ---@field is_out_of_sight boolean
+---@field document string|nil the file or URL that the window shows, when its application says
 
 ---@class LiveWindow
 ---@field window_id integer
 ---@field bundle_id string
 ---@field title string
+---@field document string|nil
 
 ---@class WindowMatch
 ---@field record WindowRecord
@@ -36,6 +38,14 @@ end
 ---@type MatchCriterion
 local function has_same_title(record, window)
     return record.bundle_id == window.bundle_id and record.title == window.title
+end
+
+---@type MatchCriterion
+local function has_same_document(record, window)
+    return record.bundle_id == window.bundle_id
+        and record.document ~= nil
+        and record.document ~= ""
+        and record.document == window.document
 end
 
 ---@type MatchCriterion
@@ -85,6 +95,17 @@ end
 ---@return WindowMatchResult
 function window_matching.match_records_to_open_windows(records, live_windows)
     return match_by_criteria({ has_same_id, has_same_title }, records, live_windows)
+end
+
+---Matches the records of windows that no longer exist to open windows that no profile recorded.
+---macOS gives a window that its application reopens a new id, so the document decides first and
+---the title next.
+---The place is left out, because macOS opens a new window at the place of the last closed one.
+---@param records WindowRecord[]
+---@param live_windows LiveWindow[]
+---@return WindowMatchResult
+function window_matching.match_records_to_reopened_windows(records, live_windows)
+    return match_by_criteria({ has_same_document, has_same_title }, records, live_windows)
 end
 
 ---Matches the records to the windows of applications that the tool has just launched.

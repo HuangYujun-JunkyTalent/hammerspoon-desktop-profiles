@@ -145,6 +145,49 @@ function profile_state.index_recorded_windows(state)
 end
 
 ---@param state State
+---@return WindowRecord[] the records of every arrangement of every profile
+function profile_state.list_all_records(state)
+    local records = {}
+    for _, profile in pairs(state.profiles) do
+        for _, arrangement in pairs(profile.arrangements) do
+            for _, record in ipairs(arrangement.windows) do
+                table.insert(records, deep_copy.copy(record))
+            end
+        end
+    end
+    return records
+end
+
+---A window rename gives the records of a window that its application reopened the new id.
+---@class WindowRename
+---@field bundle_id string
+---@field old_window_id integer
+---@field new_window_id integer
+
+---Writes the new window ids into the records of every profile.
+---@param state State
+---@param renames WindowRename[]
+---@return State
+function profile_state.rename_windows(state, renames)
+    local updated = deep_copy.copy(state)
+    for _, profile in pairs(updated.profiles) do
+        for _, arrangement in pairs(profile.arrangements) do
+            for _, record in ipairs(arrangement.windows) do
+                for _, rename in ipairs(renames) do
+                    if
+                        record.window_id == rename.old_window_id
+                        and record.bundle_id == rename.bundle_id
+                    then
+                        record.window_id = rename.new_window_id
+                    end
+                end
+            end
+        end
+    end
+    return updated
+end
+
+---@param state State
 ---@param number integer
 ---@param arrangement Arrangement
 ---@return State
@@ -186,6 +229,7 @@ local function decode_window_records(raw_records)
                 desktop_number = to_integer(raw.desktop_number),
                 unit_frame = type(raw.unit_frame) == "table" and raw.unit_frame or nil,
                 is_out_of_sight = raw.is_out_of_sight == true or raw.is_minimized == true,
+                document = type(raw.document) == "string" and raw.document or nil,
             })
         end
     end

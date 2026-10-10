@@ -54,6 +54,32 @@ return {
         expect.equal(#result.unmatched_records, 1)
     end,
 
+    a_reopened_window_matches_by_document_and_then_by_title = function()
+        local by_document = record(41, "com.apple.TextEdit", "Notes.txt")
+        by_document.document = "file:///Users/me/Notes.txt"
+        local by_title = record(42, "com.apple.TextEdit", "Untitled")
+        local live = {
+            { window_id = 90, bundle_id = "com.apple.TextEdit", title = "Untitled" },
+            {
+                window_id = 91,
+                bundle_id = "com.apple.TextEdit",
+                title = "Notes.txt — Edited",
+                document = "file:///Users/me/Notes.txt",
+            },
+        }
+        local result =
+            window_matching.match_records_to_reopened_windows({ by_document, by_title }, live)
+        expect.equal(result.matches[1].window_id, 91)
+        expect.equal(result.matches[2].window_id, 90)
+    end,
+
+    a_reopened_window_needs_more_than_the_same_application = function()
+        local records = { record(41, "com.apple.Safari", "Inbox") }
+        local live = { { window_id = 90, bundle_id = "com.apple.Safari", title = "News" } }
+        local result = window_matching.match_records_to_reopened_windows(records, live)
+        expect.equal(result.matches, {})
+    end,
+
     each_window_matches_one_record = function()
         local records = { record(nil, "com.apple.Notes", "A"), record(nil, "com.apple.Notes", "B") }
         local live = { { window_id = 3, bundle_id = "com.apple.Notes", title = "B" } }

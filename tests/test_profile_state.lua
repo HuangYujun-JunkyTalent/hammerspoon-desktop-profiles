@@ -62,6 +62,26 @@ return {
         expect.equal(recorded[78], nil)
     end,
 
+    a_rename_gives_the_records_of_every_profile_the_new_window_id = function()
+        local state = profile_state.new_state(monitor_matching.BY_COUNT)
+        state = profile_state.with_arrangement(state, 3, ARRANGEMENT)
+        state = profile_state.with_arrangement(state, 4, ARRANGEMENT)
+        local renamed = profile_state.rename_windows(state, {
+            { bundle_id = "com.apple.Safari", old_window_id = 41, new_window_id = 90 },
+            { bundle_id = "com.apple.Notes", old_window_id = 41, new_window_id = 91 },
+        })
+        expect.equal(
+            profile_state.find_arrangement(renamed, 3, "built-in").windows[1].window_id,
+            90
+        )
+        expect.equal(
+            profile_state.find_arrangement(renamed, 4, "built-in").windows[1].window_id,
+            90
+        )
+        expect.equal(profile_state.find_arrangement(state, 3, "built-in").windows[1].window_id, 41)
+        expect.equal(#profile_state.list_all_records(renamed), 2)
+    end,
+
     an_arrangement_is_kept_per_monitor_configuration = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
         state = profile_state.with_arrangement(state, 3, ARRANGEMENT)

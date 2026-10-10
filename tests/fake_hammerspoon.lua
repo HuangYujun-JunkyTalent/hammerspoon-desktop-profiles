@@ -11,6 +11,7 @@ local fake_hammerspoon = {}
 ---@field title string
 ---@field space_id integer
 ---@field frame Rect
+---@field document string|nil
 
 ---@class FakeApplicationSpec
 ---@field bundle_id string
@@ -174,6 +175,7 @@ function fake_hammerspoon.install(spec)
             title = window_spec.title,
             space_id = window_spec.space_id,
             frame = window_spec.frame,
+            document = window_spec.document,
             is_minimized = false,
         }
         local object = {}
@@ -244,7 +246,11 @@ function fake_hammerspoon.install(spec)
         world.windows[window_id].object:unminimize()
     end
 
-    function world.create_window(bundle_id, title)
+    ---@param bundle_id string
+    ---@param title string
+    ---@param document string|nil
+    ---@return table window
+    function world.create_window(bundle_id, title, document)
         world.next_window_id = world.next_window_id + 1
         local application = world.applications[bundle_id]
         application.is_running = true
@@ -256,12 +262,26 @@ function fake_hammerspoon.install(spec)
             title = title,
             space_id = display.active_space_id,
             frame = { x = screen.frame.x, y = screen.frame.y, w = 600, h = 400 },
+            document = document,
         })
         if application.is_hidden then
             application_object(bundle_id):unhide()
         end
         emit_filter_event("windowCreated", window)
         return window
+    end
+
+    ---Closes a window, as a click on its red button does.
+    ---@param window_id integer
+    function world.close_window(window_id)
+        local window = world.windows[window_id]
+        world.windows[window_id] = nil
+        for index, listed_id in ipairs(world.window_order) do
+            if listed_id == window_id then
+                table.remove(world.window_order, index)
+            end
+        end
+        emit_filter_event("windowDestroyed", window)
     end
 
     ---Unhides an application as a click on its icon in the Dock does.
@@ -501,6 +521,14 @@ function fake_hammerspoon.install(spec)
             end,
         },
         axuielement = {
+            windowElement = function(window_object)
+                local window = world.windows[window_object:id()]
+                return {
+                    attributeValue = function(_, name)
+                        return name == "AXDocument" and window and window.document or nil
+                    end,
+                }
+            end,
             applicationElement = function()
                 return {
                     attributeValue = function()

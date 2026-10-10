@@ -135,13 +135,26 @@ local function list_recorded_window_ids(arrangement)
     return window_ids
 end
 
+---Some windows of macOS report the window id 0, such as one of Control Center.
+---@param window table an hs.window
+---@return boolean
+local function has_valid_id(window)
+    local window_id = window:id()
+    return window_id ~= nil and window_id > 0
+end
+
 ---The windows of the window filter, and the windows of `window_ids` that the filter does not list.
 ---The filter drops a window whose subrole is not AXStandardWindow when the window hides or
 ---minimizes, as the window of Calendar does while Calendar is hidden.
 ---@param window_ids integer[]
 ---@return table[] hs.window objects
 function ProfileController:list_known_windows(window_ids)
-    local windows = self.window_filter:getWindows()
+    local windows = {}
+    for _, window in ipairs(self.window_filter:getWindows()) do
+        if has_valid_id(window) then
+            table.insert(windows, window)
+        end
+    end
     local listed = track_windows.index_by_id(windows)
     local missing = {}
     for _, window_id in ipairs(window_ids) do
@@ -161,6 +174,67 @@ function ProfileController:list_known_windows(window_ids)
         end
     end
     return known
+end
+
+---Gives the records of a window that its application reopened the id of the new window, in every
+---profile.
+---A reopened window is an open window that no profile recorded, of the same application and with
+---the same document or title as a recorded window that no longer exists.
+---@param windows table[] the hs.window objects that the tool knows
+function ProfileController:rename_reopened_windows(windows)
+    local recorded = profile_state.index_recorded_windows(self.state)
+    local new_windows = {}
+    for _, window in ipairs(windows) do
+        local window_id = window:id()
+        local bundle_id = track_windows.bundle_id_of(window:application())
+        if not (recorded[window_id] and recorded[window_id][bundle_id]) then
+            table.insert(new_windows, {
+                window_id = window_id,
+                bundle_id = bundle_id,
+                title = window:title() or "",
+                document = track_windows.read_document(window),
+            })
+        end
+    end
+    if #new_windows == 0 then
+        return
+    end
+    local open_ids = track_windows.index_by_id(windows)
+    local closed_records, is_listed = {}, {}
+    for _, record in ipairs(profile_state.list_all_records(self.state)) do
+        local key = string.format("%s#%s", record.bundle_id, tostring(record.window_id))
+        if
+            record.window_id
+            and not is_listed[key]
+            and not open_ids[record.window_id]
+            and not read_desktops.find_window_space_id(record.window_id)
+        then
+            is_listed[key] = true
+            table.insert(closed_records, record)
+        end
+    end
+    local match_result =
+        window_matching.match_records_to_reopened_windows(closed_records, new_windows)
+    if #match_result.matches == 0 then
+        return
+    end
+    local renames = {}
+    for _, match in ipairs(match_result.matches) do
+        table.insert(renames, {
+            bundle_id = match.record.bundle_id,
+            old_window_id = match.record.window_id,
+            new_window_id = match.window_id,
+        })
+        self.log.f(
+            "%s window %q was reopened as window %d, which was %d",
+            match.record.app_name,
+            match.record.title,
+            match.window_id,
+            match.record.window_id
+        )
+    end
+    self.state = profile_state.rename_windows(self.state, renames)
+    self:write_state()
 end
 
 ---@param window_id integer
@@ -183,9 +257,15 @@ function ProfileController:capture_active_arrangement()
         return
     end
     local configuration = self:read_monitor_configuration()
+    local known_windows = self:list_known_windows(
+        list_recorded_window_ids(
+            profile_state.find_arrangement(self.state, number, configuration.key)
+        )
+    )
+    self:rename_reopened_windows(known_windows)
     local previous = profile_state.find_arrangement(self.state, number, configuration.key)
     local observations, observed_ids = {}, {}
-    for _, window in ipairs(self:list_known_windows(list_recorded_window_ids(previous))) do
+    for _, window in ipairs(known_windows) do
         local observation = track_windows.observe(window)
         if observation.window_id then
             table.insert(observations, observation)
@@ -390,10 +470,15 @@ function ProfileController:activate_profile(number)
     self.is_busy = true
     retained_timers.stop(self.save_timer)
     local configuration_key = self:read_monitor_configuration().key
+    local windows = self:list_known_windows(
+        list_recorded_window_ids(
+            profile_state.find_arrangement(self.state, number, configuration_key)
+        )
+    )
+    self:rename_reopened_windows(windows)
     local saved_arrangement = profile_state.find_arrangement(self.state, number, configuration_key)
     local arrangement = saved_arrangement
         or { monitor_configuration_key = configuration_key, monitors = {}, windows = {} }
-    local windows = self:list_known_windows(list_recorded_window_ids(arrangement))
     local open_windows, live_windows = describe_open_windows(windows)
     local match_result =
         window_matching.match_records_to_open_windows(arrangement.windows, live_windows)

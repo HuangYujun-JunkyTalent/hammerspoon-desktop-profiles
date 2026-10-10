@@ -254,6 +254,73 @@ return {
         expect.equal(world.windows[42].is_minimized, false)
     end,
 
+    a_reopened_window_keeps_its_place_in_every_profile = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        local reopened = world.create_window("com.microsoft.Word", "Draft.docx")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, reopened.id), "in sight")
+        expect.equal(recorded_sight(controller, 1, 42), nil)
+        expect.equal(recorded_sight(controller, 2, reopened.id), "in sight")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[reopened.id].is_minimized, false)
+        expect.equal(world.windows[41].is_minimized, false)
+    end,
+
+    a_window_reopened_while_no_profile_is_active_is_renamed_at_the_next_switch = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["0"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        local reopened = world.create_window("com.microsoft.Word", "Draft.docx")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, reopened.id), nil)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, reopened.id), "in sight")
+        expect.equal(world.windows[reopened.id].is_minimized, true)
+    end,
+
+    a_new_window_with_another_title_is_no_reopened_window = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        local other = world.create_window("com.microsoft.Word", "Budget.xlsx")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, other.id), nil)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[other.id].is_minimized, true)
+    end,
+
+    a_window_with_the_id_0_is_not_recorded = function()
+        local world, controller = start_world()
+        world.windows[0] = nil
+        local control_center = world.create_window("com.apple.Safari", "")
+        world.windows[control_center.id] = nil
+        control_center.id = 0
+        world.windows[0] = control_center
+        for index, window_id in ipairs(world.window_order) do
+            if window_id ~= 41 and window_id ~= 42 then
+                world.window_order[index] = 0
+            end
+        end
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, 0), nil)
+        expect.equal(recorded_sight(controller, 1, 41), "in sight")
+    end,
+
     a_window_that_the_filter_drops_while_hidden_comes_back = function()
         local world = start_world(concealment_method.HIDE_APPLICATIONS)
         world.hotkeys["1"]()
