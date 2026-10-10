@@ -46,6 +46,8 @@ local function profile_dropdown_data(profile_count)
     return "[" .. table.concat(items, ", ") .. "]"
 end
 
+---Asyar refuses a required argument after an optional one, and then registers no script of the
+---folder, so both arguments are required.
 ---@param profile_count integer
 ---@return LauncherScript
 local function rename_script(profile_count)
@@ -59,7 +61,8 @@ local function rename_script(profile_count)
         },
         asyar_arguments = {
             string.format(
-                '{ "name": "profile", "type": "dropdown", "default": "1", "data": %s }',
+                '{ "name": "profile", "type": "dropdown", "default": "1", "required": true,'
+                    .. ' "data": %s }',
                 data
             ),
             '{ "name": "name", "type": "text", "placeholder": "New name", "required": true }',
