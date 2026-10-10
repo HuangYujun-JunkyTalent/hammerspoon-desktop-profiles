@@ -36,6 +36,7 @@ local STARTUP_PRUNE_DELAY_SECONDS = 5
 ---@field are_saves_suspended boolean
 ---@field save_timer table|nil
 ---@field screen_timer table|nil
+---@field screen_signature string the screens that the last arrangement was restored for
 local ProfileController = {}
 ProfileController.__index = ProfileController
 
@@ -381,6 +382,7 @@ function ProfileController:activate_profile(number)
     if self.state.active_profile_number == number then
         return
     end
+    local started_at = hs.timer.secondsSinceEpoch()
     self:capture_active_arrangement()
     self.is_busy = true
     retained_timers.stop(self.save_timer)
@@ -408,7 +410,12 @@ function ProfileController:activate_profile(number)
     local function finish(more_failures)
         local all_failures = concatenate(failures, more_failures)
         self.is_busy = false
-        self.log.f("profile %d is active, with %d problems", number, #all_failures)
+        self.log.f(
+            "profile %d is active after %.1f seconds, with %d problems",
+            number,
+            hs.timer.secondsSinceEpoch() - started_at,
+            #all_failures
+        )
         self:report_failures(all_failures)
     end
     if not arrangement then
@@ -546,12 +553,18 @@ function ProfileController:handle_application_unhidden(application)
     end
 end
 
+---macOS reports a change of the screen parameters also when the Dock changes size, and such a
+---change leaves the signature of the screens as it was.
 function ProfileController:handle_screens_changed()
+    if self.screen_timer == nil and read_screens.read_signature() == self.screen_signature then
+        return
+    end
     self.are_saves_suspended = true
     retained_timers.stop(self.save_timer)
     retained_timers.stop(self.screen_timer)
     self.screen_timer = retained_timers.after(self.settings.timing.screen_settle_seconds, function()
         self.screen_timer = nil
+        self.screen_signature = read_screens.read_signature()
         local number = self.state.active_profile_number
         local configuration = self:read_monitor_configuration()
         local arrangement = number
@@ -753,6 +766,7 @@ function profile_controller.start(settings)
         controller.log.w(warning)
         notify(warning)
     end
+    controller.screen_signature = read_screens.read_signature()
     controller.window_filter = track_windows.new_filter()
     controller.menubar = hs.menubar.new()
     controller:refresh_menu()

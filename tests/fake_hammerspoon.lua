@@ -50,6 +50,7 @@ function fake_hammerspoon.install(spec)
         url_handlers = {},
         filter_callbacks = {},
         application_watchers = {},
+        screen_watchers = {},
         saved_json = nil,
         next_window_id = 1000,
     }
@@ -89,6 +90,7 @@ function fake_hammerspoon.install(spec)
             local frame = screen.frame
             return { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
         end
+        object.fullFrame = object.frame
         function object:fromUnitRect(unit)
             return {
                 x = screen.frame.x + unit.x * screen.frame.w,
@@ -396,7 +398,16 @@ function fake_hammerspoon.install(spec)
             primaryScreen = function()
                 return screen_objects[1]
             end,
-            watcher = watcher_factory(),
+            watcher = {
+                new = function(callback)
+                    table.insert(world.screen_watchers, callback)
+                    return {
+                        start = function(self)
+                            return self
+                        end,
+                    }
+                end,
+            },
         },
         spaces = {
             data_managedDisplaySpaces = managed_displays,

@@ -219,6 +219,27 @@ return {
         })
     end,
 
+    a_screen_event_without_a_change_of_screens_restores_nothing = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.alerts, { "Profile 1" })
+    end,
+
+    a_screen_of_another_size_restores_the_arrangement = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.alerts, { "Profile 1", "Restoring built-in" })
+    end,
+
     the_same_key_on_the_active_profile_deactivates_it = function()
         local world, controller = start_world()
         world.hotkeys["3"]()

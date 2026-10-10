@@ -37,6 +37,30 @@ function read_screens.describe_screens(builtin_name_patterns)
     return descriptions
 end
 
+---The UUID and the full frame of every screen.
+---The signature changes when a monitor is connected, disconnected, arranged anew or set to another
+---resolution, and stays when the Dock changes size.
+---@return string
+function read_screens.read_signature()
+    local parts = {}
+    for _, screen in ipairs(hs.screen.allScreens()) do
+        local frame = screen:fullFrame()
+        table.insert(
+            parts,
+            string.format(
+                "%s@%g,%g,%g,%g",
+                tostring(screen:getUUID()),
+                frame.x,
+                frame.y,
+                frame.w,
+                frame.h
+            )
+        )
+    end
+    table.sort(parts)
+    return table.concat(parts, ";")
+end
+
 ---@param screen_uuid string
 ---@return table|nil screen an hs.screen
 function read_screens.find_screen(screen_uuid)
