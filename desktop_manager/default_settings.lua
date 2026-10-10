@@ -1,3 +1,4 @@
+local concealment_method = require("desktop_manager.core.concealment_method")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 
 local default_settings = {}
@@ -22,6 +23,7 @@ local default_settings = {}
 ---@field hotkey_modifiers string[]
 ---@field url_event_name string
 ---@field initial_monitor_matching string
+---@field concealment_method string a value of concealment_method
 ---@field builtin_screen_name_patterns string[]
 ---@field timing Timing
 
@@ -34,6 +36,7 @@ function default_settings.create(state_file_path)
         hotkey_modifiers = { "cmd", "alt", "shift" },
         url_event_name = "desktop-manager",
         initial_monitor_matching = monitor_matching.BY_COUNT,
+        concealment_method = concealment_method.MINIMIZE_WINDOWS,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         timing = {
             poll_interval_seconds = 0.05,

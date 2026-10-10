@@ -1,3 +1,5 @@
+local concealment_method = require("desktop_manager.core.concealment_method")
+
 local profile_switch = {}
 
 ---@class OwnedWindow
@@ -25,19 +27,36 @@ local function group_by_bundle(live_windows)
     return groups, bundle_ids
 end
 
----Plans how to take the windows of the other profiles out of sight when one profile becomes active.
----An application whose windows all belong to other profiles is hidden.
----In any other application, those windows are minimized.
+---@param window OwnedWindow
+---@param kept_profile_number integer
+---@return boolean
+local function belongs_to_other_profile(window, kept_profile_number)
+    return window.owner_number ~= nil and window.owner_number ~= kept_profile_number
+end
+
 ---@param live_windows OwnedWindow[]
 ---@param kept_profile_number integer
 ---@return ConcealmentPlan
-function profile_switch.plan_concealment(live_windows, kept_profile_number)
+local function plan_minimizing(live_windows, kept_profile_number)
+    local plan = { bundle_ids_to_hide = {}, window_ids_to_minimize = {} }
+    for _, window in ipairs(live_windows) do
+        if belongs_to_other_profile(window, kept_profile_number) and not window.is_minimized then
+            table.insert(plan.window_ids_to_minimize, window.window_id)
+        end
+    end
+    return plan
+end
+
+---@param live_windows OwnedWindow[]
+---@param kept_profile_number integer
+---@return ConcealmentPlan
+local function plan_hiding(live_windows, kept_profile_number)
     local groups, bundle_ids = group_by_bundle(live_windows)
     local plan = { bundle_ids_to_hide = {}, window_ids_to_minimize = {} }
     for _, bundle_id in ipairs(bundle_ids) do
         local concealed = {}
         for _, window in ipairs(groups[bundle_id]) do
-            if window.owner_number ~= nil and window.owner_number ~= kept_profile_number then
+            if belongs_to_other_profile(window, kept_profile_number) then
                 table.insert(concealed, window)
             end
         end
@@ -52,6 +71,25 @@ function profile_switch.plan_concealment(live_windows, kept_profile_number)
         end
     end
     return plan
+end
+
+local PLANNERS = {
+    [concealment_method.MINIMIZE_WINDOWS] = plan_minimizing,
+    [concealment_method.HIDE_APPLICATIONS] = plan_hiding,
+}
+
+---Plans how to take the windows of the other profiles out of sight when one profile becomes active.
+---Unowned windows stay as they are.
+---@param method string a value of concealment_method
+---@param live_windows OwnedWindow[]
+---@param kept_profile_number integer
+---@return ConcealmentPlan
+function profile_switch.plan_concealment(method, live_windows, kept_profile_number)
+    local planner = PLANNERS[method]
+    if not planner then
+        error(string.format("unknown concealment method %q", tostring(method)), 2)
+    end
+    return planner(live_windows, kept_profile_number)
 end
 
 ---@param live_windows OwnedWindow[]

@@ -1,3 +1,4 @@
+local concealment_method = require("desktop_manager.core.concealment_method")
 local default_settings = require("desktop_manager.default_settings")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
@@ -7,9 +8,10 @@ local profile_state = require("desktop_manager.core.profile_state")
 local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
 local SETTLE_SECONDS = 30
 
+---@param method string|nil a value of concealment_method, or nil for the default
 ---@return table world
 ---@return ProfileController controller
-local function start_world()
+local function start_world(method)
     local world = fake_hammerspoon.install({
         screens = {
             {
@@ -47,7 +49,9 @@ local function start_world()
             },
         },
     })
-    local controller = profile_controller.start(default_settings.create("/fake/state.json"))
+    local settings = default_settings.create("/fake/state.json")
+    settings.concealment_method = method or settings.concealment_method
+    local controller = profile_controller.start(settings)
     return world, controller
 end
 
@@ -62,8 +66,46 @@ return {
         expect.equal(world.notifications, {})
     end,
 
-    a_new_profile_conceals_the_windows_of_the_old_one = function()
+    a_new_profile_minimizes_the_windows_of_the_old_one = function()
         local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 2)
+        expect.equal(world.windows[41].is_minimized, true)
+        expect.equal(world.windows[42].is_minimized, true)
+        expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
+        local arrangement = profile_state.find_arrangement(controller.state, 1, "built-in")
+        expect.equal(arrangement.windows[1].desktop_number, 2)
+        expect.equal(arrangement.windows[2].desktop_number, 1)
+    end,
+
+    the_old_profile_comes_back_on_its_desktops = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        local news = world.create_window("com.apple.Safari", "News")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(profile_state.owner_by_window_id(controller.state)[news.id], 2)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 1)
+        expect.equal(world.windows[news.id].is_minimized, true)
+        expect.equal(world.windows[41].is_minimized, false)
+        expect.equal(world.windows[41].space_id, 14)
+        expect.equal(world.windows[42].is_minimized, false)
+        expect.equal(world.windows[42].space_id, 3)
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1" })
+        expect.equal(world.notifications, {})
+    end,
+
+    the_hiding_setting_hides_an_application_of_the_old_profile = function()
+        local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()
@@ -71,13 +113,11 @@ return {
         expect.equal(controller.state.active_profile_number, 2)
         expect.equal(world.applications["com.apple.Safari"].is_hidden, true)
         expect.equal(world.applications["com.microsoft.Word"].is_hidden, true)
-        local arrangement = profile_state.find_arrangement(controller.state, 1, "built-in")
-        expect.equal(arrangement.windows[1].desktop_number, 2)
-        expect.equal(arrangement.windows[2].desktop_number, 1)
+        expect.equal(world.windows[41].is_minimized, false)
     end,
 
-    a_window_of_a_shared_application_is_minimized_on_the_switch = function()
-        local world, controller = start_world()
+    the_hiding_setting_minimizes_a_window_of_a_shared_application = function()
+        local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()

@@ -1,4 +1,5 @@
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
+local concealment_method = require("desktop_manager.core.concealment_method")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local launch_applications = require("desktop_manager.macos.launch_applications")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
@@ -300,7 +301,11 @@ function ProfileController:activate_profile(number)
     local windows = self.window_filter:getWindows()
     local unowned_ids = profile_switch.find_unowned_window_ids(self:describe_ownership(windows))
     self.state = profile_state.assign_windows(self.state, number, unowned_ids)
-    local concealment = profile_switch.plan_concealment(self:describe_ownership(windows), number)
+    local concealment = profile_switch.plan_concealment(
+        self.settings.concealment_method,
+        self:describe_ownership(windows),
+        number
+    )
     local failures = conceal_windows.apply(concealment, track_windows.index_by_id(windows))
     self.state = profile_state.with_active_profile_number(self.state, number)
     self:write_state()
@@ -624,6 +629,15 @@ end
 ---@param settings Settings
 ---@return ProfileController
 function profile_controller.start(settings)
+    if not concealment_method.is_valid(settings.concealment_method) then
+        error(
+            string.format(
+                "the setting concealment_method is %q, which names no concealment method",
+                tostring(settings.concealment_method)
+            ),
+            2
+        )
+    end
     local controller = setmetatable({
         settings = settings,
         log = hs.logger.new("desktop_mgr", "info"),
