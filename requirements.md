@@ -43,7 +43,8 @@ Hammerspoon 1.1.1 on macOS 27.0.1 reads the desktops and the windows on them, bu
 The issues https://github.com/Hammerspoon/hammerspoon/issues/3903 and https://github.com/Hammerspoon/hammerspoon/issues/3897 report the failures, read on 2026-10-10.
 
 The tool switches desktops with the macOS shortcuts Control-1 to Control-9, which the user turns on in System Settings.
-The tool moves a window to another desktop by simulating a drag of its title bar while it switches desktops.
+The tool moves a window to another desktop by minimizing it, switching to the target desktop and unminimizing it.
+The tool leaves out a simulated drag of the title bar, because a drag at a fixed point can pull a tab out of a browser window.
 The tool adds and removes desktops through the accessibility tree of Mission Control, which macOS 27 keeps under the process `WindowManager`.
 When adding or removing a desktop fails, the tool notifies the user.
 One module holds these operations, so that it can be replaced once Hammerspoon works on macOS 27 again.
@@ -58,7 +59,7 @@ Each shortcut is a combination of modifier keys with a number key.
 The modifiers with a number from 1 to 9 activate the profile of that number, or switch to it from another profile.
 The same keys on the active profile deactivate it.
 The modifiers with 0 deactivate the active profile.
-The modifiers are a setting, and their default is still open between Command-Option and Control-Option.
+The modifiers are a setting, and their default is Command-Option-Shift.
 
 The plugin for Asyar is a set of shell scripts.
 Each script carries the headers `@asyar.*` that the Scripts extension of Asyar reads and the headers `@raycast.*` that Raycast reads, so both launchers run it.
