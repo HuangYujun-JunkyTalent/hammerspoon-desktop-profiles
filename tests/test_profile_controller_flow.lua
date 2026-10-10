@@ -137,22 +137,22 @@ return {
         expect.equal(world.notifications, {})
     end,
 
-    windows_unminimized_onto_the_shown_desktop_are_brought_back_on_visits = function()
-        local world = start_world()
-        world.does_unminimize_onto_active_desktop = true
+    a_switch_removes_no_desktop_and_presses_no_key_for_windows_in_place = function()
+        local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.windows[41].is_minimized, false)
-        expect.equal(world.windows[41].space_id, 14)
-        expect.equal(world.windows[42].is_minimized, false)
-        expect.equal(world.windows[42].space_id, 3)
-        expect.equal(world.displays[1].active_space_id, 3)
-        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1" })
+        local arrangement = profile_state.find_arrangement(controller.state, 1, "built-in")
+        expect.equal(arrangement.monitors[1].desktop_count, 4)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99 })
+        expect.equal(world.key_strokes, {})
         expect.equal(world.notifications, {})
+        expect.equal(world.windows[41].space_id, 14)
+        expect.equal(world.windows[42].space_id, 3)
     end,
 
     the_hiding_setting_hides_an_application_of_the_old_profile = function()

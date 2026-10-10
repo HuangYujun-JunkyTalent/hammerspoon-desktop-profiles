@@ -8,10 +8,9 @@ local restore_plan = {}
 ---@field is_minimized boolean
 ---@field is_app_hidden boolean
 
----@class DesktopCountChange
+---@class DesktopAddition
 ---@field screen_uuid string
 ---@field desktops_to_add integer
----@field space_ids_to_remove integer[] the last desktops of the screen, in Mission Control order
 
 ---A window to bring to a desktop and to fit to its saved frame on that desktop's screen.
 ---@class WindowPlacement
@@ -31,11 +30,13 @@ local restore_plan = {}
 
 ---@class RestorePlan
 ---@field bundle_ids_to_unhide string[]
----@field desktop_count_changes DesktopCountChange[]
+---@field desktop_additions DesktopAddition[]
 ---@field placements_in_place WindowPlacement[] windows on their desktop, which need only a frame
----@field unminimizations_in_place WindowPlacement[] minimized windows that macOS keeps on their
----desktop, which need an unminimize and a frame
----@field visits DesktopVisit[] the desktops to switch to, with the windows to bring there
+---@field unminimizations_in_place WindowPlacement[] minimized windows on the screen of their
+---desktop, which macOS unminimizes onto the desktop they were minimized on
+---@field window_ids_off_desktop integer[] windows in sight on another desktop of their screen,
+---which macOS 27.0.1 gives no way to move
+---@field visits DesktopVisit[] the desktops to show on other screens, with the windows to move
 ---@field focus ScreenDesktop|nil
 
 ---@param desktop_layout DesktopLayout
@@ -50,36 +51,45 @@ local function find_screen(desktop_layout, screen_uuid)
     return nil
 end
 
+---Plans the desktops to add, and no desktop to remove, because removing a desktop moves its
+---windows to another desktop and changes what the other profiles recorded.
 ---@param arrangement Arrangement
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
----@return DesktopCountChange[]
+---@return DesktopAddition[]
 ---@return table<string, integer> the desktop count that each screen will have
----@return table<string, boolean> the screens whose desktops change
-local function plan_desktop_counts(arrangement, configuration, desktop_layout)
-    local changes, target_counts, changed_screens = {}, {}, {}
+local function plan_desktop_additions(arrangement, configuration, desktop_layout)
+    local additions, target_counts = {}, {}
     for _, monitor in ipairs(arrangement.monitors) do
         local slot = monitor_configuration.find_slot(configuration, monitor.slot_key)
         local screen = slot and find_screen(desktop_layout, slot.screen_uuid)
         if screen then
             local current_count = #screen.space_ids
-            local target_count = math.max(monitor.desktop_count, 1)
-            target_counts[screen.screen_uuid] = target_count
-            if target_count ~= current_count then
-                local space_ids_to_remove = {}
-                for index = target_count + 1, current_count do
-                    table.insert(space_ids_to_remove, screen.space_ids[index])
-                end
-                table.insert(changes, {
+            local recorded_count = math.max(monitor.desktop_count, 1)
+            target_counts[screen.screen_uuid] = math.max(recorded_count, current_count)
+            if recorded_count > current_count then
+                table.insert(additions, {
                     screen_uuid = screen.screen_uuid,
-                    desktops_to_add = math.max(target_count - current_count, 0),
-                    space_ids_to_remove = space_ids_to_remove,
+                    desktops_to_add = recorded_count - current_count,
                 })
-                changed_screens[screen.screen_uuid] = true
             end
         end
     end
-    return changes, target_counts, changed_screens
+    return additions, target_counts
+end
+
+---@param desktop_layout DesktopLayout
+---@param space_id integer|nil
+---@return string|nil the screen that holds the desktop
+local function find_screen_of_space(desktop_layout, space_id)
+    for _, screen in ipairs(desktop_layout.screens) do
+        for _, candidate in ipairs(screen.space_ids) do
+            if candidate == space_id then
+                return screen.screen_uuid
+            end
+        end
+    end
+    return nil
 end
 
 ---Groups the placements by the desktop they go to, in the order of their first placement.
@@ -143,10 +153,12 @@ local function insert_once(bundle_ids, bundle_id)
     table.insert(bundle_ids, bundle_id)
 end
 
----Plans the steps that bring the windows that the profile recorded in sight back to their saved
----desktops and frames.
+---Plans the least work that brings the windows that the profile recorded in sight back to their
+---saved desktops and frames.
 ---A window that the profile recorded out of sight is left to the concealment of the switch.
----The plan names desktops by their number on a screen, because adding desktops changes the ids.
+---Desktops are added at the end of a screen, so the desktops that exist keep their numbers.
+---A window changes desktop only by moving to another screen, because macOS 27.0.1 unminimizes a
+---window onto the desktop it was minimized on and Hammerspoon cannot move it between desktops.
 ---@param arrangement Arrangement
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
@@ -154,13 +166,14 @@ end
 ---@param live_states table<integer, LiveWindowState>
 ---@return RestorePlan
 function restore_plan.plan(arrangement, configuration, desktop_layout, matches, live_states)
-    local desktop_count_changes, target_counts, changed_screens =
-        plan_desktop_counts(arrangement, configuration, desktop_layout)
+    local desktop_additions, target_counts =
+        plan_desktop_additions(arrangement, configuration, desktop_layout)
     local plan = {
         bundle_ids_to_unhide = {},
-        desktop_count_changes = desktop_count_changes,
+        desktop_additions = desktop_additions,
         placements_in_place = {},
         unminimizations_in_place = {},
+        window_ids_off_desktop = {},
         visits = {},
         focus = nil,
     }
@@ -173,28 +186,29 @@ function restore_plan.plan(arrangement, configuration, desktop_layout, matches, 
         local desktop_number = target_count
             and record.desktop_number
             and math.min(record.desktop_number, target_count)
-        local screen = slot and find_screen(desktop_layout, slot.screen_uuid)
-        local is_on_target_desktop = state ~= nil
-            and desktop_number ~= nil
-            and screen ~= nil
-            and not changed_screens[screen.screen_uuid]
-            and screen.space_ids[desktop_number] == state.space_id
         if state and state.is_app_hidden and not record.is_out_of_sight then
             insert_once(plan.bundle_ids_to_unhide, state.bundle_id)
         end
-        if not record.is_out_of_sight and slot and desktop_number then
+        if state and not record.is_out_of_sight and slot and desktop_number then
             local placement = {
                 window_id = match.window_id,
                 screen_uuid = slot.screen_uuid,
                 desktop_number = desktop_number,
                 unit_frame = record.unit_frame,
             }
+            local target_screen = find_screen(desktop_layout, slot.screen_uuid)
+            local target_space_id = target_screen and target_screen.space_ids[desktop_number]
+            local current_screen_uuid = find_screen_of_space(desktop_layout, state.space_id)
+            local is_on_target_desktop = state.space_id ~= nil and state.space_id == target_space_id
+            local is_on_target_screen = current_screen_uuid == slot.screen_uuid
             if is_on_target_desktop and not state.is_minimized then
                 table.insert(plan.placements_in_place, placement)
-            elseif is_on_target_desktop then
+            elseif state.is_minimized and (is_on_target_screen or current_screen_uuid == nil) then
                 table.insert(plan.unminimizations_in_place, placement)
-            else
+            elseif current_screen_uuid ~= nil and not is_on_target_screen then
                 table.insert(visit_placements, placement)
+            else
+                table.insert(plan.window_ids_off_desktop, match.window_id)
             end
         end
     end

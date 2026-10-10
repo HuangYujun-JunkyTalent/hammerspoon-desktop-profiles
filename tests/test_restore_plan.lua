@@ -77,11 +77,11 @@ return {
         )
         expect.equal(#plan.placements_in_place, 1)
         expect.equal(plan.visits, {})
-        expect.equal(plan.desktop_count_changes, {})
+        expect.equal(plan.desktop_additions, {})
         expect.equal(plan.focus, { screen_uuid = "BUILTIN-UUID", desktop_number = 2 })
     end,
 
-    a_window_elsewhere_is_brought_on_a_visit = function()
+    a_window_on_another_desktop_of_its_screen_stays = function()
         local record = record_on(41, 2)
         local plan = restore_plan.plan(
             arrangement_with(2, { record }),
@@ -98,8 +98,32 @@ return {
             }
         )
         expect.equal(plan.bundle_ids_to_unhide, { "com.apple.Safari" })
-        expect.equal(plan.visits[1].desktop_number, 2)
-        expect.equal(plan.visits[1].placements[1].window_id, 41)
+        expect.equal(plan.window_ids_off_desktop, { 41 })
+        expect.equal(plan.visits, {})
+    end,
+
+    a_window_stays_in_place_while_desktops_are_added = function()
+        local record = record_on(41, 2)
+        local plan = restore_plan.plan(
+            arrangement_with(3, { record }),
+            CONFIGURATION,
+            layout_with({ 3, 14 }),
+            { { record = record, window_id = 41 } },
+            {
+                [41] = {
+                    bundle_id = "com.apple.Safari",
+                    space_id = 14,
+                    is_minimized = false,
+                    is_app_hidden = false,
+                },
+            }
+        )
+        expect.equal(
+            plan.desktop_additions,
+            { { screen_uuid = "BUILTIN-UUID", desktops_to_add = 1 } }
+        )
+        expect.equal(#plan.placements_in_place, 1)
+        expect.equal(plan.visits, {})
     end,
 
     a_minimized_window_on_its_desktop_is_unminimized_in_place = function()
@@ -124,7 +148,7 @@ return {
         expect.equal(plan.visits, {})
     end,
 
-    a_minimized_window_on_another_desktop_is_brought_on_a_visit = function()
+    a_minimized_window_on_another_desktop_is_unminimized_where_it_is = function()
         local record = record_on(41, 2)
         local plan = restore_plan.plan(
             arrangement_with(2, { record }),
@@ -140,8 +164,8 @@ return {
                 },
             }
         )
-        expect.equal(plan.unminimizations_in_place, {})
-        expect.equal(plan.visits[1].placements[1].window_id, 41)
+        expect.equal(plan.unminimizations_in_place[1].window_id, 41)
+        expect.equal(plan.visits, {})
     end,
 
     placements_are_grouped_by_desktop = function()
@@ -156,7 +180,7 @@ return {
         expect.equal(visits[2].placements[1].window_id, 42)
     end,
 
-    missing_desktops_are_added_and_extra_ones_removed = function()
+    missing_desktops_are_added_and_extra_ones_stay = function()
         local plan_adding = restore_plan.plan(
             arrangement_with(4, {}),
             CONFIGURATION,
@@ -164,23 +188,18 @@ return {
             {},
             {}
         )
-        expect.equal(plan_adding.desktop_count_changes, {
-            { screen_uuid = "BUILTIN-UUID", desktops_to_add = 2, space_ids_to_remove = {} },
-        })
-        local plan_removing = restore_plan.plan(
+        expect.equal(
+            plan_adding.desktop_additions,
+            { { screen_uuid = "BUILTIN-UUID", desktops_to_add = 2 } }
+        )
+        local plan_keeping = restore_plan.plan(
             arrangement_with(2, {}),
             CONFIGURATION,
             layout_with({ 3, 14, 64, 163 }),
             {},
             {}
         )
-        expect.equal(plan_removing.desktop_count_changes, {
-            {
-                screen_uuid = "BUILTIN-UUID",
-                desktops_to_add = 0,
-                space_ids_to_remove = { 64, 163 },
-            },
-        })
+        expect.equal(plan_keeping.desktop_additions, {})
     end,
 
     a_window_recorded_out_of_sight_is_left_to_the_concealment = function()
@@ -206,29 +225,66 @@ return {
         expect.equal(plan.visits, {})
     end,
 
-    visits_are_ordered_by_desktop = function()
-        local first, second = record_on(41, 3), record_on(42, 2)
-        local plan = restore_plan.plan(
-            arrangement_with(3, { first, second }),
-            CONFIGURATION,
-            layout_with({ 3, 14, 64 }),
-            { { record = first, window_id = 41 }, { record = second, window_id = 42 } },
+    a_window_recorded_on_another_screen_goes_on_a_visit_ordered_by_desktop = function()
+        local external_frame = { x = 1440, y = 0, w = 1920, h = 1080 }
+        local configuration = monitor_configuration.describe({
             {
-                [41] = {
-                    bundle_id = "com.apple.Safari",
-                    space_id = nil,
-                    is_minimized = true,
-                    is_app_hidden = false,
+                uuid = "BUILTIN-UUID",
+                name = "Built-in Retina Display",
+                is_builtin = true,
+                frame = BUILTIN_FRAME,
+            },
+            {
+                uuid = "EXTERNAL-UUID",
+                name = "LG TV SSCR2",
+                is_builtin = false,
+                frame = external_frame,
+            },
+        }, monitor_matching.BY_COUNT)
+        local layout = {
+            screens = {
+                {
+                    screen_uuid = "BUILTIN-UUID",
+                    screen_frame = BUILTIN_FRAME,
+                    space_ids = { 3, 14 },
+                    active_space_id = 3,
                 },
-                [42] = {
-                    bundle_id = "com.apple.Safari",
-                    space_id = nil,
-                    is_minimized = true,
-                    is_app_hidden = false,
+                {
+                    screen_uuid = "EXTERNAL-UUID",
+                    screen_frame = external_frame,
+                    space_ids = { 7, 8, 9 },
+                    active_space_id = 7,
                 },
-            }
+            },
+            focused_space_id = 3,
+        }
+        local first, second = record_on(41, 3), record_on(42, 2)
+        first.slot_key, second.slot_key = "external 1", "external 1"
+        local in_sight_on_builtin = {
+            bundle_id = "com.apple.Safari",
+            space_id = 3,
+            is_minimized = false,
+            is_app_hidden = false,
+        }
+        local plan = restore_plan.plan(
+            {
+                monitor_configuration_key = configuration.key,
+                monitors = {
+                    { slot_key = "built-in", desktop_count = 2 },
+                    { slot_key = "external 1", desktop_count = 3 },
+                },
+                focus = nil,
+                windows = { first, second },
+            },
+            configuration,
+            layout,
+            { { record = first, window_id = 41 }, { record = second, window_id = 42 } },
+            { [41] = in_sight_on_builtin, [42] = in_sight_on_builtin }
         )
+        expect.equal(#plan.visits, 2)
+        expect.equal(plan.visits[1].screen_uuid, "EXTERNAL-UUID")
         expect.equal(plan.visits[1].desktop_number, 2)
         expect.equal(plan.visits[2].desktop_number, 3)
+        expect.equal(plan.window_ids_off_desktop, {})
     end,
 }

@@ -2,7 +2,6 @@ local mission_control_desktops = require("desktop_manager.macos.mission_control_
 local poll_until = require("desktop_manager.macos.poll_until")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
-local restore_plan = require("desktop_manager.core.restore_plan")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local step_sequence = require("desktop_manager.core.step_sequence")
 local switch_desktops = require("desktop_manager.macos.switch_desktops")
@@ -56,13 +55,6 @@ local function fit_frame(window, placement)
     if not are_frames_close(read_screens.to_rect(window:frame()), read_screens.to_rect(target)) then
         window:setFrame(target, 0)
     end
-end
-
----@param window_id integer
----@return boolean
-local function is_on_visible_desktop(window_id)
-    local space_id = read_desktops.find_window_space_id(window_id)
-    return space_id ~= nil and read_desktops.is_space_active(space_id)
 end
 
 ---@param placement WindowPlacement
@@ -156,54 +148,30 @@ local function unminimize_and_fit(windows_to_bring, timing, on_done)
     )
 end
 
----Brings the windows to the desktop that shows, and fits their frames.
----A window on another desktop is minimized first, so that its unminimize can bring it here if
----macOS unminimizes onto the desktop that shows. The check afterwards reports a window that stayed.
+---Moves the windows to the desktop that shows on their recorded screen, and fits their frames.
+---Setting the frame of a window onto another screen moves it to the desktop that shows there.
 ---@param placements WindowPlacement[]
 ---@param space_id integer
 ---@param context RestoreContext
 ---@param failures string[]
 ---@param on_done fun()
 local function bring_windows(placements, space_id, context, failures, on_done)
-    local timing = context.timing
     local windows_to_bring = resolve_windows(placements, function()
         return space_id
     end, context, failures)
-    local moving = {}
-    for _, entry in ipairs(windows_to_bring) do
-        local window = entry.window
-        if not window:isMinimized() and not is_on_visible_desktop(entry.placement.window_id) then
-            window:minimize()
-            table.insert(moving, entry)
+    unminimize_and_fit(windows_to_bring, context.timing, function(off_desktop)
+        for _, entry in ipairs(off_desktop) do
+            table.insert(
+                failures,
+                string.format(
+                    "%s stayed off desktop %d of its screen",
+                    track_windows.describe(entry.window),
+                    entry.placement.desktop_number
+                )
+            )
         end
-    end
-    poll_until.wait(
-        function()
-            for _, entry in ipairs(moving) do
-                if not entry.window:isMinimized() then
-                    return false
-                end
-            end
-            return true
-        end,
-        timing.minimize_timeout_seconds,
-        timing.poll_interval_seconds,
-        function()
-            unminimize_and_fit(windows_to_bring, timing, function(off_desktop)
-                for _, entry in ipairs(off_desktop) do
-                    table.insert(
-                        failures,
-                        string.format(
-                            "%s stayed off desktop %d of its screen",
-                            track_windows.describe(entry.window),
-                            entry.placement.desktop_number
-                        )
-                    )
-                end
-                on_done()
-            end)
-        end
-    )
+        on_done()
+    end)
 end
 
 ---@param screen_uuid string
@@ -254,55 +222,28 @@ local function run_visits(visits, context, failures, on_done)
     visit_next()
 end
 
----@param change DesktopCountChange
+---@param addition DesktopAddition
 ---@param context RestoreContext
 ---@param failures string[]
 ---@param on_done fun()
-local function change_desktop_count(change, context, failures, on_done)
-    local screen = read_screens.find_screen(change.screen_uuid)
+local function add_desktops(addition, context, failures, on_done)
+    local screen = read_screens.find_screen(addition.screen_uuid)
     if not screen then
-        table.insert(failures, string.format("screen %s is gone", change.screen_uuid))
+        table.insert(failures, string.format("screen %s is gone", addition.screen_uuid))
         on_done()
         return
     end
-    local function report(error_message)
-        if error_message then
-            table.insert(failures, "Changing the number of desktops failed: " .. error_message)
+    mission_control_desktops.add_desktops(
+        screen:id(),
+        addition.desktops_to_add,
+        context.timing,
+        function(error_message)
+            if error_message then
+                table.insert(failures, "Adding desktops failed: " .. error_message)
+            end
+            on_done()
         end
-        on_done()
-    end
-    if change.desktops_to_add > 0 then
-        mission_control_desktops.add_desktops(
-            screen:id(),
-            change.desktops_to_add,
-            context.timing,
-            report
-        )
-        return
-    end
-    local function remove()
-        mission_control_desktops.remove_desktops(
-            screen:id(),
-            change.screen_uuid,
-            change.space_ids_to_remove,
-            context.timing,
-            report
-        )
-    end
-    local desktops = read_screen_desktops(change.screen_uuid)
-    for _, space_id in ipairs(change.space_ids_to_remove) do
-        if desktops and desktops.active_space_id == space_id then
-            show_desktop(change.screen_uuid, 1, context, function(_, error_message)
-                if error_message then
-                    report(error_message)
-                    return
-                end
-                remove()
-            end)
-            return
-        end
-    end
-    remove()
+    )
 end
 
 ---@param plan RestorePlan
@@ -328,9 +269,9 @@ local function build_steps(plan, context, failures)
             continue()
         end)
     end)
-    for _, change in ipairs(plan.desktop_count_changes) do
+    for _, addition in ipairs(plan.desktop_additions) do
         table.insert(steps, function(continue)
-            change_desktop_count(change, context, failures, continue)
+            add_desktops(addition, context, failures, continue)
         end)
     end
     table.insert(steps, function(continue)
@@ -342,20 +283,16 @@ local function build_steps(plan, context, failures)
         end
         continue()
     end)
-    local placements_off_desktop = {}
     table.insert(steps, function(continue)
         local windows_to_bring =
             resolve_windows(plan.unminimizations_in_place, find_target_space_id, context, failures)
         unminimize_and_fit(windows_to_bring, context.timing, function(off_desktop)
             for _, entry in ipairs(off_desktop) do
-                table.insert(placements_off_desktop, entry.placement)
-            end
-            if #windows_to_bring > 0 then
                 context.log_info(
                     string.format(
-                        "%d windows unminimized in place, %d of them off their desktop",
-                        #windows_to_bring,
-                        #off_desktop
+                        "%s stays off desktop %d of its screen, where macOS cannot move it",
+                        track_windows.describe(entry.window),
+                        entry.placement.desktop_number
                     )
                 )
             end
@@ -364,14 +301,6 @@ local function build_steps(plan, context, failures)
     end)
     table.insert(steps, function(continue)
         run_visits(plan.visits, context, failures, continue)
-    end)
-    table.insert(steps, function(continue)
-        run_visits(
-            restore_plan.group_into_visits(placements_off_desktop),
-            context,
-            failures,
-            continue
-        )
     end)
     if plan.focus then
         table.insert(steps, function(continue)
