@@ -5,3 +5,4 @@ globals = { "desktop_manager" }
 
 files["desktop_manager/core"] = { new_read_globals = {} }
 files["tests"] = { new_read_globals = {} }
+files["tests/fake_hammerspoon.lua"] = { new_read_globals = { "hs" }, self = false }
