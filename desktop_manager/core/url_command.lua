@@ -20,9 +20,14 @@ local ACTIONS_WITH_PROFILE = {
 }
 
 local ACTIONS_WITHOUT_PROFILE = {
-    [url_command.DEACTIVATE] = true,
     [url_command.CYCLE_MONITOR_MATCHING] = true,
     [url_command.SAVE] = true,
+}
+
+---`deactivate` without a profile deactivates the active profile, and with a profile deactivates
+---that profile when it is the active one.
+local ACTIONS_WITH_OPTIONAL_PROFILE = {
+    [url_command.DEACTIVATE] = true,
 }
 
 ---@param text any
@@ -54,7 +59,10 @@ function url_command.parse(params, profile_count)
     if ACTIONS_WITHOUT_PROFILE[action] then
         return { action = action }, nil
     end
-    if not ACTIONS_WITH_PROFILE[action] then
+    if ACTIONS_WITH_OPTIONAL_PROFILE[action] and params.profile == nil then
+        return { action = action }, nil
+    end
+    if not ACTIONS_WITH_PROFILE[action] and not ACTIONS_WITH_OPTIONAL_PROFILE[action] then
         return nil, string.format("the action %q is unknown", action)
     end
     local profile_number, profile_error = parse_profile_number(params.profile, profile_count)

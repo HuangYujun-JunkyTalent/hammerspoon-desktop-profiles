@@ -384,6 +384,23 @@ return {
         expect.equal(profile_state.profile_or_default(controller.state, 4).name, "Writing")
     end,
 
+    a_url_deactivates_a_named_profile_only_while_it_is_active = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "deactivate", profile = "2" }
+        )
+        expect.equal(controller.state.active_profile_number, 1)
+        expect.equal(world.alerts[#world.alerts], "Profile 2 is not active")
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "deactivate", profile = "1" }
+        )
+        expect.equal(controller.state.active_profile_number, nil)
+    end,
+
     a_bad_url_is_reported = function()
         local world = start_world()
         world.url_handlers["desktop-manager"](

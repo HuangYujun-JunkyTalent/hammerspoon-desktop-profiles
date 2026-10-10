@@ -471,6 +471,16 @@ function ProfileController:deactivate_profile()
 end
 
 ---@param number integer
+function ProfileController:deactivate_profile_if_active(number)
+    if self.state.active_profile_number ~= number then
+        local name = profile_state.profile_or_default(self.state, number).name
+        hs.alert.show(name .. " is not active")
+        return
+    end
+    self:deactivate_profile()
+end
+
+---@param number integer
 function ProfileController:toggle_profile(number)
     if self.state.active_profile_number == number then
         self:deactivate_profile()
@@ -526,6 +536,8 @@ function ProfileController:run_url_command(params)
         self:activate_profile(command.profile_number)
     elseif command.action == url_command.TOGGLE then
         self:toggle_profile(command.profile_number)
+    elseif command.action == url_command.DEACTIVATE and command.profile_number then
+        self:deactivate_profile_if_active(command.profile_number)
     elseif command.action == url_command.DEACTIVATE then
         self:deactivate_profile()
     elseif command.action == url_command.RENAME then

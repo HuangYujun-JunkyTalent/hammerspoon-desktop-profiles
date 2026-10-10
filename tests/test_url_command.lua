@@ -11,6 +11,14 @@ return {
         expect.equal(url_command.parse({ action = "deactivate" }, 9), { action = "deactivate" })
     end,
 
+    deactivate_may_name_a_profile = function()
+        local command = url_command.parse({ action = "deactivate", profile = "4" }, 9)
+        expect.equal(command, { action = "deactivate", profile_number = 4 })
+        local rejected, message = url_command.parse({ action = "deactivate", profile = "0" }, 9)
+        expect.equal(rejected, nil)
+        expect.equal(message, 'the profile "0" is not a number from 1 to 9')
+    end,
+
     rename_trims_the_name = function()
         local command =
             url_command.parse({ action = "rename", profile = "2", name = "  Writing " }, 9)
