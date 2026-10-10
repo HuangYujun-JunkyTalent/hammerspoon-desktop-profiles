@@ -3,11 +3,10 @@ local monitor_matching = require("desktop_manager.core.monitor_matching")
 
 local profile_state = {}
 
+---A profile holds the desktops and windows it recorded, one arrangement per monitor configuration.
 ---@class Profile
 ---@field number integer
 ---@field name string
----@field window_ids integer[] the open windows that belong to the profile, which may belong to
----other profiles as well
 ---@field arrangements table<string, Arrangement> keyed by monitor configuration key
 
 ---The state that the tool keeps between runs of Hammerspoon.
@@ -45,7 +44,6 @@ local function new_profile(number)
     return {
         number = number,
         name = string.format("Profile %d", number),
-        window_ids = {},
         arrangements = {},
     }
 end
@@ -127,102 +125,23 @@ function profile_state.rename_profile(state, number, name)
     return profile_state.with_profile(state, profile)
 end
 
----@param window_ids integer[]
----@return table<integer, boolean>
-local function to_set(window_ids)
-    local set = {}
-    for _, window_id in ipairs(window_ids) do
-        set[window_id] = true
-    end
-    return set
-end
-
----@param window_ids integer[]
----@param removed table<integer, boolean>
----@return integer[]
-local function without(window_ids, removed)
-    local kept = {}
-    for _, window_id in ipairs(window_ids) do
-        if not removed[window_id] then
-            table.insert(kept, window_id)
-        end
-    end
-    return kept
-end
-
+---The windows that some arrangement of some profile records.
+---The application is part of the key, because macOS reuses window ids after a restart.
 ---@param state State
----@param window_ids integer[]
----@return State
-function profile_state.forget_windows(state, window_ids)
-    local removed = to_set(window_ids)
-    local updated = deep_copy.copy(state)
-    for _, profile in pairs(updated.profiles) do
-        profile.window_ids = without(profile.window_ids, removed)
-    end
-    return updated
-end
-
----Adds the windows to one profile, and leaves them in the other profiles that hold them.
----@param state State
----@param number integer
----@param window_ids integer[]
----@return State
-function profile_state.add_windows(state, number, window_ids)
-    check_profile_number(number)
-    local profile = profile_state.profile_or_default(state, number)
-    local held = to_set(profile.window_ids)
-    for _, window_id in ipairs(window_ids) do
-        if not held[window_id] then
-            held[window_id] = true
-            table.insert(profile.window_ids, window_id)
-        end
-    end
-    return profile_state.with_profile(state, profile)
-end
-
----Removes the windows from one profile, and leaves them in the other profiles that hold them.
----@param state State
----@param number integer
----@param window_ids integer[]
----@return State
-function profile_state.remove_windows(state, number, window_ids)
-    check_profile_number(number)
-    local profile = profile_state.profile_or_default(state, number)
-    profile.window_ids = without(profile.window_ids, to_set(window_ids))
-    return profile_state.with_profile(state, profile)
-end
-
----@param state State
----@return table<integer, integer[]> the numbers of the profiles that hold each window, ascending
-function profile_state.holders_by_window_id(state)
-    local holders = {}
+---@return table<integer, table<string, boolean>> the applications recorded for each window id
+function profile_state.index_recorded_windows(state)
+    local recorded = {}
     for _, profile in pairs(state.profiles) do
-        for _, window_id in ipairs(profile.window_ids) do
-            holders[window_id] = holders[window_id] or {}
-            table.insert(holders[window_id], profile.number)
+        for _, arrangement in pairs(profile.arrangements) do
+            for _, record in ipairs(arrangement.windows) do
+                if record.window_id then
+                    recorded[record.window_id] = recorded[record.window_id] or {}
+                    recorded[record.window_id][record.bundle_id] = true
+                end
+            end
         end
     end
-    for _, numbers in pairs(holders) do
-        table.sort(numbers)
-    end
-    return holders
-end
-
----@param state State
----@param number integer
----@param window_id integer
----@return boolean
-function profile_state.holds_window(state, number, window_id)
-    local profile = state.profiles[key_of(number)]
-    if not profile then
-        return false
-    end
-    for _, held_id in ipairs(profile.window_ids) do
-        if held_id == window_id then
-            return true
-        end
-    end
-    return false
+    return recorded
 end
 
 ---@param state State
@@ -266,7 +185,7 @@ local function decode_window_records(raw_records)
                 slot_key = type(raw.slot_key) == "string" and raw.slot_key or nil,
                 desktop_number = to_integer(raw.desktop_number),
                 unit_frame = type(raw.unit_frame) == "table" and raw.unit_frame or nil,
-                is_minimized = raw.is_minimized == true,
+                is_out_of_sight = raw.is_out_of_sight == true or raw.is_minimized == true,
             })
         end
     end
@@ -313,12 +232,6 @@ local function decode_profile(raw)
     local profile = new_profile(number)
     if type(raw.name) == "string" and raw.name ~= "" then
         profile.name = raw.name
-    end
-    for _, raw_window_id in ipairs(type(raw.window_ids) == "table" and raw.window_ids or {}) do
-        local window_id = to_integer(raw_window_id)
-        if window_id then
-            table.insert(profile.window_ids, window_id)
-        end
     end
     local raw_arrangements = type(raw.arrangements) == "table" and raw.arrangements or {}
     for key, raw_arrangement in pairs(raw_arrangements) do

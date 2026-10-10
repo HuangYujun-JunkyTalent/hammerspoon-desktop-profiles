@@ -5,6 +5,7 @@ local arrangement_capture = {}
 
 ---What the tool reads of one window at the time of a capture.
 ---`space_id` and `frame` are nil when the tool could not read them, such as for a minimized window.
+---A window is out of sight when it is minimized or its application is hidden.
 ---@class WindowObservation
 ---@field window_id integer
 ---@field bundle_id string
@@ -12,7 +13,7 @@ local arrangement_capture = {}
 ---@field title string
 ---@field space_id integer|nil
 ---@field frame Rect|nil
----@field is_minimized boolean
+---@field is_out_of_sight boolean
 
 ---@class ScreenDesktops
 ---@field screen_uuid string
@@ -32,7 +33,7 @@ local arrangement_capture = {}
 ---@field slot_key string
 ---@field desktop_number integer
 
----The remembered desktops and windows of one profile under one monitor configuration.
+---The desktops and windows that one profile recorded under one monitor configuration.
 ---@class Arrangement
 ---@field monitor_configuration_key string
 ---@field monitors MonitorDesktops[]
@@ -120,7 +121,7 @@ local function record_window(configuration, desktop_layout, observation, previou
         bundle_id = observation.bundle_id,
         app_name = observation.app_name,
         title = observation.title,
-        is_minimized = observation.is_minimized,
+        is_out_of_sight = observation.is_out_of_sight,
     }
     local location = arrangement_capture.locate_space(desktop_layout, observation.space_id)
     local slot = location

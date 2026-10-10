@@ -15,7 +15,7 @@ local ARRANGEMENT = {
             slot_key = "built-in",
             desktop_number = 2,
             unit_frame = { x = 0, y = 0, w = 0.5, h = 1 },
-            is_minimized = false,
+            is_out_of_sight = false,
         },
     },
 }
@@ -40,35 +40,26 @@ return {
         end, "needs a visible character")
     end,
 
-    a_window_can_belong_to_several_profiles = function()
+    the_index_lists_the_windows_that_any_arrangement_records = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
-        state = profile_state.add_windows(state, 1, { 10, 11 })
-        state = profile_state.add_windows(state, 2, { 11, 12, 12 })
-        expect.equal(profile_state.profile_or_default(state, 1).window_ids, { 10, 11 })
-        expect.equal(profile_state.profile_or_default(state, 2).window_ids, { 11, 12 })
-        expect.equal(
-            profile_state.holders_by_window_id(state),
-            { [10] = { 1 }, [11] = { 1, 2 }, [12] = { 2 } }
-        )
-        expect.equal(profile_state.holds_window(state, 2, 11), true)
-        expect.equal(profile_state.holds_window(state, 2, 10), false)
-        expect.equal(profile_state.holds_window(state, 5, 10), false)
-    end,
-
-    remove_windows_takes_them_from_one_profile = function()
-        local state = profile_state.new_state(monitor_matching.BY_COUNT)
-        state = profile_state.add_windows(state, 1, { 10, 11 })
-        state = profile_state.add_windows(state, 2, { 11 })
-        state = profile_state.remove_windows(state, 1, { 11 })
-        expect.equal(profile_state.holders_by_window_id(state), { [10] = { 1 }, [11] = { 2 } })
-    end,
-
-    forget_windows_removes_them_everywhere = function()
-        local state = profile_state.new_state(monitor_matching.BY_COUNT)
-        state = profile_state.add_windows(state, 1, { 10, 11 })
-        state = profile_state.add_windows(state, 2, { 11 })
-        state = profile_state.forget_windows(state, { 11 })
-        expect.equal(profile_state.holders_by_window_id(state), { [10] = { 1 } })
+        state = profile_state.with_arrangement(state, 3, ARRANGEMENT)
+        state = profile_state.with_arrangement(state, 4, {
+            monitor_configuration_key = "built-in + 1 external",
+            monitors = {},
+            focus = nil,
+            windows = {
+                {
+                    window_id = 77,
+                    bundle_id = "com.apple.Notes",
+                    app_name = "Notes",
+                    title = "Shopping",
+                    is_out_of_sight = true,
+                },
+            },
+        })
+        local recorded = profile_state.index_recorded_windows(state)
+        expect.equal(recorded[77], { ["com.apple.Notes"] = true })
+        expect.equal(recorded[78], nil)
     end,
 
     an_arrangement_is_kept_per_monitor_configuration = function()
@@ -94,15 +85,28 @@ return {
                 ["3"] = {
                     number = 3.0,
                     name = "Research",
-                    window_ids = { 41.0 },
-                    arrangements = {},
+                    arrangements = {
+                        ["built-in"] = {
+                            monitor_configuration_key = "built-in",
+                            monitors = {},
+                            windows = {
+                                {
+                                    window_id = 41.0,
+                                    bundle_id = "com.apple.Safari",
+                                    is_minimized = true,
+                                },
+                            },
+                        },
+                    },
                 },
             },
         }
         local state = profile_state.decode(raw)
         expect.equal(state.active_profile_number, 3)
         expect.equal(math.type(state.active_profile_number), "integer")
-        expect.equal(profile_state.profile_or_default(state, 3).window_ids, { 41 })
+        local record = profile_state.find_arrangement(state, 3, "built-in").windows[1]
+        expect.equal(math.type(record.window_id), "integer")
+        expect.equal(record.is_out_of_sight, true)
         expect.equal(state.monitor_matching, "by_identity")
     end,
 

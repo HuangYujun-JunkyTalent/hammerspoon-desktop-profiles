@@ -49,7 +49,7 @@ return {
             title = "Inbox",
             space_id = 614,
             frame = { x = 1440, y = 0, w = 936, h = 1053 },
-            is_minimized = false,
+            is_out_of_sight = false,
         }
         local arrangement = arrangement_capture.capture(CONFIGURATION, LAYOUT, { observation }, nil)
         expect.equal(arrangement.monitor_configuration_key, "built-in + 1 external")
@@ -63,7 +63,7 @@ return {
         expect.equal(arrangement.windows[1].unit_frame, { x = 0, y = 0, w = 0.5, h = 1 })
     end,
 
-    a_minimized_window_keeps_its_previous_location = function()
+    a_window_out_of_sight_keeps_its_previous_location = function()
         local previous = {
             monitor_configuration_key = "built-in + 1 external",
             monitors = {},
@@ -76,7 +76,7 @@ return {
                     slot_key = "built-in",
                     desktop_number = 3,
                     unit_frame = { x = 0, y = 0, w = 1, h = 1 },
-                    is_minimized = false,
+                    is_out_of_sight = false,
                 },
             },
         }
@@ -87,14 +87,14 @@ return {
             title = "Inbox",
             space_id = nil,
             frame = nil,
-            is_minimized = true,
+            is_out_of_sight = true,
         }
         local record =
             arrangement_capture.capture(CONFIGURATION, LAYOUT, { observation }, previous).windows[1]
         expect.equal(record.slot_key, "built-in")
         expect.equal(record.desktop_number, 3)
         expect.equal(record.unit_frame, { x = 0, y = 0, w = 1, h = 1 })
-        expect.equal(record.is_minimized, true)
+        expect.equal(record.is_out_of_sight, true)
     end,
 
     a_window_on_an_unknown_space_without_history_has_no_location = function()
@@ -105,7 +105,7 @@ return {
             title = "List",
             space_id = 9999,
             frame = { x = 0, y = 0, w = 10, h = 10 },
-            is_minimized = false,
+            is_out_of_sight = false,
         }
         local record =
             arrangement_capture.capture(CONFIGURATION, LAYOUT, { observation }, nil).windows[1]

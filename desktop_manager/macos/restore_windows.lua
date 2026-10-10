@@ -373,15 +373,6 @@ local function build_steps(plan, context, failures)
             continue
         )
     end)
-    table.insert(steps, function(continue)
-        for _, window_id in ipairs(plan.window_ids_to_minimize) do
-            local window = context.find_window(window_id)
-            if window then
-                window:minimize()
-            end
-        end
-        continue()
-    end)
     if plan.focus then
         table.insert(steps, function(continue)
             show_desktop(

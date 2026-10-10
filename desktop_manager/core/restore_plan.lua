@@ -7,7 +7,6 @@ local restore_plan = {}
 ---@field space_id integer|nil
 ---@field is_minimized boolean
 ---@field is_app_hidden boolean
----@field is_held_by_profile_left boolean whether the profile active before the switch holds it
 
 ---@class DesktopCountChange
 ---@field screen_uuid string
@@ -37,9 +36,6 @@ local restore_plan = {}
 ---@field unminimizations_in_place WindowPlacement[] minimized windows that macOS keeps on their
 ---desktop, which need an unminimize and a frame
 ---@field visits DesktopVisit[] the desktops to switch to, with the windows to bring there
----@field window_ids_to_minimize integer[]
----@field window_ids_left_alone integer[] the windows that the profile left also holds and that
----show on their saved desktop, which the restore does not touch
 ---@field focus ScreenDesktop|nil
 
 ---@param desktop_layout DesktopLayout
@@ -147,9 +143,10 @@ local function insert_once(bundle_ids, bundle_id)
     table.insert(bundle_ids, bundle_id)
 end
 
----Plans the steps that bring the matched windows back to their saved desktops and frames.
+---Plans the steps that bring the windows that the profile recorded in sight back to their saved
+---desktops and frames.
+---A window that the profile recorded out of sight is left to the concealment of the switch.
 ---The plan names desktops by their number on a screen, because adding desktops changes the ids.
----A window that the profile left also holds, and that shows on its saved desktop, is left out.
 ---@param arrangement Arrangement
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
@@ -165,8 +162,6 @@ function restore_plan.plan(arrangement, configuration, desktop_layout, matches, 
         placements_in_place = {},
         unminimizations_in_place = {},
         visits = {},
-        window_ids_to_minimize = {},
-        window_ids_left_alone = {},
         focus = nil,
     }
     local visit_placements = {}
@@ -184,16 +179,10 @@ function restore_plan.plan(arrangement, configuration, desktop_layout, matches, 
             and screen ~= nil
             and not changed_screens[screen.screen_uuid]
             and screen.space_ids[desktop_number] == state.space_id
-        if state and state.is_app_hidden then
+        if state and state.is_app_hidden and not record.is_out_of_sight then
             insert_once(plan.bundle_ids_to_unhide, state.bundle_id)
         end
-        if is_on_target_desktop and state.is_held_by_profile_left and not state.is_minimized then
-            table.insert(plan.window_ids_left_alone, match.window_id)
-        elseif record.is_minimized then
-            if state and not state.is_minimized then
-                table.insert(plan.window_ids_to_minimize, match.window_id)
-            end
-        elseif slot and desktop_number then
+        if not record.is_out_of_sight and slot and desktop_number then
             local placement = {
                 window_id = match.window_id,
                 screen_uuid = slot.screen_uuid,

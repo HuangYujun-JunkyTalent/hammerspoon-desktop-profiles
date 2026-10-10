@@ -7,6 +7,37 @@ local profile_state = require("desktop_manager.core.profile_state")
 
 local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
 local SETTLE_SECONDS = 30
+local MONITOR_CONFIGURATION_KEY = "built-in"
+
+---Saved frames are fractions of the screen rounded to four decimals, so a restored frame is near
+---the original frame and not equal to it.
+---@param actual Rect
+---@param expected Rect
+local function expect_frame_near(actual, expected)
+    for _, field in ipairs({ "x", "y", "w", "h" }) do
+        if math.abs(actual[field] - expected[field]) > 1 then
+            error(
+                string.format("expected %s near %g, got %g", field, expected[field], actual[field]),
+                2
+            )
+        end
+    end
+end
+
+---@param controller ProfileController
+---@param number integer
+---@param window_id integer
+---@return string|nil "in sight" or "out of sight" when the profile recorded the window
+local function recorded_sight(controller, number, window_id)
+    local arrangement =
+        profile_state.find_arrangement(controller.state, number, MONITOR_CONFIGURATION_KEY)
+    for _, record in ipairs(arrangement and arrangement.windows or {}) do
+        if record.window_id == window_id then
+            return record.is_out_of_sight and "out of sight" or "in sight"
+        end
+    end
+    return nil
+end
 
 ---@param method string|nil a value of concealment_method, or nil for the default
 ---@return table world
@@ -56,12 +87,14 @@ local function start_world(method)
 end
 
 return {
-    the_first_profile_adopts_the_open_windows = function()
+    the_first_profile_records_the_open_windows = function()
         local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 1)
-        expect.equal(profile_state.profile_or_default(controller.state, 1).window_ids, { 41, 42 })
+        expect.equal(recorded_sight(controller, 1, 41), "in sight")
+        expect.equal(recorded_sight(controller, 1, 42), "in sight")
+        expect.equal(world.window_operations, {})
         expect.equal(world.menubar_title, "◧ 1")
         expect.equal(world.notifications, {})
     end,
@@ -90,7 +123,7 @@ return {
         world.advance(SETTLE_SECONDS)
         local news = world.create_window("com.apple.Safari", "News")
         world.advance(SETTLE_SECONDS)
-        expect.equal(profile_state.holders_by_window_id(controller.state)[news.id], { 2 })
+        expect.equal(recorded_sight(controller, 2, news.id), "in sight")
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 1)
@@ -142,7 +175,7 @@ return {
         world.advance(SETTLE_SECONDS)
         local news = world.create_window("com.apple.Safari", "News")
         world.advance(SETTLE_SECONDS)
-        expect.equal(profile_state.holders_by_window_id(controller.state)[news.id], { 2 })
+        expect.equal(recorded_sight(controller, 2, news.id), "in sight")
         expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
         expect.equal(world.windows[41].is_minimized, false)
         world.hotkeys["1"]()
@@ -155,16 +188,16 @@ return {
         expect.equal(world.notifications, {})
     end,
 
-    a_window_brought_back_by_hand_joins_the_profile_and_stays_through_switches = function()
+    a_window_that_two_profiles_record_at_the_same_place_is_left_alone = function()
         local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         world.unminimize_window(41)
-        world.windows[41].frame = { x = 100, y = 100, w = 600, h = 500 }
         world.advance(SETTLE_SECONDS)
-        expect.equal(profile_state.holders_by_window_id(controller.state)[41], { 1, 2 })
+        expect.equal(recorded_sight(controller, 2, 41), "in sight")
+        expect.equal(recorded_sight(controller, 2, 42), "out of sight")
         world.window_operations = {}
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -173,10 +206,32 @@ return {
         expect.equal(world.window_operations, { "unminimize 42", "minimize 42" })
         expect.equal(world.windows[41].is_minimized, false)
         expect.equal(world.windows[41].space_id, 14)
-        expect.equal(world.windows[41].frame, { x = 100, y = 100, w = 600, h = 500 })
     end,
 
-    a_window_minimized_by_hand_leaves_a_profile_that_shares_it = function()
+    a_window_gets_the_frame_that_the_profile_entered_recorded = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.unminimize_window(41)
+        world.advance(SETTLE_SECONDS)
+        local moved_frame = { x = 100, y = 100, w = 600, h = 500 }
+        world.windows[41].frame = moved_frame
+        world.window_operations = {}
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect_frame_near(world.windows[41].frame, { x = 0, y = 25, w = 720, h = 875 })
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect_frame_near(world.windows[41].frame, moved_frame)
+        expect.equal(
+            world.window_operations,
+            { "setFrame 41", "unminimize 42", "minimize 42", "setFrame 41" }
+        )
+    end,
+
+    a_window_minimized_by_hand_stays_out_of_sight_in_that_profile = function()
         local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -187,15 +242,16 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.minimize_window(41)
-        world.minimize_window(42)
         world.advance(SETTLE_SECONDS)
-        local holders = profile_state.holders_by_window_id(controller.state)
-        expect.equal(holders[41], { 2 })
-        expect.equal(holders[42], { 1 })
+        expect.equal(recorded_sight(controller, 1, 41), "out of sight")
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.windows[41].is_minimized, false)
         expect.equal(world.windows[42].is_minimized, true)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[41].is_minimized, true)
+        expect.equal(world.windows[42].is_minimized, false)
     end,
 
     a_window_that_the_filter_drops_while_hidden_comes_back = function()
@@ -214,20 +270,20 @@ return {
         expect.equal(world.notifications, {})
     end,
 
-    an_unhide_by_the_user_leaves_the_windows_in_sight_and_adds_them_to_the_profile = function()
+    an_unhide_by_the_user_leaves_the_windows_in_sight_for_the_next_capture = function()
         local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         world.unhide_application("com.apple.Safari")
-        world.advance(SETTLE_SECONDS)
+        world.advance(61)
         expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
         expect.equal(world.windows[41].is_minimized, false)
-        expect.equal(profile_state.holders_by_window_id(controller.state)[41], { 1, 2 })
+        expect.equal(recorded_sight(controller, 2, 41), "in sight")
     end,
 
-    a_window_that_no_longer_exists_is_reported = function()
+    a_saved_window_that_was_closed_is_skipped_without_a_notification = function()
         local world = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -241,10 +297,8 @@ return {
         end
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.notifications, {
-            'Safari window "Inbox" of profile 1 was not found'
-                .. " (1 problems in the Hammerspoon console)",
-        })
+        expect.equal(world.notifications, {})
+        expect.equal(world.windows[42].is_minimized, false)
     end,
 
     an_application_that_stays_hidden_is_reported = function()
@@ -317,7 +371,7 @@ return {
             end
         end
         expect.equal(relaunched ~= nil, true)
-        expect.equal(profile_state.holders_by_window_id(controller.state)[relaunched.id], { 1 })
+        expect.equal(recorded_sight(controller, 1, relaunched.id), "in sight")
         expect.equal(relaunched.is_minimized, false)
     end,
 

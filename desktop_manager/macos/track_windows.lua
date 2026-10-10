@@ -50,6 +50,7 @@ function track_windows.observe(window)
     local application = window:application()
     local window_id = window:id()
     local is_minimized = window:isMinimized()
+    local is_app_hidden = application ~= nil and application:isHidden()
     return {
         window_id = window_id,
         bundle_id = track_windows.bundle_id_of(application),
@@ -57,7 +58,7 @@ function track_windows.observe(window)
         title = window:title() or "",
         space_id = not is_minimized and read_desktops.find_window_space_id(window_id) or nil,
         frame = not is_minimized and read_screens.to_rect(window:frame()) or nil,
-        is_minimized = is_minimized,
+        is_out_of_sight = is_minimized or is_app_hidden,
     }
 end
 
