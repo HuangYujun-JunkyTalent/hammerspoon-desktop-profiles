@@ -17,14 +17,16 @@ When a workspace profile is active, the tool remembers the desktop and window co
 
 Workspaces have numbers, and the user can rename them.
 
-A window can belong to several profiles.
-When the user switches from one profile to another, the tool minimizes the windows of the profile left that the profile entered does not hold.
-A setting makes the tool hide an application instead when all its windows belong to profiles other than the active one.
-A switch does nothing to a window that both profiles hold and that shows on the desktop where the profile entered saved it.
-The tool sets the frame of a window only when the frame differs from the saved one.
-A window that the user brings back by hand, from the Dock or by unhiding its application, joins the active profile and stays in its other profiles.
-A window that the user minimizes by hand leaves the active profile when another profile holds it too.
-A window opened while a profile is active joins that profile.
+A profile holds information on desktops and windows, and a window does not belong to profiles.
+For each monitor configuration, a profile records the number of desktops of each screen, the desktop in front, and every window that the tool sees while the profile is active.
+The profile records a window as in sight on a desktop with a frame, or as out of sight.
+A window is out of sight when it is minimized or its application is hidden.
+Activating a profile does the least work that brings back what the profile recorded.
+A window already in its recorded state gets no change, and the tool sets a frame only when it differs from the recorded one.
+A window that another profile recorded and the profile entered did not goes out of sight.
+A window that no profile recorded stays as it is, and the profile records it at its next capture.
+The tool minimizes a window to take it out of sight.
+A setting makes the tool hide an application instead when all its windows go out of sight.
 
 When a saved window belongs to an application that is not running, activating the profile launches the application.
 The tool then places each window of the application as it appears, matched by application and title.
