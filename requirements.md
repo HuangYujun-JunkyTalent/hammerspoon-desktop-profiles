@@ -18,7 +18,8 @@ When a workspace profile is active, the tool remembers the desktop and window co
 Workspaces have numbers, and the user can rename them.
 
 When the user switches from one profile to another, the tool minimizes the windows of the profile left.
-The tool hides an application instead when all its windows belong to the profile left.
+A setting makes the tool hide an application instead when all its windows belong to profiles other than the active one.
+A window of another profile that the user brings back by hand, from the Dock or by unhiding its application, stays in sight and keeps its profile.
 A window opened while a profile is active joins that profile.
 
 When a saved window belongs to an application that is not running, activating the profile launches the application.
