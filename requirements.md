@@ -22,7 +22,8 @@ For each monitor configuration, a profile records the number of desktops of each
 The profile records a window as in sight on a desktop with a frame, or as out of sight.
 A window is out of sight when it is minimized or its application is hidden.
 Activating a profile does the least work that brings back what the profile recorded.
-A window already in its recorded state gets no change, and the tool sets a frame only when it differs from the recorded one.
+A window already in its recorded state stays as it is.
+The tool sets the frame of a window when the frame differs from the recorded one.
 A window that another profile recorded and the profile entered did not goes out of sight.
 A window that no profile recorded stays as it is, and the profile records it at its next capture.
 The tool minimizes a window to take it out of sight.
