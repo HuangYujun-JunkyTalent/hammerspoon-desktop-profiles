@@ -11,10 +11,16 @@ local fake_hammerspoon = {}
 ---@field space_id integer
 ---@field frame Rect
 
+---@class FakeApplicationSpec
+---@field bundle_id string
+---@field name string
+---@field is_running boolean
+---@field launch_titles string[]|nil the titles of the windows that a launch opens
+
 ---@class FakeWorldSpec
 ---@field screens { id: integer, uuid: string, name: string, frame: Rect }[]
 ---@field displays { uuid: string, space_ids: integer[], active_space_id: integer }[]
----@field applications { bundle_id: string, name: string, is_running: boolean, launch_titles: string[]|nil }[]
+---@field applications FakeApplicationSpec[]
 ---@field windows FakeWindowSpec[]
 
 local USER_SPACE_TYPE = 0
@@ -41,17 +47,6 @@ function fake_hammerspoon.install(spec)
         saved_json = nil,
         next_window_id = 1000,
     }
-
-    local function find_display_of_space(space_id)
-        for _, display in ipairs(world.displays) do
-            for _, candidate in ipairs(display.space_ids) do
-                if candidate == space_id then
-                    return display
-                end
-            end
-        end
-        return nil
-    end
 
     local function find_screen_at(frame)
         local center_x = frame.x + frame.w / 2
@@ -85,7 +80,8 @@ function fake_hammerspoon.install(spec)
             return screen.id
         end
         function object:frame()
-            return { x = screen.frame.x, y = screen.frame.y, w = screen.frame.w, h = screen.frame.h }
+            local frame = screen.frame
+            return { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
         end
         function object:fromUnitRect(unit)
             return {
@@ -179,7 +175,8 @@ function fake_hammerspoon.install(spec)
             return object
         end
         function object:frame()
-            return { x = window.frame.x, y = window.frame.y, w = window.frame.w, h = window.frame.h }
+            local frame = window.frame
+            return { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
         end
         function object:setFrame(rect)
             local old_screen, new_screen = find_screen_at(window.frame), find_screen_at(rect)
