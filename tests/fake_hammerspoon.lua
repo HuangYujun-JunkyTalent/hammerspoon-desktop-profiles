@@ -1,7 +1,9 @@
 ---A fake of the parts of Hammerspoon that the tool calls, for tests of the controller flow.
----The fake models screens, desktops, windows and applications, and assumes that macOS
----unminimizes a window onto the active desktop of its screen.
+---The fake models screens, desktops, windows and applications.
 ---It checks the logic of the tool, and says nothing about what macOS 27 really does.
+---A minimized window keeps its desktop, as `hs.spaces.windowSpaces` showed on macOS 27.0.1.
+---An unminimize puts the window back on its own desktop, unless a test sets
+---`world.does_unminimize_onto_active_desktop`, which puts it on the desktop that shows.
 local fake_hammerspoon = {}
 
 ---@class FakeWindowSpec
@@ -178,7 +180,9 @@ function fake_hammerspoon.install(spec)
         end
         function object:unminimize()
             window.is_minimized = false
-            window.space_id = active_space_at(window.frame)
+            if world.does_unminimize_onto_active_desktop then
+                window.space_id = active_space_at(window.frame)
+            end
             return object
         end
         function object:frame()
@@ -401,7 +405,7 @@ function fake_hammerspoon.install(spec)
             end,
             windowSpaces = function(window_id)
                 local window = world.windows[window_id]
-                if not window or window.is_minimized then
+                if not window then
                     return {}
                 end
                 return { window.space_id }

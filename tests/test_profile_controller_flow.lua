@@ -100,6 +100,24 @@ return {
         expect.equal(world.windows[42].is_minimized, false)
         expect.equal(world.windows[42].space_id, 3)
         expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.key_strokes, {})
+        expect.equal(world.notifications, {})
+    end,
+
+    windows_unminimized_onto_the_shown_desktop_are_brought_back_on_visits = function()
+        local world = start_world()
+        world.does_unminimize_onto_active_desktop = true
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[41].is_minimized, false)
+        expect.equal(world.windows[41].space_id, 14)
+        expect.equal(world.windows[42].is_minimized, false)
+        expect.equal(world.windows[42].space_id, 3)
+        expect.equal(world.displays[1].active_space_id, 3)
         expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1" })
         expect.equal(world.notifications, {})
     end,

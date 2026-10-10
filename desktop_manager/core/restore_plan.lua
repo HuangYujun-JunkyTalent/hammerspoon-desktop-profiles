@@ -33,6 +33,8 @@ local restore_plan = {}
 ---@field bundle_ids_to_unhide string[]
 ---@field desktop_count_changes DesktopCountChange[]
 ---@field placements_in_place WindowPlacement[] windows on their desktop, which need only a frame
+---@field unminimizations_in_place WindowPlacement[] minimized windows that macOS keeps on their
+---desktop, which need an unminimize and a frame
 ---@field visits DesktopVisit[] the desktops to switch to, with the windows to bring there
 ---@field window_ids_to_minimize integer[]
 ---@field focus ScreenDesktop|nil
@@ -81,23 +83,32 @@ local function plan_desktop_counts(arrangement, configuration, desktop_layout)
     return changes, target_counts, changed_screens
 end
 
----@param visits DesktopVisit[]
----@param placement WindowPlacement
-local function add_to_visit(visits, placement)
-    for _, visit in ipairs(visits) do
-        if
-            visit.screen_uuid == placement.screen_uuid
-            and visit.desktop_number == placement.desktop_number
-        then
+---Groups the placements by the desktop they go to, in the order of their first placement.
+---@param placements WindowPlacement[]
+---@return DesktopVisit[]
+function restore_plan.group_into_visits(placements)
+    local visits = {}
+    for _, placement in ipairs(placements) do
+        local visit = nil
+        for _, candidate in ipairs(visits) do
+            if
+                candidate.screen_uuid == placement.screen_uuid
+                and candidate.desktop_number == placement.desktop_number
+            then
+                visit = candidate
+            end
+        end
+        if visit then
             table.insert(visit.placements, placement)
-            return
+        else
+            table.insert(visits, {
+                screen_uuid = placement.screen_uuid,
+                desktop_number = placement.desktop_number,
+                placements = { placement },
+            })
         end
     end
-    table.insert(visits, {
-        screen_uuid = placement.screen_uuid,
-        desktop_number = placement.desktop_number,
-        placements = { placement },
-    })
+    return visits
 end
 
 ---@param configuration MonitorConfiguration
@@ -148,10 +159,12 @@ function restore_plan.plan(arrangement, configuration, desktop_layout, matches, 
         bundle_ids_to_unhide = {},
         desktop_count_changes = desktop_count_changes,
         placements_in_place = {},
+        unminimizations_in_place = {},
         visits = {},
         window_ids_to_minimize = {},
         focus = nil,
     }
+    local visit_placements = {}
     for _, match in ipairs(matches) do
         local record, state = match.record, live_states[match.window_id]
         local slot = record.slot_key
@@ -172,18 +185,20 @@ function restore_plan.plan(arrangement, configuration, desktop_layout, matches, 
                 unit_frame = record.unit_frame,
             }
             local screen = find_screen(desktop_layout, slot.screen_uuid)
-            local is_in_place = state ~= nil
-                and not state.is_minimized
+            local is_on_target_desktop = state ~= nil
                 and not changed_screens[slot.screen_uuid]
                 and screen ~= nil
                 and screen.space_ids[placement.desktop_number] == state.space_id
-            if is_in_place then
+            if is_on_target_desktop and not state.is_minimized then
                 table.insert(plan.placements_in_place, placement)
+            elseif is_on_target_desktop then
+                table.insert(plan.unminimizations_in_place, placement)
             else
-                add_to_visit(plan.visits, placement)
+                table.insert(visit_placements, placement)
             end
         end
     end
+    plan.visits = restore_plan.group_into_visits(visit_placements)
     sort_visits(plan.visits, configuration)
     local focus_slot = arrangement.focus
         and monitor_configuration.find_slot(configuration, arrangement.focus.slot_key)

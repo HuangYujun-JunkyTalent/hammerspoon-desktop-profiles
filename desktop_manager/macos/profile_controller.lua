@@ -305,6 +305,9 @@ function ProfileController:restore_open_windows(number, arrangement, on_done)
         find_window = function(window_id)
             return self:find_window(window_id)
         end,
+        log_info = function(message)
+            self.log.i(message)
+        end,
     }
     restore_windows.apply(plan, context, function(failures)
         on_done(failures, match_result.unmatched_records)

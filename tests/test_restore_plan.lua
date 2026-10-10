@@ -102,6 +102,60 @@ return {
         expect.equal(plan.visits[1].placements[1].window_id, 41)
     end,
 
+    a_minimized_window_on_its_desktop_is_unminimized_in_place = function()
+        local record = record_on(41, 2)
+        local plan = restore_plan.plan(
+            arrangement_with(2, { record }),
+            CONFIGURATION,
+            layout_with({ 3, 14 }),
+            { { record = record, window_id = 41 } },
+            {
+                [41] = {
+                    bundle_id = "com.apple.Safari",
+                    space_id = 14,
+                    is_minimized = true,
+                    is_app_hidden = false,
+                },
+            }
+        )
+        expect.equal(#plan.unminimizations_in_place, 1)
+        expect.equal(plan.unminimizations_in_place[1].window_id, 41)
+        expect.equal(plan.placements_in_place, {})
+        expect.equal(plan.visits, {})
+    end,
+
+    a_minimized_window_on_another_desktop_is_brought_on_a_visit = function()
+        local record = record_on(41, 2)
+        local plan = restore_plan.plan(
+            arrangement_with(2, { record }),
+            CONFIGURATION,
+            layout_with({ 3, 14 }),
+            { { record = record, window_id = 41 } },
+            {
+                [41] = {
+                    bundle_id = "com.apple.Safari",
+                    space_id = 3,
+                    is_minimized = true,
+                    is_app_hidden = false,
+                },
+            }
+        )
+        expect.equal(plan.unminimizations_in_place, {})
+        expect.equal(plan.visits[1].placements[1].window_id, 41)
+    end,
+
+    placements_are_grouped_by_desktop = function()
+        local visits = restore_plan.group_into_visits({
+            { window_id = 41, screen_uuid = "A", desktop_number = 2 },
+            { window_id = 42, screen_uuid = "A", desktop_number = 1 },
+            { window_id = 43, screen_uuid = "A", desktop_number = 2 },
+        })
+        expect.equal(#visits, 2)
+        expect.equal(visits[1].desktop_number, 2)
+        expect.equal(#visits[1].placements, 2)
+        expect.equal(visits[2].placements[1].window_id, 42)
+    end,
+
     missing_desktops_are_added_and_extra_ones_removed = function()
         local plan_adding = restore_plan.plan(
             arrangement_with(4, {}),
