@@ -16,6 +16,10 @@ local fake_hammerspoon = {}
 ---@field name string
 ---@field is_running boolean
 ---@field launch_titles string[]|nil the titles of the windows that a launch opens
+---A test sets these fields on `world.applications[bundle_id]` after the install:
+---`is_dropped_by_filter_while_hidden` makes the window filter leave out the windows of the hidden
+---application, as Hammerspoon does with a window that reports another subrole while hidden.
+---`ignores_unhide` makes an unhide leave the application hidden.
 
 ---@class FakeWorldSpec
 ---@field screens { id: integer, uuid: string, name: string, frame: Rect }[]
@@ -115,6 +119,9 @@ function fake_hammerspoon.install(spec)
             return true
         end
         function object:unhide()
+            if application.ignores_unhide then
+                return false
+            end
             local was_hidden = application.is_hidden
             application.is_hidden = false
             if was_hidden then
@@ -231,6 +238,12 @@ function fake_hammerspoon.install(spec)
         return window
     end
 
+    ---Unhides an application as a click on its icon in the Dock does.
+    ---@param bundle_id string
+    function world.unhide_application(bundle_id)
+        application_object(bundle_id):unhide()
+    end
+
     local function new_timer(seconds, callback, is_repeating)
         local timer = { due = world.clock + seconds, interval = seconds, callback = callback }
         timer.is_repeating = is_repeating
@@ -322,6 +335,14 @@ function fake_hammerspoon.install(spec)
         end,
     }
 
+    local function list_window_objects()
+        local windows = {}
+        for _, window_id in ipairs(world.window_order) do
+            table.insert(windows, world.windows[window_id].object)
+        end
+        return windows
+    end
+
     local filter_object = {}
     function filter_object:setDefaultFilter()
         return filter_object
@@ -329,7 +350,11 @@ function fake_hammerspoon.install(spec)
     function filter_object:getWindows()
         local windows = {}
         for _, window_id in ipairs(world.window_order) do
-            table.insert(windows, world.windows[window_id].object)
+            local window = world.windows[window_id]
+            local application = world.applications[window.bundle_id]
+            if not (application.is_hidden and application.is_dropped_by_filter_while_hidden) then
+                table.insert(windows, window.object)
+            end
         end
         return windows
     end
@@ -346,6 +371,9 @@ function fake_hammerspoon.install(spec)
             return true
         end,
         focus = function() end,
+        inspect = function()
+            return "<inspected>"
+        end,
         timer = {
             secondsSinceEpoch = function()
                 return world.clock
@@ -393,6 +421,7 @@ function fake_hammerspoon.install(spec)
             end,
         },
         window = {
+            allWindows = list_window_objects,
             get = function(window_id)
                 local window = world.windows[window_id]
                 return window and window.object
@@ -486,7 +515,7 @@ function fake_hammerspoon.install(spec)
         logger = {
             new = function()
                 local function ignore() end
-                return { i = ignore, w = ignore, e = ignore, d = ignore }
+                return { i = ignore, f = ignore, w = ignore, e = ignore, d = ignore }
             end,
         },
         json = {

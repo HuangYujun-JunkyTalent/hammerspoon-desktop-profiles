@@ -187,7 +187,16 @@ local function build_steps(plan, context, failures)
                 application:unhide()
             end
         end
-        retained_timers.after(context.timing.window_settle_seconds, continue)
+        retained_timers.after(context.timing.window_settle_seconds, function()
+            for _, bundle_id in ipairs(plan.bundle_ids_to_unhide) do
+                for _, application in ipairs(hs.application.applicationsForBundleID(bundle_id)) do
+                    if application:isHidden() then
+                        table.insert(failures, application:name() .. " stayed hidden")
+                    end
+                end
+            end
+            continue()
+        end)
     end)
     for _, change in ipairs(plan.desktop_count_changes) do
         table.insert(steps, function(continue)

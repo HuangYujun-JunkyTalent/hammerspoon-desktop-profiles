@@ -65,6 +65,23 @@ local function concatenate(first, second)
     return joined
 end
 
+---@param map table<integer, any>
+---@return integer[] the keys of the map, in ascending order
+local function list_keys(map)
+    local keys = {}
+    for key in pairs(map) do
+        table.insert(keys, key)
+    end
+    table.sort(keys)
+    return keys
+end
+
+---@param value any
+---@return string
+local function inspect_on_one_line(value)
+    return hs.inspect(value, { newline = " ", indent = "" })
+end
+
 function ProfileController:write_state()
     if not state_file.write(self.settings.state_file_path, self.state) then
         self.log.e("the state could not be written to " .. self.settings.state_file_path)
@@ -119,6 +136,39 @@ function ProfileController:describe_ownership(windows)
     return owned
 end
 
+---The windows of the window filter, and the windows of `window_ids` that the filter does not list.
+---The filter drops a window whose subrole is not AXStandardWindow when the window hides or
+---minimizes, as the window of Calendar does while Calendar is hidden.
+---@param window_ids integer[]
+---@return table[] hs.window objects
+function ProfileController:list_known_windows(window_ids)
+    local windows = self.window_filter:getWindows()
+    local listed = track_windows.index_by_id(windows)
+    local missing = {}
+    for _, window_id in ipairs(window_ids) do
+        if not listed[window_id] then
+            missing[window_id] = true
+        end
+    end
+    if next(missing) == nil then
+        return windows
+    end
+    local known = { table.unpack(windows) }
+    for _, window in ipairs(hs.window.allWindows()) do
+        local window_id = window:id()
+        if window_id and missing[window_id] then
+            missing[window_id] = nil
+            table.insert(known, window)
+        end
+    end
+    return known
+end
+
+---@return integer[] the windows that some profile owns
+function ProfileController:list_owned_window_ids()
+    return list_keys(profile_state.owner_by_window_id(self.state))
+end
+
 ---@param window_id integer
 ---@return table|nil an hs.window
 function ProfileController:find_window(window_id)
@@ -149,7 +199,7 @@ function ProfileController:capture_active_arrangement()
     local profile = profile_state.profile_or_default(self.state, number)
     local owned_ids = to_set(profile.window_ids)
     local observations, observed_ids = {}, {}
-    for _, window in ipairs(self.window_filter:getWindows()) do
+    for _, window in ipairs(self:list_known_windows(profile.window_ids)) do
         local window_id = window:id()
         if window_id and owned_ids[window_id] then
             table.insert(observations, track_windows.observe(window))
@@ -216,8 +266,9 @@ end
 ---@param on_done fun(failures: string[], unmatched_records: WindowRecord[])
 function ProfileController:restore_open_windows(number, arrangement, on_done)
     local owners = profile_state.owner_by_window_id(self.state)
+    local profile = profile_state.profile_or_default(self.state, number)
     local live_windows, live_states = {}, {}
-    for _, window in ipairs(self.window_filter:getWindows()) do
+    for _, window in ipairs(self:list_known_windows(profile.window_ids)) do
         local window_id = window:id()
         if window_id and owners[window_id] == number then
             local application = window:application()
@@ -242,6 +293,13 @@ function ProfileController:restore_open_windows(number, arrangement, on_done)
         match_result.matches,
         live_states
     )
+    self.log.f(
+        "restoring profile %d: %d of %d saved windows found, plan %s",
+        number,
+        #match_result.matches,
+        #arrangement.windows,
+        inspect_on_one_line(plan)
+    )
     local context = {
         timing = self.settings.timing,
         find_window = function(window_id)
@@ -258,8 +316,12 @@ end
 ---@param arrangement Arrangement
 ---@param unmatched_records WindowRecord[]
 ---@param on_done fun(failures: string[])
+---A record whose application runs and whose window the profile still owns has a window that
+---Hammerspoon cannot find, which is a failure unless the window sits on a desktop.
+---A record whose window no profile owns any more belongs to a window that was closed.
 function ProfileController:restore_launched_windows(number, arrangement, unmatched_records, on_done)
-    local bundle_ids, records_to_launch, is_listed = {}, {}, {}
+    local owners = profile_state.owner_by_window_id(self.state)
+    local bundle_ids, records_to_launch, is_listed, failures = {}, {}, {}, {}
     for _, record in ipairs(unmatched_records) do
         if hs.application.get(record.bundle_id) == nil then
             table.insert(records_to_launch, record)
@@ -267,12 +329,33 @@ function ProfileController:restore_launched_windows(number, arrangement, unmatch
                 is_listed[record.bundle_id] = true
                 table.insert(bundle_ids, record.bundle_id)
             end
+        elseif record.window_id and owners[record.window_id] == number then
+            local space_id = read_desktops.find_window_space_id(record.window_id)
+            if space_id then
+                self.log.f(
+                    "%s window %q stays on desktop %d, where Hammerspoon has not seen it yet",
+                    record.app_name,
+                    record.title,
+                    space_id
+                )
+            else
+                table.insert(
+                    failures,
+                    string.format(
+                        "%s window %q of profile %d was not found",
+                        record.app_name,
+                        record.title,
+                        number
+                    )
+                )
+            end
         end
     end
     if #bundle_ids == 0 then
-        on_done({})
+        on_done(failures)
         return
     end
+    self.log.f("launching %s for profile %d", table.concat(bundle_ids, ", "), number)
     launch_applications.launch_and_wait(bundle_ids, self.settings.timing, function()
         local launched_arrangement = {
             monitor_configuration_key = arrangement.monitor_configuration_key,
@@ -280,8 +363,8 @@ function ProfileController:restore_launched_windows(number, arrangement, unmatch
             focus = arrangement.focus,
             windows = records_to_launch,
         }
-        self:restore_open_windows(number, launched_arrangement, function(failures)
-            on_done(failures)
+        self:restore_open_windows(number, launched_arrangement, function(launch_failures)
+            on_done(concatenate(failures, launch_failures))
         end)
     end)
 end
@@ -298,13 +381,19 @@ function ProfileController:activate_profile(number)
     self:capture_active_arrangement()
     self.is_busy = true
     retained_timers.stop(self.save_timer)
-    local windows = self.window_filter:getWindows()
+    local windows = self:list_known_windows(self:list_owned_window_ids())
     local unowned_ids = profile_switch.find_unowned_window_ids(self:describe_ownership(windows))
     self.state = profile_state.assign_windows(self.state, number, unowned_ids)
     local concealment = profile_switch.plan_concealment(
         self.settings.concealment_method,
         self:describe_ownership(windows),
         number
+    )
+    self.log.f(
+        "switching to profile %d: adopting %s, concealing %s",
+        number,
+        inspect_on_one_line(unowned_ids),
+        inspect_on_one_line(concealment)
     )
     local failures = conceal_windows.apply(concealment, track_windows.index_by_id(windows))
     self.state = profile_state.with_active_profile_number(self.state, number)
@@ -314,8 +403,10 @@ function ProfileController:activate_profile(number)
     local arrangement =
         profile_state.find_arrangement(self.state, number, self:read_monitor_configuration().key)
     local function finish(more_failures)
+        local all_failures = concatenate(failures, more_failures)
         self.is_busy = false
-        self:report_failures(concatenate(failures, more_failures))
+        self.log.f("profile %d is active, with %d problems", number, #all_failures)
+        self:report_failures(all_failures)
     end
     if not arrangement then
         finish({})
@@ -435,11 +526,12 @@ function ProfileController:handle_window_destroyed(window)
 end
 
 ---Unhiding an application shows all its windows.
----The windows of other profiles are therefore minimized again.
+---After an unhide that a restore makes, the windows of the other profiles are minimized again.
+---After an unhide that the user makes, the windows stay in sight and keep their profiles.
 ---@param application table an hs.application
 function ProfileController:handle_application_unhidden(application)
     local number = self.state.active_profile_number
-    if not number or not application then
+    if not self.is_busy or not number or not application then
         return
     end
     local owners = profile_state.owner_by_window_id(self.state)
@@ -478,7 +570,8 @@ end
 
 ---Forgets the owned windows that closed while Hammerspoon was not running.
 function ProfileController:forget_closed_windows()
-    local seen_ids = track_windows.index_by_id(self.window_filter:getWindows())
+    local known_windows = self:list_known_windows(self:list_owned_window_ids())
+    local seen_ids = track_windows.index_by_id(known_windows)
     local closed_ids = {}
     for window_id in pairs(profile_state.owner_by_window_id(self.state)) do
         if not seen_ids[window_id] and not read_desktops.find_window_space_id(window_id) then
@@ -537,15 +630,19 @@ function ProfileController:print_diagnostics()
     add("focused desktop: %s", tostring(layout.focused_space_id))
     add("active profile: %s", tostring(self.state.active_profile_number))
     local owners = profile_state.owner_by_window_id(self.state)
-    for _, window in ipairs(self.window_filter:getWindows()) do
+    local listed = track_windows.index_by_id(self.window_filter:getWindows())
+    for _, window in ipairs(self:list_known_windows(self:list_owned_window_ids())) do
         local observation = track_windows.observe(window)
+        local application = window:application()
         add(
-            "  window %s %s %q desktop=%s minimized=%s profile=%s",
+            "  window %s %s %q desktop=%s minimized=%s hidden=%s in-filter=%s profile=%s",
             tostring(observation.window_id),
             observation.bundle_id,
             observation.title,
             tostring(observation.space_id),
             tostring(observation.is_minimized),
+            tostring(application ~= nil and application:isHidden()),
+            tostring(listed[observation.window_id] ~= nil),
             tostring(owners[observation.window_id])
         )
     end

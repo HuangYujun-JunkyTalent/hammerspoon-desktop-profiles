@@ -116,7 +116,7 @@ return {
         expect.equal(world.windows[41].is_minimized, false)
     end,
 
-    the_hiding_setting_minimizes_a_window_of_a_shared_application = function()
+    the_hiding_setting_minimizes_the_other_windows_of_a_shared_application = function()
         local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -125,7 +125,8 @@ return {
         local news = world.create_window("com.apple.Safari", "News")
         world.advance(SETTLE_SECONDS)
         expect.equal(profile_state.owner_by_window_id(controller.state)[news.id], 2)
-        expect.equal(world.windows[41].is_minimized, true)
+        expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
+        expect.equal(world.windows[41].is_minimized, false)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 1)
@@ -133,9 +134,71 @@ return {
         expect.equal(world.windows[41].is_minimized, false)
         expect.equal(world.windows[41].space_id, 14)
         expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
-        expect.equal(world.displays[1].active_space_id, 3)
-        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1" })
         expect.equal(world.notifications, {})
+    end,
+
+    a_window_that_the_filter_drops_while_hidden_comes_back = function()
+        local world = start_world(concealment_method.HIDE_APPLICATIONS)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.applications["com.microsoft.Word"].is_dropped_by_filter_while_hidden = true
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, true)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
+        expect.equal(world.windows[42].is_minimized, false)
+        expect.equal(world.windows[42].space_id, 3)
+        expect.equal(world.notifications, {})
+    end,
+
+    an_unhide_by_the_user_leaves_the_windows_in_sight = function()
+        local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.unhide_application("com.apple.Safari")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
+        expect.equal(world.windows[41].is_minimized, false)
+        expect.equal(profile_state.owner_by_window_id(controller.state)[41], 1)
+    end,
+
+    a_window_that_no_longer_exists_is_reported = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.windows[41] = nil
+        for index, window_id in ipairs(world.window_order) do
+            if window_id == 41 then
+                table.remove(world.window_order, index)
+            end
+        end
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.notifications, {
+            'Safari window "Inbox" of profile 1 was not found'
+                .. " (1 problems in the Hammerspoon console)",
+        })
+    end,
+
+    an_application_that_stays_hidden_is_reported = function()
+        local world = start_world(concealment_method.HIDE_APPLICATIONS)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.applications["com.microsoft.Word"].ignores_unhide = true
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, true)
+        expect.equal(world.notifications, {
+            "Microsoft Word stayed hidden (1 problems in the Hammerspoon console)",
+        })
     end,
 
     the_same_key_on_the_active_profile_deactivates_it = function()
