@@ -5,7 +5,7 @@ local profile_switch = {}
 ---@class OwnedWindow
 ---@field window_id integer
 ---@field bundle_id string
----@field owner_number integer|nil
+---@field holder_numbers integer[] the profiles that hold the window, empty when none does
 ---@field is_minimized boolean
 
 ---@class ConcealmentPlan
@@ -30,8 +30,13 @@ end
 ---@param window OwnedWindow
 ---@param kept_profile_number integer
 ---@return boolean
-local function belongs_to_other_profile(window, kept_profile_number)
-    return window.owner_number ~= nil and window.owner_number ~= kept_profile_number
+local function belongs_to_other_profiles_alone(window, kept_profile_number)
+    for _, number in ipairs(window.holder_numbers) do
+        if number == kept_profile_number then
+            return false
+        end
+    end
+    return #window.holder_numbers > 0
 end
 
 ---@param live_windows OwnedWindow[]
@@ -40,7 +45,9 @@ end
 local function plan_minimizing(live_windows, kept_profile_number)
     local plan = { bundle_ids_to_hide = {}, window_ids_to_minimize = {} }
     for _, window in ipairs(live_windows) do
-        if belongs_to_other_profile(window, kept_profile_number) and not window.is_minimized then
+        if
+            belongs_to_other_profiles_alone(window, kept_profile_number) and not window.is_minimized
+        then
             table.insert(plan.window_ids_to_minimize, window.window_id)
         end
     end
@@ -56,7 +63,7 @@ local function plan_hiding(live_windows, kept_profile_number)
     for _, bundle_id in ipairs(bundle_ids) do
         local concealed = {}
         for _, window in ipairs(groups[bundle_id]) do
-            if belongs_to_other_profile(window, kept_profile_number) then
+            if belongs_to_other_profiles_alone(window, kept_profile_number) then
                 table.insert(concealed, window)
             end
         end
@@ -79,7 +86,7 @@ local PLANNERS = {
 }
 
 ---Plans how to take the windows of the other profiles out of sight when one profile becomes active.
----Unowned windows stay as they are.
+---Unowned windows stay as they are, and so do the windows that the kept profile also holds.
 ---@param method string a value of concealment_method
 ---@param live_windows OwnedWindow[]
 ---@param kept_profile_number integer
@@ -97,7 +104,7 @@ end
 function profile_switch.find_unowned_window_ids(live_windows)
     local window_ids = {}
     for _, window in ipairs(live_windows) do
-        if window.owner_number == nil then
+        if #window.holder_numbers == 0 then
             table.insert(window_ids, window.window_id)
         end
     end

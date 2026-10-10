@@ -90,7 +90,7 @@ return {
         world.advance(SETTLE_SECONDS)
         local news = world.create_window("com.apple.Safari", "News")
         world.advance(SETTLE_SECONDS)
-        expect.equal(profile_state.owner_by_window_id(controller.state)[news.id], 2)
+        expect.equal(profile_state.holders_by_window_id(controller.state)[news.id], { 2 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 1)
@@ -142,7 +142,7 @@ return {
         world.advance(SETTLE_SECONDS)
         local news = world.create_window("com.apple.Safari", "News")
         world.advance(SETTLE_SECONDS)
-        expect.equal(profile_state.owner_by_window_id(controller.state)[news.id], 2)
+        expect.equal(profile_state.holders_by_window_id(controller.state)[news.id], { 2 })
         expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
         expect.equal(world.windows[41].is_minimized, false)
         world.hotkeys["1"]()
@@ -153,6 +153,49 @@ return {
         expect.equal(world.windows[41].space_id, 14)
         expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
         expect.equal(world.notifications, {})
+    end,
+
+    a_window_brought_back_by_hand_joins_the_profile_and_stays_through_switches = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.unminimize_window(41)
+        world.windows[41].frame = { x = 100, y = 100, w = 600, h = 500 }
+        world.advance(SETTLE_SECONDS)
+        expect.equal(profile_state.holders_by_window_id(controller.state)[41], { 1, 2 })
+        world.window_operations = {}
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.window_operations, { "unminimize 42", "minimize 42" })
+        expect.equal(world.windows[41].is_minimized, false)
+        expect.equal(world.windows[41].space_id, 14)
+        expect.equal(world.windows[41].frame, { x = 100, y = 100, w = 600, h = 500 })
+    end,
+
+    a_window_minimized_by_hand_leaves_a_profile_that_shares_it = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.unminimize_window(41)
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.minimize_window(41)
+        world.minimize_window(42)
+        world.advance(SETTLE_SECONDS)
+        local holders = profile_state.holders_by_window_id(controller.state)
+        expect.equal(holders[41], { 2 })
+        expect.equal(holders[42], { 1 })
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[41].is_minimized, false)
+        expect.equal(world.windows[42].is_minimized, true)
     end,
 
     a_window_that_the_filter_drops_while_hidden_comes_back = function()
@@ -171,7 +214,7 @@ return {
         expect.equal(world.notifications, {})
     end,
 
-    an_unhide_by_the_user_leaves_the_windows_in_sight = function()
+    an_unhide_by_the_user_leaves_the_windows_in_sight_and_adds_them_to_the_profile = function()
         local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -181,7 +224,7 @@ return {
         world.advance(SETTLE_SECONDS)
         expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
         expect.equal(world.windows[41].is_minimized, false)
-        expect.equal(profile_state.owner_by_window_id(controller.state)[41], 1)
+        expect.equal(profile_state.holders_by_window_id(controller.state)[41], { 1, 2 })
     end,
 
     a_window_that_no_longer_exists_is_reported = function()
@@ -274,7 +317,7 @@ return {
             end
         end
         expect.equal(relaunched ~= nil, true)
-        expect.equal(profile_state.owner_by_window_id(controller.state)[relaunched.id], 1)
+        expect.equal(profile_state.holders_by_window_id(controller.state)[relaunched.id], { 1 })
         expect.equal(relaunched.is_minimized, false)
     end,
 

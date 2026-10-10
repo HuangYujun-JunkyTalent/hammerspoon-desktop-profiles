@@ -40,20 +40,35 @@ return {
         end, "needs a visible character")
     end,
 
-    assign_windows_takes_them_from_other_profiles = function()
+    a_window_can_belong_to_several_profiles = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
-        state = profile_state.assign_windows(state, 1, { 10, 11 })
-        state = profile_state.assign_windows(state, 2, { 11, 12 })
-        expect.equal(profile_state.profile_or_default(state, 1).window_ids, { 10 })
+        state = profile_state.add_windows(state, 1, { 10, 11 })
+        state = profile_state.add_windows(state, 2, { 11, 12, 12 })
+        expect.equal(profile_state.profile_or_default(state, 1).window_ids, { 10, 11 })
         expect.equal(profile_state.profile_or_default(state, 2).window_ids, { 11, 12 })
-        expect.equal(profile_state.owner_by_window_id(state), { [10] = 1, [11] = 2, [12] = 2 })
+        expect.equal(
+            profile_state.holders_by_window_id(state),
+            { [10] = { 1 }, [11] = { 1, 2 }, [12] = { 2 } }
+        )
+        expect.equal(profile_state.holds_window(state, 2, 11), true)
+        expect.equal(profile_state.holds_window(state, 2, 10), false)
+        expect.equal(profile_state.holds_window(state, 5, 10), false)
+    end,
+
+    remove_windows_takes_them_from_one_profile = function()
+        local state = profile_state.new_state(monitor_matching.BY_COUNT)
+        state = profile_state.add_windows(state, 1, { 10, 11 })
+        state = profile_state.add_windows(state, 2, { 11 })
+        state = profile_state.remove_windows(state, 1, { 11 })
+        expect.equal(profile_state.holders_by_window_id(state), { [10] = { 1 }, [11] = { 2 } })
     end,
 
     forget_windows_removes_them_everywhere = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
-        state = profile_state.assign_windows(state, 1, { 10, 11 })
+        state = profile_state.add_windows(state, 1, { 10, 11 })
+        state = profile_state.add_windows(state, 2, { 11 })
         state = profile_state.forget_windows(state, { 11 })
-        expect.equal(profile_state.profile_or_default(state, 1).window_ids, { 10 })
+        expect.equal(profile_state.holders_by_window_id(state), { [10] = { 1 } })
     end,
 
     an_arrangement_is_kept_per_monitor_configuration = function()

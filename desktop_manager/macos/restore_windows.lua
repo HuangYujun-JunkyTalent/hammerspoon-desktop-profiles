@@ -32,12 +32,29 @@ local function read_screen_desktops(screen_uuid)
     return nil
 end
 
+local FRAME_TOLERANCE_POINTS = 2
+
+---@param first Rect
+---@param second Rect
+---@return boolean
+local function are_frames_close(first, second)
+    return math.abs(first.x - second.x) <= FRAME_TOLERANCE_POINTS
+        and math.abs(first.y - second.y) <= FRAME_TOLERANCE_POINTS
+        and math.abs(first.w - second.w) <= FRAME_TOLERANCE_POINTS
+        and math.abs(first.h - second.h) <= FRAME_TOLERANCE_POINTS
+end
+
+---Sets the saved frame of the window, unless the window already has it.
 ---@param window table an hs.window
 ---@param placement WindowPlacement
 local function fit_frame(window, placement)
     local screen = read_screens.find_screen(placement.screen_uuid)
-    if screen and placement.unit_frame then
-        window:setFrame(screen:fromUnitRect(placement.unit_frame), 0)
+    if not screen or not placement.unit_frame then
+        return
+    end
+    local target = screen:fromUnitRect(placement.unit_frame)
+    if not are_frames_close(read_screens.to_rect(window:frame()), read_screens.to_rect(target)) then
+        window:setFrame(target, 0)
     end
 end
 

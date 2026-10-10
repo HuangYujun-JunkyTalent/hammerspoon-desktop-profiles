@@ -6,13 +6,13 @@ local WORD_OF_PROFILES_1_AND_3 = {
     {
         window_id = 1,
         bundle_id = "com.microsoft.Word",
-        owner_number = 1,
+        holder_numbers = { 1 },
         is_minimized = false,
     },
     {
         window_id = 2,
         bundle_id = "com.microsoft.Word",
-        owner_number = 3,
+        holder_numbers = { 3 },
         is_minimized = false,
     },
 }
@@ -21,19 +21,19 @@ local SAFARI_OF_PROFILES_1_AND_2 = {
     {
         window_id = 1,
         bundle_id = "com.apple.Safari",
-        owner_number = 1,
+        holder_numbers = { 1 },
         is_minimized = false,
     },
     {
         window_id = 2,
         bundle_id = "com.apple.Safari",
-        owner_number = 2,
+        holder_numbers = { 2 },
         is_minimized = false,
     },
     {
         window_id = 3,
         bundle_id = "com.apple.Safari",
-        owner_number = 1,
+        holder_numbers = { 1 },
         is_minimized = true,
     },
 }
@@ -42,7 +42,7 @@ local UNOWNED_NOTES = {
     {
         window_id = 1,
         bundle_id = "com.apple.Notes",
-        owner_number = nil,
+        holder_numbers = {},
         is_minimized = false,
     },
 }
@@ -87,6 +87,24 @@ return {
         expect.equal(plan, { bundle_ids_to_hide = {}, window_ids_to_minimize = { 1 } })
     end,
 
+    a_window_that_the_kept_profile_also_holds_stays = function()
+        local shared = {
+            {
+                window_id = 7,
+                bundle_id = "org.mozilla.firefox",
+                holder_numbers = { 1, 2 },
+                is_minimized = false,
+            },
+        }
+        for _, method in ipairs({
+            concealment_method.MINIMIZE_WINDOWS,
+            concealment_method.HIDE_APPLICATIONS,
+        }) do
+            local plan = profile_switch.plan_concealment(method, shared, 2)
+            expect.equal(plan, { bundle_ids_to_hide = {}, window_ids_to_minimize = {} })
+        end
+    end,
+
     unowned_windows_stay_visible = function()
         for _, method in ipairs({
             concealment_method.MINIMIZE_WINDOWS,
@@ -101,7 +119,7 @@ return {
                 {
                     window_id = 2,
                     bundle_id = "com.apple.Notes",
-                    owner_number = 2,
+                    holder_numbers = { 2 },
                     is_minimized = false,
                 },
             }),

@@ -42,6 +42,7 @@ function fake_hammerspoon.install(spec)
         applications = {},
         windows = {},
         window_order = {},
+        window_operations = {},
         held_modifiers = {},
         key_strokes = {},
         alerts = {},
@@ -154,6 +155,19 @@ function fake_hammerspoon.install(spec)
         return display and display.active_space_id
     end
 
+    local function emit_filter_event(event, window)
+        local callback = world.filter_callbacks[event]
+        if callback then
+            callback(window.object, world.applications[window.bundle_id].name, event)
+        end
+    end
+
+    ---@param operation string
+    ---@param window table
+    local function record_operation(operation, window)
+        table.insert(world.window_operations, string.format("%s %d", operation, window.id))
+    end
+
     local function add_window(window_spec)
         local window = {
             id = window_spec.id,
@@ -177,14 +191,18 @@ function fake_hammerspoon.install(spec)
             return window.is_minimized
         end
         function object:minimize()
+            record_operation("minimize", window)
             window.is_minimized = true
+            emit_filter_event("windowMinimized", window)
             return object
         end
         function object:unminimize()
+            record_operation("unminimize", window)
             window.is_minimized = false
             if world.does_unminimize_onto_active_desktop then
                 window.space_id = active_space_at(window.frame)
             end
+            emit_filter_event("windowUnminimized", window)
             return object
         end
         function object:frame()
@@ -192,6 +210,7 @@ function fake_hammerspoon.install(spec)
             return { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
         end
         function object:setFrame(rect)
+            record_operation("setFrame", window)
             local old_screen, new_screen = find_screen_at(window.frame), find_screen_at(rect)
             window.frame = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
             if old_screen ~= new_screen then
@@ -217,11 +236,16 @@ function fake_hammerspoon.install(spec)
         add_window(window_spec)
     end
 
-    local function emit_filter_event(event, window)
-        local callback = world.filter_callbacks[event]
-        if callback then
-            callback(window.object, world.applications[window.bundle_id].name, event)
-        end
+    ---Minimizes a window as a click on its yellow button does.
+    ---@param window_id integer
+    function world.minimize_window(window_id)
+        world.windows[window_id].object:minimize()
+    end
+
+    ---Unminimizes a window as a click on it in the Dock does.
+    ---@param window_id integer
+    function world.unminimize_window(window_id)
+        world.windows[window_id].object:unminimize()
     end
 
     function world.create_window(bundle_id, title)

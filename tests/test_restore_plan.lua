@@ -72,6 +72,7 @@ return {
                     space_id = 14,
                     is_minimized = false,
                     is_app_hidden = false,
+                    is_held_by_profile_left = false,
                 },
             }
         )
@@ -94,6 +95,7 @@ return {
                     space_id = 3,
                     is_minimized = false,
                     is_app_hidden = true,
+                    is_held_by_profile_left = false,
                 },
             }
         )
@@ -115,6 +117,7 @@ return {
                     space_id = 14,
                     is_minimized = true,
                     is_app_hidden = false,
+                    is_held_by_profile_left = false,
                 },
             }
         )
@@ -137,6 +140,7 @@ return {
                     space_id = 3,
                     is_minimized = true,
                     is_app_hidden = false,
+                    is_held_by_profile_left = false,
                 },
             }
         )
@@ -154,6 +158,50 @@ return {
         expect.equal(visits[1].desktop_number, 2)
         expect.equal(#visits[1].placements, 2)
         expect.equal(visits[2].placements[1].window_id, 42)
+    end,
+
+    a_shared_window_on_its_desktop_is_left_alone = function()
+        local record = record_on(41, 2)
+        local plan = restore_plan.plan(
+            arrangement_with(2, { record }),
+            CONFIGURATION,
+            layout_with({ 3, 14 }),
+            { { record = record, window_id = 41 } },
+            {
+                [41] = {
+                    bundle_id = "com.apple.Safari",
+                    space_id = 14,
+                    is_minimized = false,
+                    is_app_hidden = false,
+                    is_held_by_profile_left = true,
+                },
+            }
+        )
+        expect.equal(plan.window_ids_left_alone, { 41 })
+        expect.equal(plan.placements_in_place, {})
+        expect.equal(plan.unminimizations_in_place, {})
+        expect.equal(plan.visits, {})
+    end,
+
+    a_shared_window_elsewhere_is_still_brought_back = function()
+        local record = record_on(41, 2)
+        local plan = restore_plan.plan(
+            arrangement_with(2, { record }),
+            CONFIGURATION,
+            layout_with({ 3, 14 }),
+            { { record = record, window_id = 41 } },
+            {
+                [41] = {
+                    bundle_id = "com.apple.Safari",
+                    space_id = 3,
+                    is_minimized = false,
+                    is_app_hidden = false,
+                    is_held_by_profile_left = true,
+                },
+            }
+        )
+        expect.equal(plan.window_ids_left_alone, {})
+        expect.equal(plan.visits[1].placements[1].window_id, 41)
     end,
 
     missing_desktops_are_added_and_extra_ones_removed = function()
@@ -197,6 +245,7 @@ return {
                     space_id = 3,
                     is_minimized = false,
                     is_app_hidden = false,
+                    is_held_by_profile_left = false,
                 },
             }
         )
@@ -217,12 +266,14 @@ return {
                     space_id = nil,
                     is_minimized = true,
                     is_app_hidden = false,
+                    is_held_by_profile_left = false,
                 },
                 [42] = {
                     bundle_id = "com.apple.Safari",
                     space_id = nil,
                     is_minimized = true,
                     is_app_hidden = false,
+                    is_held_by_profile_left = false,
                 },
             }
         )

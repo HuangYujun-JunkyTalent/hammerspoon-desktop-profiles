@@ -6,7 +6,8 @@ local profile_state = {}
 ---@class Profile
 ---@field number integer
 ---@field name string
----@field window_ids integer[] the open windows that belong to the profile
+---@field window_ids integer[] the open windows that belong to the profile, which may belong to
+---other profiles as well
 ---@field arrangements table<string, Arrangement> keyed by monitor configuration key
 
 ---The state that the tool keeps between runs of Hammerspoon.
@@ -161,31 +162,67 @@ function profile_state.forget_windows(state, window_ids)
     return updated
 end
 
----Gives the windows to one profile and takes them from every other profile.
+---Adds the windows to one profile, and leaves them in the other profiles that hold them.
 ---@param state State
 ---@param number integer
 ---@param window_ids integer[]
 ---@return State
-function profile_state.assign_windows(state, number, window_ids)
+function profile_state.add_windows(state, number, window_ids)
     check_profile_number(number)
-    local updated = profile_state.forget_windows(state, window_ids)
-    local profile = profile_state.profile_or_default(updated, number)
+    local profile = profile_state.profile_or_default(state, number)
+    local held = to_set(profile.window_ids)
     for _, window_id in ipairs(window_ids) do
-        table.insert(profile.window_ids, window_id)
+        if not held[window_id] then
+            held[window_id] = true
+            table.insert(profile.window_ids, window_id)
+        end
     end
-    return profile_state.with_profile(updated, profile)
+    return profile_state.with_profile(state, profile)
+end
+
+---Removes the windows from one profile, and leaves them in the other profiles that hold them.
+---@param state State
+---@param number integer
+---@param window_ids integer[]
+---@return State
+function profile_state.remove_windows(state, number, window_ids)
+    check_profile_number(number)
+    local profile = profile_state.profile_or_default(state, number)
+    profile.window_ids = without(profile.window_ids, to_set(window_ids))
+    return profile_state.with_profile(state, profile)
 end
 
 ---@param state State
----@return table<integer, integer> the profile number of each owned window id
-function profile_state.owner_by_window_id(state)
-    local owners = {}
+---@return table<integer, integer[]> the numbers of the profiles that hold each window, ascending
+function profile_state.holders_by_window_id(state)
+    local holders = {}
     for _, profile in pairs(state.profiles) do
         for _, window_id in ipairs(profile.window_ids) do
-            owners[window_id] = profile.number
+            holders[window_id] = holders[window_id] or {}
+            table.insert(holders[window_id], profile.number)
         end
     end
-    return owners
+    for _, numbers in pairs(holders) do
+        table.sort(numbers)
+    end
+    return holders
+end
+
+---@param state State
+---@param number integer
+---@param window_id integer
+---@return boolean
+function profile_state.holds_window(state, number, window_id)
+    local profile = state.profiles[key_of(number)]
+    if not profile then
+        return false
+    end
+    for _, held_id in ipairs(profile.window_ids) do
+        if held_id == window_id then
+            return true
+        end
+    end
+    return false
 end
 
 ---@param state State
