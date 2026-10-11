@@ -597,8 +597,12 @@ function fake_hammerspoon.install(spec)
         canvas = {
             windowLevels = { overlay = 102 },
             new = function(frame)
-                local canvas = { frame = frame, elements = {}, is_visible = false }
+                local canvas = { current_frame = frame, elements = {}, is_visible = false }
                 function canvas:level()
+                    return canvas
+                end
+                function canvas:frame(new_frame)
+                    canvas.current_frame = new_frame
                     return canvas
                 end
                 function canvas:replaceElements(elements)

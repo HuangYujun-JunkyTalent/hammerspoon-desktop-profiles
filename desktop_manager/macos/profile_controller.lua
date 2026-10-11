@@ -4,6 +4,7 @@ local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local concealment_method = require("desktop_manager.core.concealment_method")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
+local list_layout = require("desktop_manager.core.list_layout")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local missing_windows = require("desktop_manager.core.missing_windows")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
@@ -50,7 +51,6 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---of sight
 ---@field switch_session SwitchSession|nil the list of applications while it shows
 ---@field are_snapshots_stopped boolean whether a slow snapshot stopped the snapshots until a reload
----@field switch_layout SwitchLayout the sizes of the list, from the settings
 
 ---The list of numbered applications that a press of their modifiers with a number opens.
 ---@class SwitchSession
@@ -59,6 +59,7 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---@field window_by_id table<integer, table> the hs.window of each window id in the list
 ---@field selection SwitchSelection|nil
 ---@field images SwitchImages the icons and the previews that the list shows
+---@field displays SwitchDisplay[] the displays from left to right, for the columns per display
 ---@field overlay table|nil the hs.canvas of the list
 ---@field event_tap table|nil the hs.eventtap that watches the modifiers and Escape
 local ProfileController = {}
@@ -766,14 +767,42 @@ function ProfileController:list_recorded_window_ids_of_application(bundle_id)
 end
 
 ---@param session SwitchSession
----@return SwitchLine[]
-local function describe_switch_lines(session)
-    return switch_list.describe_lines(
-        session.applications,
-        session.selection,
-        switch_overlay.MAX_TITLE_LENGTH
-    )
+---@return SwitchView
+local function describe_switch_rows(session)
+    return {
+        lines = switch_list.describe_lines(
+            session.applications,
+            session.selection,
+            switch_overlay.MAX_TITLE_LENGTH
+        ),
+    }
 end
+
+---@param session SwitchSession
+---@return SwitchView
+local function describe_switch_columns(session)
+    return {
+        groups = switch_list.describe_application_columns(session.applications, session.selection),
+    }
+end
+
+---@param session SwitchSession
+---@return SwitchView
+local function describe_switch_columns_per_display(session)
+    return {
+        groups = switch_list.describe_display_columns(
+            session.applications,
+            session.selection,
+            session.displays
+        ),
+    }
+end
+
+local SWITCH_VIEW_BUILDERS = {
+    [list_layout.ROWS] = describe_switch_rows,
+    [list_layout.COLUMNS] = describe_switch_columns,
+    [list_layout.COLUMNS_PER_DISPLAY] = describe_switch_columns_per_display,
+}
 
 ---Opens the list of numbered applications with the window of the number selected, or moves the
 ---selection while the list shows.
@@ -788,9 +817,8 @@ function ProfileController:press_app_number(app_number, hotkey)
         if session.overlay then
             switch_overlay.update(
                 session.overlay,
-                describe_switch_lines(session),
-                session.images,
-                self.switch_layout
+                self:describe_switch_view(session),
+                session.images
             )
         end
         return
@@ -807,15 +835,41 @@ function ProfileController:press_app_number(app_number, hotkey)
     self:open_switch_list(entries, app_number)
 end
 
+---@param session SwitchSession
+---@return SwitchView
+function ProfileController:describe_switch_view(session)
+    return SWITCH_VIEW_BUILDERS[self.settings.list_layout](session)
+end
+
+---@return SwitchDisplay[] the displays in the order in which they stand from left to right
+function ProfileController:list_displays_from_left()
+    local screens = read_screens.describe_screens(self.settings.builtin_screen_name_patterns)
+    table.sort(screens, function(first, second)
+        return first.frame.x < second.frame.x
+    end)
+    local displays = {}
+    for _, screen in ipairs(screens) do
+        table.insert(displays, { screen_uuid = screen.uuid, name = screen.name })
+    end
+    return displays
+end
+
 ---Shows the list while the user holds the modifiers, and goes to the selection when they are
 ---released, or at once when they were released before the event tap started.
 ---@param entries AppNumber[]
 ---@param app_number integer
 function ProfileController:open_switch_list(entries, app_number)
     local filter_windows = self.window_filter:getWindows()
+    local screen_uuid_by_space = {}
+    for _, screen in ipairs(read_desktops.read_desktop_layout().screens) do
+        for _, space_id in ipairs(screen.space_ids) do
+            screen_uuid_by_space[space_id] = screen.screen_uuid
+        end
+    end
     local applications, window_by_id = {}, {}
     for _, entry in ipairs(entries) do
-        local application, windows = app_switcher.describe_application(entry, filter_windows)
+        local application, windows =
+            app_switcher.describe_application(entry, filter_windows, screen_uuid_by_space)
         table.insert(applications, application)
         for window_id, window in pairs(windows) do
             window_by_id[window_id] = window
@@ -831,14 +885,17 @@ function ProfileController:open_switch_list(entries, app_number)
         window_by_id = window_by_id,
         selection = switch_list.press(applications, nil, app_number),
         images = { app_icons = app_icons, previews = {} },
+        displays = self:list_displays_from_left(),
     }
     self.switch_session = session
     if not keyboard_modifiers.are_held(self.settings.app_hotkey_modifiers) then
         self:go_to_switch_selection()
         return
     end
-    session.overlay =
-        switch_overlay.show(describe_switch_lines(session), session.images, self.switch_layout)
+    session.overlay = switch_overlay.show(self:describe_switch_view(session), session.images, {
+        preview_size = self.settings.preview_size,
+        font_size = self.settings.list_font_size,
+    })
     local event_types = hs.eventtap.event.types
     session.event_tap = hs.eventtap
         .new({ event_types.flagsChanged, event_types.keyDown }, function(event)
@@ -876,7 +933,7 @@ function ProfileController:load_switch_previews(session)
         local image, seconds = window_previews.take_blurred_snapshot(
             window_id,
             self.settings.preview_blur,
-            self.settings.preview_size
+            switch_overlay.read_preview_size(session.overlay)
         )
         if seconds > self.settings.timing.snapshot_time_limit_seconds then
             self.are_snapshots_stopped = true
@@ -892,9 +949,8 @@ function ProfileController:load_switch_previews(session)
             session.images.previews[window_id] = image
             switch_overlay.update(
                 session.overlay,
-                describe_switch_lines(session),
-                session.images,
-                self.switch_layout
+                self:describe_switch_view(session),
+                session.images
             )
         end
         retained_timers.defer(take_next_snapshot)
@@ -1233,14 +1289,34 @@ function profile_controller.start(settings)
         or type(preview_size.h) ~= "number"
         or preview_size.w <= 0
         or preview_size.h <= 0
+        or preview_size.w > 1
+        or preview_size.h > 1
     then
-        error("the setting preview_size must be a table of a positive w and a positive h", 2)
+        error(
+            "the setting preview_size must give w and h as fractions of the screen,"
+                .. " above 0 and at most 1",
+            2
+        )
     end
-    if type(settings.list_font_size) ~= "number" or settings.list_font_size <= 0 then
+    if
+        type(settings.list_font_size) ~= "number"
+        or settings.list_font_size <= 0
+        or settings.list_font_size > 0.1
+    then
         error(
             string.format(
-                "the setting list_font_size is %s, and it must be a positive number",
+                "the setting list_font_size is %s, and it must be a fraction of the height of the"
+                    .. " screen, above 0 and at most 0.1",
                 tostring(settings.list_font_size)
+            ),
+            2
+        )
+    end
+    if not list_layout.is_valid(settings.list_layout) then
+        error(
+            string.format(
+                "the setting list_layout is %q, which names no layout",
+                tostring(settings.list_layout)
             ),
             2
         )
@@ -1290,10 +1366,6 @@ function profile_controller.start(settings)
         are_saves_suspended = false,
         window_ids_out_of_sight = {},
         are_snapshots_stopped = false,
-        switch_layout = switch_overlay.create_layout(
-            settings.preview_size,
-            settings.list_font_size
-        ),
     }, ProfileController)
     local state, warning =
         state_file.read(settings.state_file_path, settings.initial_monitor_matching)

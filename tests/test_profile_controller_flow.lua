@@ -1,5 +1,6 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
 local default_settings = require("desktop_manager.default_settings")
+local list_layout = require("desktop_manager.core.list_layout")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
 local expect = require("tests.expect")
@@ -546,7 +547,7 @@ return {
     end,
 
     a_held_press_shows_the_list_and_the_release_goes_to_the_selection = function()
-        local world = start_world()
+        local world = start_world({ list_layout = list_layout.ROWS })
         local news = world.create_window("com.apple.Safari", "News")
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -577,7 +578,7 @@ return {
     end,
 
     a_press_of_another_number_selects_its_application_and_escape_closes_the_list = function()
-        local world = start_world()
+        local world = start_world({ list_layout = list_layout.ROWS })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.held_modifiers = { ctrl = true, alt = true }
@@ -598,6 +599,8 @@ return {
         local world = start_world({
             preview_method = preview_method.BLURRED_SNAPSHOTS,
             preview_blur = 2,
+            list_layout = list_layout.ROWS,
+            preview_size = { w = 0.04, h = 0.04 },
         })
         local news = world.create_window("com.apple.Safari", "News")
         world.hotkeys["1"]()
@@ -614,35 +617,37 @@ return {
             "icon com.microsoft.Word",
             "icon com.microsoft.Word",
         })
-        expect.equal(world.rendered_sizes[41], { w = 56, h = 28 })
+        expect.equal(world.rendered_sizes[41], { w = 58, h = 29 })
     end,
 
     the_blur_setting_sets_the_size_of_the_rendering = function()
         local world = start_world({
             preview_method = preview_method.BLURRED_SNAPSHOTS,
             preview_blur = 4,
+            preview_size = { w = 0.04, h = 0.04 },
         })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["1"]()
         world.advance(1)
-        expect.equal(world.rendered_sizes[41], { w = 28, h = 14 })
+        expect.equal(world.rendered_sizes[41], { w = 29, h = 14 })
     end,
 
     the_settings_of_size_set_the_previews_and_the_fonts_of_the_list = function()
         local world = start_world({
             preview_method = preview_method.BLURRED_SNAPSHOTS,
             preview_blur = 1,
-            preview_size = { w = 80, h = 50 },
-            list_font_size = 18,
+            preview_size = { w = 0.05, h = 0.05 },
+            list_font_size = 0.02,
+            list_layout = list_layout.ROWS,
         })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["1"]()
         world.advance(1)
-        expect.equal(world.rendered_sizes[41], { w = 160, h = 80 })
+        expect.equal(world.rendered_sizes[41], { w = 144, h = 72 })
         local preview_frames, text_sizes = {}, {}
         for _, element in ipairs(world.overlay.elements) do
             if element.type == "image" and element.image.source:match("^blurred") then
@@ -651,8 +656,57 @@ return {
                 table.insert(text_sizes, element.textSize)
             end
         end
-        expect.equal(preview_frames[1], { w = 80, h = 50 })
-        expect.equal(text_sizes, { 20, 18, 20, 18 })
+        expect.equal(preview_frames[1], { w = 72, h = 43.75 })
+        expect.equal(text_sizes, { 19.5, 17.5, 19.5, 17.5 })
+    end,
+
+    the_columns_show_each_application_with_its_windows_under_it = function()
+        local world = start_world()
+        local news = world.create_window("com.apple.Safari", "News")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.app_hotkeys["1"]()
+        expect.equal(world.read_overlay(), {
+            " 1  Safari",
+            " Inbox",
+            ">News",
+            " 2  Microsoft Word",
+            " Draft.docx",
+        })
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, news.id)
+    end,
+
+    the_columns_per_display_name_each_display_above_its_columns = function()
+        local world = start_world({ list_layout = list_layout.COLUMNS_PER_DISPLAY })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        expect.equal(world.read_overlay(), {
+            " Built-in Retina Display",
+            " 1  Microsoft Word",
+            ">Draft.docx",
+            " 2  Safari",
+            " Inbox",
+        })
+    end,
+
+    a_list_too_tall_for_the_screen_shrinks_to_fit = function()
+        local world = start_world({ preview_size = { w = 0.1, h = 0.3 } })
+        for index = 1, 6 do
+            world.create_window("com.apple.Safari", "Tab " .. index)
+        end
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        local frame = world.overlay.current_frame
+        expect.equal(frame.h <= 0.9 * 875 + 0.5, true)
+        expect.equal(frame.y >= 25, true)
     end,
 
     a_slow_snapshot_stops_the_snapshots_until_a_reload = function()

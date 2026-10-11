@@ -1,4 +1,5 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
+local list_layout = require("desktop_manager.core.list_layout")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
@@ -34,8 +35,11 @@ local default_settings = {}
 ---@field missing_window_policy string a value of missing_window_policy
 ---@field preview_method string a value of preview_method
 ---@field preview_blur number 1 or more: a preview keeps 1 / preview_blur of the detail of its size
----@field preview_size table the w and h of a preview in the list, in points
----@field list_font_size number the size of the titles in the list, in points
+---@field preview_size table the w and h of a preview, as fractions of the width and height of the
+---screen in front
+---@field list_font_size number the size of the titles, as a fraction of the height of the screen
+---in front
+---@field list_layout string a value of list_layout
 ---@field builtin_screen_name_patterns string[]
 ---@field timing Timing
 
@@ -54,8 +58,9 @@ function default_settings.create(state_file_path)
         missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW,
         preview_method = preview_method.BLURRED_SNAPSHOTS,
         preview_blur = 1,
-        preview_size = { w = 56, h = 35 },
-        list_font_size = 14,
+        preview_size = { w = 0.1, h = 0.1 },
+        list_font_size = 0.016,
+        list_layout = list_layout.COLUMNS,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         timing = {
             poll_interval_seconds = 0.05,

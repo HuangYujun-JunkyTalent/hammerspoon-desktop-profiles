@@ -42,9 +42,10 @@ end
 ---otherwise the window of the application that had the focus last.
 ---@param entry AppNumber
 ---@param filter_windows table[] the hs.window objects of the window filter
+---@param screen_uuid_by_space table<integer, string> the display of each desktop
 ---@return SwitchApplication
 ---@return table<integer, table> the hs.window of each window id
-function app_switcher.describe_application(entry, filter_windows)
+function app_switcher.describe_application(entry, filter_windows, screen_uuid_by_space)
     local windows = app_switcher.list_windows(entry.bundle_id, filter_windows)
     local window_by_id, window_ids = {}, {}
     for _, window in ipairs(windows) do
@@ -65,10 +66,12 @@ function app_switcher.describe_application(entry, filter_windows)
     end
     local switch_windows, first_window_index = {}, 0
     for index, window_id in ipairs(window_ids) do
-        table.insert(
-            switch_windows,
-            { window_id = window_id, title = window_by_id[window_id]:title() or "" }
-        )
+        local space_id = read_desktops.find_window_space_id(window_id)
+        table.insert(switch_windows, {
+            window_id = window_id,
+            title = window_by_id[window_id]:title() or "",
+            screen_uuid = space_id and screen_uuid_by_space[space_id],
+        })
         if window_id == first_window_id then
             first_window_index = index
         end

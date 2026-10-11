@@ -1,198 +1,470 @@
----Draws the list of numbered applications and their windows in the middle of the screen in front.
+local switch_list = require("desktop_manager.core.switch_list")
+
+---Draws the list of numbered applications and their windows in the middle of the screen in front,
+---as rows of lines or as columns of applications.
 local switch_overlay = {}
 
 switch_overlay.MAX_TITLE_LENGTH = 60
 
----The images that the lines show: the icon of each application, and the preview of each window that
+---The images that the list shows: the icon of each application, and the preview of each window that
 ---has one.
 ---@class SwitchImages
 ---@field app_icons table<string, table> the hs.image of each bundle id
 ---@field previews table<integer, table> the hs.image of each window id
 
----The sizes of the list in points, which follow from the size of a preview and the size of the
----font.
----@class SwitchLayout
----@field preview_size table the w and h of a preview
----@field font_size number the size of the titles of windows
+---What the list shows: lines for the rows, or groups of columns.
+---@class SwitchView
+---@field lines SwitchLine[]|nil
+---@field groups SwitchColumnGroup[]|nil
+
+---The sizes of the list as fractions of the screen in front.
+---@class SwitchRelativeSizes
+---@field preview_size table the w and h of a preview, as fractions of the width and height
+---@field font_size number the size of the titles, as a fraction of the height
+
+---The sizes of the list in points, which the fit to the screen chose.
+---@class SwitchSizes
+---@field preview_size table the w and h of a preview in points
+---@field font_size number the size of the titles in points
 ---@field application_font_size number
 ---@field icon_size number
 ---@field text_height number
----@field application_line_height number
----@field window_line_height number
----@field preview_inset number
----@field window_text_inset number
----@field application_text_inset number
----@field width number
+
+---A list on the screen: its canvas, and its sizes in points.
+---@class SwitchOverlay
+---@field canvas table an hs.canvas
+---@field sizes SwitchSizes
 
 local PADDING = 16
 local GAP = 14
+local COLUMN_GAP = 10
+local GROUP_GAP = 28
+local CELL_PADDING = 8
 local LINE_HEIGHT_PER_POINT = 1.4
 local CHARACTER_WIDTH_PER_POINT = 0.55
+local HEADER_CHARACTERS = 12
+local MAX_WIDTH_SHARE = 0.95
+local MAX_HEIGHT_SHARE = 0.9
+local FIT_ROUNDS = 10
+local NO_WINDOW_NOTE = "no window, a new one opens"
 local BACKGROUND_COLOR = { white = 0.12, alpha = 0.92 }
 local SELECTION_COLOR = { red = 0.2, green = 0.45, blue = 0.95, alpha = 0.95 }
 local TEXT_COLOR = { white = 1, alpha = 1 }
 local DIMMED_TEXT_COLOR = { white = 0.75, alpha = 1 }
 
 ---@param preview_size table the w and h of a preview in points
----@param font_size number the size of the titles in points, the names of applications 2 larger
----@return SwitchLayout
-function switch_overlay.create_layout(preview_size, font_size)
+---@param font_size number the size of the titles in points
+---@return SwitchSizes
+local function create_sizes(preview_size, font_size)
     local application_font_size = font_size + 2
-    local icon_size = math.floor(application_font_size * LINE_HEIGHT_PER_POINT + 0.5)
-    local text_height = math.ceil(application_font_size * LINE_HEIGHT_PER_POINT)
-    local preview_inset = PADDING + GAP
-    local window_text_inset = preview_inset + preview_size.w + GAP
-    local title_width =
-        math.floor(switch_overlay.MAX_TITLE_LENGTH * font_size * CHARACTER_WIDTH_PER_POINT + 0.5)
     return {
         preview_size = { w = preview_size.w, h = preview_size.h },
         font_size = font_size,
         application_font_size = application_font_size,
-        icon_size = icon_size,
-        text_height = text_height,
-        application_line_height = math.max(icon_size, text_height) + 8,
-        window_line_height = math.max(preview_size.h, text_height) + 7,
-        preview_inset = preview_inset,
-        window_text_inset = window_text_inset,
-        application_text_inset = PADDING + icon_size + 10,
-        width = window_text_inset + title_width + PADDING,
+        icon_size = math.floor(application_font_size * LINE_HEIGHT_PER_POINT + 0.5),
+        text_height = math.ceil(application_font_size * LINE_HEIGHT_PER_POINT),
     }
 end
 
----@param line SwitchLine
----@param layout SwitchLayout
----@return number
-local function height_of(line, layout)
-    return line.is_application and layout.application_line_height or layout.window_line_height
+---@param width number in points
+---@param font_size number in points
+---@return integer the characters of a title that fit the width
+local function count_fitting_characters(width, font_size)
+    return math.max(4, math.floor(width / (font_size * CHARACTER_WIDTH_PER_POINT)))
 end
 
----@param lines SwitchLine[]
----@param layout SwitchLayout
----@return Rect
-local function centered_frame(lines, layout)
-    local screen = hs.screen.mainScreen():frame()
-    local height = 2 * PADDING
-    for _, line in ipairs(lines) do
-        height = height + height_of(line, layout)
-    end
-    return {
-        x = screen.x + (screen.w - layout.width) / 2,
-        y = screen.y + (screen.h - height) / 2,
-        w = layout.width,
-        h = height,
-    }
-end
-
----The icon of the application on its own line, and beside a window its preview, or the icon when
----the window has no preview.
----@param line SwitchLine
----@param top number
----@param images SwitchImages
----@param layout SwitchLayout
----@return table|nil the image element of the line
-local function build_image_element(line, top, images, layout)
-    local icon = images.app_icons[line.bundle_id]
-    local preview = line.window_id and images.previews[line.window_id]
-    local image = preview or icon
+---An image element centered in its box, at the size of a preview or of an icon.
+---@param sizes SwitchSizes
+---@param image table|nil an hs.image
+---@param is_preview boolean
+---@param box table the x, y, w and h of the space for the image
+---@return table|nil
+local function build_image(sizes, image, is_preview, box)
     if not image then
         return nil
     end
-    local size = preview and layout.preview_size or { w = layout.icon_size, h = layout.icon_size }
-    local left = line.is_application and PADDING
-        or layout.preview_inset + (layout.preview_size.w - size.w) / 2
+    local size = is_preview and sizes.preview_size or { w = sizes.icon_size, h = sizes.icon_size }
     return {
         type = "image",
         image = image,
         imageScaling = "scaleToFit",
         frame = {
-            x = left,
-            y = top + (height_of(line, layout) - size.h) / 2,
+            x = box.x + (box.w - size.w) / 2,
+            y = box.y + (box.h - size.h) / 2,
             w = size.w,
             h = size.h,
         },
     }
 end
 
----@param line SwitchLine
----@param top number
----@param layout SwitchLayout
----@return table the text element of the line
-local function build_text_element(line, top, layout)
-    local inset = line.is_application and layout.application_text_inset or layout.window_text_inset
-    local is_bright = line.is_application or line.is_selected
+---@class TextStyle
+---@field font_size number
+---@field is_bold boolean
+---@field is_bright boolean
+
+---@param text string
+---@param frame table
+---@param style TextStyle
+---@return table a text element
+local function build_text(text, frame, style)
     return {
         type = "text",
-        text = line.is_application and line.text or (line.text:gsub("^%s+", "")),
-        textFont = line.is_application and "Helvetica-Bold" or "Helvetica",
-        textSize = line.is_application and layout.application_font_size or layout.font_size,
-        textColor = is_bright and TEXT_COLOR or DIMMED_TEXT_COLOR,
-        frame = {
-            x = inset,
-            y = top + (height_of(line, layout) - layout.text_height) / 2,
-            w = layout.width - inset - PADDING,
-            h = layout.text_height,
-        },
+        text = text,
+        textFont = style.is_bold and "Helvetica-Bold" or "Helvetica",
+        textSize = style.font_size,
+        textColor = style.is_bright and TEXT_COLOR or DIMMED_TEXT_COLOR,
+        frame = frame,
     }
 end
 
+---@param frame table
+---@return table a rectangle element behind a selected line or cell
+local function build_selection(frame)
+    return {
+        type = "rectangle",
+        action = "fill",
+        fillColor = SELECTION_COLOR,
+        roundedRectRadii = { xRadius = 6, yRadius = 6 },
+        frame = frame,
+    }
+end
+
+---@return table the rectangle element of the background
+local function build_background()
+    return {
+        type = "rectangle",
+        action = "fill",
+        fillColor = BACKGROUND_COLOR,
+        roundedRectRadii = { xRadius = 14, yRadius = 14 },
+    }
+end
+
+---Draws the rows: each application on a line, and under it a line per window with its preview.
 ---@param lines SwitchLine[]
 ---@param images SwitchImages
----@param layout SwitchLayout
----@return table[] the elements of an hs.canvas
-local function build_elements(lines, images, layout)
-    local elements = {
-        {
-            type = "rectangle",
-            action = "fill",
-            fillColor = BACKGROUND_COLOR,
-            roundedRectRadii = { xRadius = 14, yRadius = 14 },
-        },
-    }
+---@param sizes SwitchSizes
+---@return table[] elements
+---@return table size the w and h of the list
+local function draw_rows(lines, images, sizes)
+    local application_line_height = math.max(sizes.icon_size, sizes.text_height) + 8
+    local window_line_height = math.max(sizes.preview_size.h, sizes.text_height) + 7
+    local preview_inset = PADDING + GAP
+    local window_text_inset = preview_inset + sizes.preview_size.w + GAP
+    local application_text_inset = PADDING + sizes.icon_size + 10
+    local title_width = math.floor(
+        switch_overlay.MAX_TITLE_LENGTH * sizes.font_size * CHARACTER_WIDTH_PER_POINT + 0.5
+    )
+    local width = window_text_inset + title_width + PADDING
+    local elements = { build_background() }
     local top = PADDING
     for _, line in ipairs(lines) do
-        local height = height_of(line, layout)
+        local height = line.is_application and application_line_height or window_line_height
         if line.is_selected then
-            table.insert(elements, {
-                type = "rectangle",
-                action = "fill",
-                fillColor = SELECTION_COLOR,
-                roundedRectRadii = { xRadius = 6, yRadius = 6 },
-                frame = { x = PADDING / 2, y = top, w = layout.width - PADDING, h = height },
+            table.insert(
+                elements,
+                build_selection({ x = PADDING / 2, y = top, w = width - PADDING, h = height })
+            )
+        end
+        local preview = line.window_id and images.previews[line.window_id]
+        local box = { x = preview_inset, y = top, w = sizes.preview_size.w, h = height }
+        if line.is_application then
+            box = { x = PADDING, y = top, w = sizes.icon_size, h = height }
+        end
+        local image =
+            build_image(sizes, preview or images.app_icons[line.bundle_id], preview ~= nil, box)
+        if image then
+            table.insert(elements, image)
+        end
+        local inset = line.is_application and application_text_inset or window_text_inset
+        local text = line.is_application and line.text or (line.text:gsub("^%s+", ""))
+        table.insert(
+            elements,
+            build_text(text, {
+                x = inset,
+                y = top + (height - sizes.text_height) / 2,
+                w = width - inset - PADDING,
+                h = sizes.text_height,
+            }, {
+                font_size = line.is_application and sizes.application_font_size or sizes.font_size,
+                is_bold = line.is_application,
+                is_bright = line.is_application or line.is_selected,
             })
-        end
-        local image_element = build_image_element(line, top, images, layout)
-        if image_element then
-            table.insert(elements, image_element)
-        end
-        table.insert(elements, build_text_element(line, top, layout))
+        )
         top = top + height
     end
-    return elements
+    return elements, { w = width, h = top + PADDING }
 end
 
----@param lines SwitchLine[]
+---The sizes in points that the columns derive from the sizes of the list.
+---@class ColumnMetrics
+---@field title_height number
+---@field header_height number
+---@field cell_height number
+---@field column_width number
+---@field title_width number
+
+---@param sizes SwitchSizes
+---@return ColumnMetrics
+local function measure_columns(sizes)
+    local title_height = math.ceil(sizes.font_size * LINE_HEIGHT_PER_POINT)
+    local column_width = math.max(
+        sizes.preview_size.w,
+        HEADER_CHARACTERS * sizes.application_font_size
+    ) + 2 * CELL_PADDING
+    return {
+        title_height = title_height,
+        header_height = math.max(sizes.icon_size, sizes.text_height) + 8,
+        cell_height = sizes.preview_size.h + title_height + 3 * CELL_PADDING / 2,
+        column_width = column_width,
+        title_width = column_width - 2 * CELL_PADDING,
+    }
+end
+
+---Draws the header of a column: the icon, the number and the name of the application.
+---@param elements table[]
+---@param column SwitchColumn
+---@param origin table the x and y of the column
 ---@param images SwitchImages
----@param layout SwitchLayout
----@return table overlay an hs.canvas
-function switch_overlay.show(lines, images, layout)
-    local overlay = hs.canvas.new(centered_frame(lines, layout))
-    overlay:level(hs.canvas.windowLevels.overlay)
-    overlay:replaceElements(build_elements(lines, images, layout))
-    overlay:show()
-    return overlay
+---@param sizes SwitchSizes
+---@param metrics ColumnMetrics
+local function draw_column_header(elements, column, origin, images, sizes, metrics)
+    if column.is_selected then
+        table.insert(
+            elements,
+            build_selection({
+                x = origin.x,
+                y = origin.y,
+                w = metrics.column_width,
+                h = metrics.header_height,
+            })
+        )
+    end
+    local icon = build_image(sizes, images.app_icons[column.bundle_id], false, {
+        x = origin.x + CELL_PADDING,
+        y = origin.y,
+        w = sizes.icon_size,
+        h = metrics.header_height,
+    })
+    if icon then
+        table.insert(elements, icon)
+    end
+    local inset = CELL_PADDING + sizes.icon_size + 6
+    local width = metrics.column_width - inset - CELL_PADDING
+    local text = switch_list.shorten(
+        string.format("%d  %s", column.number, column.app_name),
+        count_fitting_characters(width, sizes.application_font_size)
+    )
+    table.insert(
+        elements,
+        build_text(text, {
+            x = origin.x + inset,
+            y = origin.y + (metrics.header_height - sizes.text_height) / 2,
+            w = width,
+            h = sizes.text_height,
+        }, { font_size = sizes.application_font_size, is_bold = true, is_bright = true })
+    )
 end
 
----@param overlay table an hs.canvas
----@param lines SwitchLine[]
+---Draws the windows of a column downward, each a preview with its title under it.
+---@param elements table[]
+---@param column SwitchColumn
+---@param origin table the x and y of the first cell
 ---@param images SwitchImages
----@param layout SwitchLayout
-function switch_overlay.update(overlay, lines, images, layout)
-    overlay:replaceElements(build_elements(lines, images, layout))
+---@param sizes SwitchSizes
+---@param metrics ColumnMetrics
+local function draw_column_cells(elements, column, origin, images, sizes, metrics)
+    local characters = count_fitting_characters(metrics.title_width, sizes.font_size)
+    local dimmed_style = { font_size = sizes.font_size, is_bold = false, is_bright = false }
+    if #column.cells == 0 then
+        table.insert(
+            elements,
+            build_text(switch_list.shorten(NO_WINDOW_NOTE, characters), {
+                x = origin.x + CELL_PADDING,
+                y = origin.y + CELL_PADDING,
+                w = metrics.title_width,
+                h = metrics.title_height,
+            }, dimmed_style)
+        )
+    end
+    local top = origin.y
+    for _, cell in ipairs(column.cells) do
+        if cell.is_selected then
+            table.insert(
+                elements,
+                build_selection({
+                    x = origin.x,
+                    y = top,
+                    w = metrics.column_width,
+                    h = metrics.cell_height,
+                })
+            )
+        end
+        local preview = images.previews[cell.window_id]
+        local image =
+            build_image(sizes, preview or images.app_icons[column.bundle_id], preview ~= nil, {
+                x = origin.x + CELL_PADDING,
+                y = top + CELL_PADDING / 2,
+                w = metrics.title_width,
+                h = sizes.preview_size.h,
+            })
+        if image then
+            table.insert(elements, image)
+        end
+        table.insert(
+            elements,
+            build_text(switch_list.shorten(cell.title, characters), {
+                x = origin.x + CELL_PADDING,
+                y = top + CELL_PADDING + sizes.preview_size.h,
+                w = metrics.title_width,
+                h = metrics.title_height,
+            }, {
+                font_size = sizes.font_size,
+                is_bold = false,
+                is_bright = cell.is_selected,
+            })
+        )
+        top = top + metrics.cell_height
+    end
 end
 
----@param overlay table an hs.canvas
+---Draws the columns: a column per application with its windows stacked downward, and the name of a
+---display above its group of columns.
+---@param groups SwitchColumnGroup[]
+---@param images SwitchImages
+---@param sizes SwitchSizes
+---@return table[] elements
+---@return table size the w and h of the list
+local function draw_columns(groups, images, sizes)
+    local metrics = measure_columns(sizes)
+    local has_display_names, most_cells = false, 1
+    for _, group in ipairs(groups) do
+        has_display_names = has_display_names or group.display_name ~= nil
+        for _, column in ipairs(group.columns) do
+            most_cells = math.max(most_cells, #column.cells)
+        end
+    end
+    local columns_top = PADDING + (has_display_names and metrics.title_height + 6 or 0)
+    local elements = { build_background() }
+    local left = PADDING
+    for group_index, group in ipairs(groups) do
+        if group.display_name then
+            local group_width = #group.columns * (metrics.column_width + COLUMN_GAP) - COLUMN_GAP
+            table.insert(
+                elements,
+                build_text(
+                    group.display_name,
+                    { x = left, y = PADDING, w = group_width, h = metrics.title_height },
+                    { font_size = sizes.font_size, is_bold = false, is_bright = false }
+                )
+            )
+        end
+        for _, column in ipairs(group.columns) do
+            draw_column_header(
+                elements,
+                column,
+                { x = left, y = columns_top },
+                images,
+                sizes,
+                metrics
+            )
+            draw_column_cells(
+                elements,
+                column,
+                { x = left, y = columns_top + metrics.header_height },
+                images,
+                sizes,
+                metrics
+            )
+            left = left + metrics.column_width + COLUMN_GAP
+        end
+        left = left - COLUMN_GAP + (group_index < #groups and GROUP_GAP or 0)
+    end
+    local height = columns_top + metrics.header_height + most_cells * metrics.cell_height + PADDING
+    return elements, { w = left + PADDING, h = height }
+end
+
+---@param view SwitchView
+---@param images SwitchImages
+---@param sizes SwitchSizes
+---@return table[] elements
+---@return table size the w and h of the list
+local function draw(view, images, sizes)
+    if view.lines then
+        return draw_rows(view.lines, images, sizes)
+    end
+    return draw_columns(view.groups, images, sizes)
+end
+
+---Turns the relative sizes into points on the screen, and shrinks the previews and the fonts by one
+---factor until the list fits within the screen.
+---@param view SwitchView
+---@param images SwitchImages
+---@param relative_sizes SwitchRelativeSizes
+---@param screen table the frame of the screen in front
+---@return SwitchSizes
+local function fit_sizes(view, images, relative_sizes, screen)
+    local scale = 1
+    local sizes
+    for _ = 1, FIT_ROUNDS do
+        sizes = create_sizes({
+            w = relative_sizes.preview_size.w * screen.w * scale,
+            h = relative_sizes.preview_size.h * screen.h * scale,
+        }, relative_sizes.font_size * screen.h * scale)
+        local _, size = draw(view, images, sizes)
+        local share =
+            math.max(size.w / (MAX_WIDTH_SHARE * screen.w), size.h / (MAX_HEIGHT_SHARE * screen.h))
+        if share <= 1 then
+            return sizes
+        end
+        scale = scale / share
+    end
+    return sizes
+end
+
+---@param size table the w and h of the list
+---@return table the frame that centers the list on the screen in front
+local function center_on_screen(size)
+    local screen = hs.screen.mainScreen():frame()
+    return {
+        x = screen.x + (screen.w - size.w) / 2,
+        y = screen.y + (screen.h - size.h) / 2,
+        w = size.w,
+        h = size.h,
+    }
+end
+
+---@param view SwitchView
+---@param images SwitchImages
+---@param relative_sizes SwitchRelativeSizes
+---@return SwitchOverlay
+function switch_overlay.show(view, images, relative_sizes)
+    local sizes = fit_sizes(view, images, relative_sizes, hs.screen.mainScreen():frame())
+    local elements, size = draw(view, images, sizes)
+    local canvas = hs.canvas.new(center_on_screen(size))
+    canvas:level(hs.canvas.windowLevels.overlay)
+    canvas:replaceElements(elements)
+    canvas:show()
+    return { canvas = canvas, sizes = sizes }
+end
+
+---@param overlay SwitchOverlay
+---@param view SwitchView
+---@param images SwitchImages
+function switch_overlay.update(overlay, view, images)
+    local elements, size = draw(view, images, overlay.sizes)
+    overlay.canvas:frame(center_on_screen(size))
+    overlay.canvas:replaceElements(elements)
+end
+
+---@param overlay SwitchOverlay
+---@return table the w and h of a preview in points, which the snapshots render for
+function switch_overlay.read_preview_size(overlay)
+    return overlay.sizes.preview_size
+end
+
+---@param overlay SwitchOverlay
 function switch_overlay.hide(overlay)
-    overlay:delete()
+    overlay.canvas:delete()
 end
 
 return switch_overlay
