@@ -4,8 +4,9 @@ LUA_FILES := $(shell find . -name '*.lua' -not -path './.git/*')
 HAMMERSPOON_LOADER := $(HOME)/.hammerspoon/init.lua
 
 .PHONY: check syntax lint format format-check test launcher-scripts check-launcher-scripts install-loader
+.PHONY: asyar-extension-settings check-asyar-extension-settings check-asyar-extension link-asyar-extension
 
-check: syntax lint format-check test check-launcher-scripts
+check: syntax lint format-check test check-launcher-scripts check-asyar-extension-settings
 
 syntax:
 	@for file in $(LUA_FILES); do $(LUAC) -p "$$file" || exit 1; done
@@ -36,6 +37,26 @@ check-launcher-scripts:
 		[ -x "$$file" ] || { echo "$$file is not executable"; exit 1; }; \
 		bash -n "$$file" || exit 1; \
 	done
+
+asyar-extension-settings:
+	$(LUA) tools/write_asyar_extension_settings.lua asyar-extension/src/settings.generated.json
+
+check-asyar-extension-settings:
+	@scratch=$$(mktemp); \
+	$(LUA) tools/write_asyar_extension_settings.lua "$$scratch" && \
+		diff asyar-extension/src/settings.generated.json "$$scratch"; \
+	status=$$?; rm -f "$$scratch"; \
+	if [ $$status -ne 0 ]; then \
+		echo "asyar-extension/src/settings.generated.json differs from the generator:" \
+			"run make asyar-extension-settings"; \
+		exit 1; \
+	fi
+
+check-asyar-extension: check-asyar-extension-settings
+	cd asyar-extension && npm run typecheck && npm test && npx asyar validate && npm run build
+
+link-asyar-extension:
+	cd asyar-extension && npx asyar link
 
 install-loader:
 	@if [ -e "$(HAMMERSPOON_LOADER)" ]; then \

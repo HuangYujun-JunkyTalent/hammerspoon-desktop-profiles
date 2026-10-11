@@ -1,0 +1,29 @@
+{
+  "id": "com.huangyujun.desktop-profiles",
+  "name": "Desktop Profiles",
+  "version": "1.0.0",
+  "description": "Activate and deactivate the profiles of the Hammerspoon desktop manager, and reassign its application numbers.",
+  "author": "Yujun Huang",
+  "icon": "🖥️",
+  "type": "extension",
+  "asyarSdk": "^4.14.1",
+  "platforms": ["macos"],
+  "permissions": ["files:read", "fs:watch", "shell:open-url"],
+  "permissionArgs": {
+    "files:read": ["~/.hammerspoon/desktop-manager-state.json"],
+    "fs:watch": ["~/.hammerspoon/desktop-manager-state.json"],
+    "shell:open-url": ["hammerspoon"]
+  },
+  "commands": [
+    {
+      "id": "reassign-app-numbers",
+      "name": "Reassign App Numbers",
+      "description": "Return every application number of the active profile, or of profile 0, to the default.",
+      "icon": "🔢",
+      "mode": "background"
+    }
+  ],
+  "background": {
+    "main": "dist/worker.js"
+  }
+}
