@@ -10,7 +10,8 @@ When no profile is active, macOS manages the windows as usual.
 
 A profile holds one record per monitor configuration.
 The record holds the number of desktops of each screen, the desktop in front, and every window that the tool sees while the profile is active.
-The record keeps a window either as in sight, on a desktop with its frame, or as out of sight.
+The record names each window by its application, its window id and its title.
+It keeps the window either as in sight, on a desktop with its frame, or as out of sight.
 A window is out of sight when it is minimized or its application is hidden.
 Windows do not belong to profiles, and two profiles may record the same window.
 
@@ -30,18 +31,35 @@ Activating a profile does the least work that brings back what the profile recor
 | is in sight, and another profile recorded it while this profile did not | minimizes it |
 | was recorded by no profile, such as a window opened while no profile was active | leaves it, and the profile records it at its next update |
 
-A recorded window whose application is not running makes the tool launch the application and place the new window.
-A recorded window that was closed while its application kept running is skipped.
-
 Activating a profile adds the desktops that the profile recorded and a screen lacks.
 The tool removes no desktop, because removing a desktop moves the windows on it and changes what the other profiles recorded.
-A switch shows another desktop only to move a window to another screen, and to bring the desktop that the profile had in front back to the front.
+A switch shows another desktop for three reasons alone: to move a window to another screen, to open a new window on its recorded desktop, and to bring the desktop that the profile had in front back to the front.
+
+## A window that no longer exists gets a new window of its application
 
 macOS gives a window that its application reopens a new window id, such as a window of Visual Studio Code after the application restarts.
-Before each update of a record and each switch, the tool treats an unrecorded window as the reopened copy of a closed recorded window, when both belong to the same application and have the same document or the same title.
+When a profile is activated and the window of a record in sight no longer exists, the setting `missing_window_policy` in `desktop_manager/default_settings.lua` chooses what happens.
+
+| Value of `missing_window_policy` | The tool |
+|---|---|
+| `match_title_or_open_new_window`, the default | takes an open window of the same application with the same title, and opens a new window when no title matches |
+| `open_new_window` | opens a new window of the same application |
+
+Under the default, the tool also treats an unrecorded window as the reopened copy of a closed recorded window of the same application with the same title, before each update of a record and each switch.
+Position and size play no part, because the tool sets them on the window it takes, and because macOS opens a new window at the place of the last closed one.
+A reopened window whose title changed, such as a browser window on another tab, counts as a new window.
+
+The new window comes from the first of three sources that gives one:
+
+1. A window that a launch of the application opened during the same switch, when the application was not running.
+2. The menu item "New Window" of the application, or "New Finder Window" of the Finder.
+3. A reopen of the application, as a click on its icon in the Dock sends, which shows the main window of an application such as Calendar.
+
+The tool leaves out Command-N, because Calendar, Mail, Notes and Slack create an event, a message or a note with it.
+A window opens on the desktop that shows, so the tool shows the recorded desktop first, and then sets the recorded frame.
 The records of every profile then name the new window.
-The place of the window plays no part, because macOS opens a new window at the place of the last closed one.
-A reopened window whose title changed, such as a browser window on another tab, stays a new window, and the active profile records it at its next update.
+An application that opens no new window within ten seconds is reported in a notification.
+New windows open for records in sight alone.
 
 The tool minimizes a window to take it out of sight.
 The setting `concealment_method` in `desktop_manager/default_settings.lua` makes the tool hide an application instead, when all the windows of the application go out of sight.
@@ -86,7 +104,7 @@ The menu bar shows `◧` after the reload, and `◧ 2` while profile 2 is active
 
 `open -g "hammerspoon://desktop-manager?action=activate&profile=2"` in a terminal activates profile 2.
 A switch starts once the modifier keys are released, because the simulated Control-number would otherwise combine with them.
-`desktop_manager/default_settings.lua` holds the modifiers, the number of profiles, the way of taking windows out of sight and the timings.
+`desktop_manager/default_settings.lua` holds the modifiers, the number of profiles, the way of taking windows out of sight, what happens to a window that no longer exists, and the timings.
 
 ## Asyar and Raycast run the scripts in `launcher-scripts/`
 
@@ -137,8 +155,8 @@ Each switch writes its plan and its duration to the Hammerspoon console.
 | Folder or file | Content |
 |---|---|
 | `init.lua` | the file that Hammerspoon loads, which starts the controller |
-| `desktop_manager/core/` | the decisions: monitor configurations, window matching, profile records, plans for concealing and restoring, URL commands |
-| `desktop_manager/macos/` | the calls to Hammerspoon: reading screens, desktops and windows, switching desktops, Mission Control, the menu bar item and the controller |
+| `desktop_manager/core/` | the decisions: monitor configurations, window matching, profile records, plans for concealing, restoring and opening missing windows, URL commands |
+| `desktop_manager/macos/` | the calls to Hammerspoon: reading screens, desktops and windows, switching desktops, opening new windows, Mission Control, the menu bar item and the controller |
 | `tests/` | unit tests of the core, and tests of whole switches against `tests/fake_hammerspoon.lua` |
 | `tools/` | the generator of the launcher scripts |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |

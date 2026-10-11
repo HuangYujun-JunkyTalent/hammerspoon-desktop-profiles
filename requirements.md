@@ -31,12 +31,19 @@ A setting makes the tool hide an application instead when all its windows go out
 Activating a profile adds the desktops that the profile recorded and a screen lacks.
 The tool removes no desktop, because removing a desktop moves the windows on it and changes what the other profiles recorded.
 
+A profile records each window by its application, its window id and its title.
+Position and size play no part in the identity, because the tool sets them quickly on the window it takes.
 macOS gives a window that its application reopens a new window id.
-The tool treats an unrecorded window as the reopened copy of a closed recorded window, when both belong to the same application and have the same document or the same title.
-The records of every profile then name the new window.
+When a profile is activated and the window of a record in sight no longer exists, a setting chooses one of two options:
 
-When a saved window belongs to an application that is not running, activating the profile launches the application.
-The tool then places each window of the application as it appears, matched by application and title.
+- Option a opens a new window of the same application.
+- Option b takes an open window of the same application with the same title, and opens a new window when no title matches.
+
+Option b is the default.
+The tool opens a new window on the recorded desktop, sets the recorded frame, and the records of every profile then name the new window.
+Under option b, the tool also treats an unrecorded window as the reopened copy of a closed recorded window, when both belong to the same application and have the same title.
+
+When a saved window belongs to an application that is not running, the new window comes from a launch of the application.
 
 ## Multiple monitor behavior
 
