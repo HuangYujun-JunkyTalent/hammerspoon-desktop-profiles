@@ -8,6 +8,7 @@ local profile_state = {}
 ---@field number integer
 ---@field name string
 ---@field arrangements table<string, Arrangement> keyed by monitor configuration key
+---@field app_numbers AppNumber[] the applications that shortcuts such as Command-3 reach
 
 ---The state that the tool keeps between runs of Hammerspoon.
 ---Profiles are keyed by their number written as a string, because JSON objects have string keys.
@@ -45,6 +46,7 @@ local function new_profile(number)
         number = number,
         name = string.format("Profile %d", number),
         arrangements = {},
+        app_numbers = {},
     }
 end
 
@@ -199,6 +201,16 @@ end
 
 ---@param state State
 ---@param number integer
+---@param entries AppNumber[]
+---@return State
+function profile_state.with_app_numbers(state, number, entries)
+    local profile = profile_state.profile_or_default(state, number)
+    profile.app_numbers = deep_copy.copy(entries)
+    return profile_state.with_profile(state, profile)
+end
+
+---@param state State
+---@param number integer
 ---@param monitor_configuration_key string
 ---@return Arrangement|nil
 function profile_state.find_arrangement(state, number, monitor_configuration_key)
@@ -265,6 +277,24 @@ local function decode_arrangement(raw)
     }
 end
 
+---@param raw_entries any
+---@return AppNumber[]
+local function decode_app_numbers(raw_entries)
+    local entries = {}
+    for _, raw in ipairs(type(raw_entries) == "table" and raw_entries or {}) do
+        local number = to_integer(raw.number)
+        if number and type(raw.bundle_id) == "string" then
+            table.insert(entries, {
+                number = number,
+                bundle_id = raw.bundle_id,
+                app_name = tostring(raw.app_name or raw.bundle_id),
+                is_chosen_by_user = raw.is_chosen_by_user == true,
+            })
+        end
+    end
+    return entries
+end
+
 ---@param raw any
 ---@return Profile|nil
 local function decode_profile(raw)
@@ -276,6 +306,7 @@ local function decode_profile(raw)
     if type(raw.name) == "string" and raw.name ~= "" then
         profile.name = raw.name
     end
+    profile.app_numbers = decode_app_numbers(raw.app_numbers)
     local raw_arrangements = type(raw.arrangements) == "table" and raw.arrangements or {}
     for key, raw_arrangement in pairs(raw_arrangements) do
         local arrangement = decode_arrangement(raw_arrangement)

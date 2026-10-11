@@ -130,12 +130,20 @@ return {
         expect.equal(state.monitor_matching, "by_identity")
     end,
 
-    decode_round_trips_an_arrangement = function()
+    decode_round_trips_an_arrangement_and_app_numbers = function()
         local state = profile_state.with_arrangement(
             profile_state.new_state(monitor_matching.BY_COUNT),
             1,
             ARRANGEMENT
         )
+        state = profile_state.with_app_numbers(state, 1, {
+            {
+                number = 3,
+                bundle_id = "com.apple.Safari",
+                app_name = "Safari",
+                is_chosen_by_user = true,
+            },
+        })
         local decoded = profile_state.decode(state)
         expect.equal(decoded, state)
     end,
