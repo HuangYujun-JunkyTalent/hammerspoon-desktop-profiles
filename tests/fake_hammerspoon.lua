@@ -54,6 +54,7 @@ function fake_hammerspoon.install(spec)
         hotkey_events = {},
         event_taps = {},
         snapshot_count = 0,
+        rendered_sizes = {},
         snapshot_seconds = 0.05,
         overlay = nil,
         focused_window_id = nil,
@@ -625,7 +626,11 @@ function fake_hammerspoon.install(spec)
                     return nil
                 end
                 return {
-                    bitmapRepresentation = function()
+                    size = function()
+                        return { w = 1200, h = 600 }
+                    end,
+                    bitmapRepresentation = function(_, size)
+                        world.rendered_sizes[window_id] = size
                         return { source = "blurred " .. window_id }
                     end,
                 }

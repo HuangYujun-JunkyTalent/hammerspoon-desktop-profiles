@@ -98,6 +98,9 @@ The setting `preview_method` in `desktop_manager/default_settings.lua` chooses w
 | `blurred_snapshots`, the default | a blurred image of the window, or the icon for a window without an image, such as a minimized one |
 | `app_icons` | the icon of the application |
 
+The setting `preview_blur` sets how blurred a preview is: 1 keeps full detail, 2 half of it, the default, and 4 a quarter.
+A preview keeps the proportions of its window.
+
 The images come after the list shows, one window at a time, and need the permission for Screen Recording.
 Hammerspoon takes them with an old screen capture function of macOS.
 On 2026-10-10, on macOS 27.0.1, that function blocked Hammerspoon for two minutes with every shortcut unresponsive, and after the permission was turned on it took less than 0.3 seconds.

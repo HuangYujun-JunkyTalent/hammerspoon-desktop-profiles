@@ -866,7 +866,8 @@ function ProfileController:load_switch_previews(session)
         if not window_id or self.switch_session ~= session or self.are_snapshots_stopped then
             return
         end
-        local image, seconds = window_previews.take_blurred_snapshot(window_id)
+        local image, seconds =
+            window_previews.take_blurred_snapshot(window_id, self.settings.preview_blur)
         if seconds > self.settings.timing.snapshot_time_limit_seconds then
             self.are_snapshots_stopped = true
             self.log.w(
@@ -1210,6 +1211,15 @@ end
 ---@param settings Settings
 ---@return ProfileController
 function profile_controller.start(settings)
+    if type(settings.preview_blur) ~= "number" or settings.preview_blur < 1 then
+        error(
+            string.format(
+                "the setting preview_blur is %s, and it must be a number of 1 or more",
+                tostring(settings.preview_blur)
+            ),
+            2
+        )
+    end
     if not preview_method.is_valid(settings.preview_method) then
         error(
             string.format(

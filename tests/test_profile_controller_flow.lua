@@ -611,6 +611,20 @@ return {
             "icon com.microsoft.Word",
             "icon com.microsoft.Word",
         })
+        expect.equal(world.rendered_sizes[41], { w = 56, h = 28 })
+    end,
+
+    the_blur_setting_sets_the_size_of_the_rendering = function()
+        local world = start_world({
+            preview_method = preview_method.BLURRED_SNAPSHOTS,
+            preview_blur = 4,
+        })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.advance(1)
+        expect.equal(world.rendered_sizes[41], { w = 28, h = 14 })
     end,
 
     a_slow_snapshot_stops_the_snapshots_until_a_reload = function()
