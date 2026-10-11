@@ -11,6 +11,9 @@ Profile 2 holds a teaching setup: slides on the external monitor and a terminal 
 Command-Option-Shift-2 minimizes the editor, the browser and Mail, and brings back the slides and the terminal at the places that profile 2 recorded.
 Command-Option-Shift-2 again deactivates profile 2, and macOS manages the windows as usual.
 
+There's an Asyar extension to activate, deactivate profiles, and reset the application numbers.
+Extra scripts are provided if you want to quickly call the actions from another launcher.
+
 The tool runs on macOS 27.0.1 with Hammerspoon 1.1.1, the versions it was developed on.
 `requirements.md` states what the tool must do.
 
