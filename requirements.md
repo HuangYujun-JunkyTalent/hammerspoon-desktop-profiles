@@ -108,6 +108,8 @@ Two more settings set the size of a preview and the size of the font of the list
 By default the list fills the screen properly: the previews and the fonts grow or shrink until the list fills most of the width or the height of the screen, within limits on their growth.
 An option keeps the sizes of the settings instead, and shrinks them only until the list fits within the screen.
 The columns fold into two lines when two lines give larger previews.
+By default a long title ends in an ellipsis.
+An option lets a long title flow over several lines, up to a set number, and another lets the title of the selected window scroll.
 The images need the permission for Screen Recording, and they follow one at a time after the list shows.
 An image that takes longer than half a second stops the images until the next reload, because the screen capture function of macOS behind them blocked Hammerspoon for two minutes on this machine on 2026-10-10.
 The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
