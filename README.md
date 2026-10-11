@@ -1,24 +1,249 @@
-# The desktop manager switches between profiles of desktops and windows on macOS
+# Save the desktops and windows of macOS as profiles, and switch between them with one key
 
-The tool runs inside Hammerspoon and keeps nine numbered profiles.
-A profile records how many desktops each screen has, which windows are on each desktop, and where each window sits.
-Each profile also gives numbers to applications, and Control-Option with a number lists them and brings one to the front.
-While no profile is active, profile 0 gives the numbers.
+This tool runs inside [Hammerspoon](https://www.hammerspoon.org) and adds two kinds of shortcuts to macOS.
+
+- Command-Option-Shift with a number from 1 to 9 activates a profile.
+  A profile records the desktops of each screen and the windows on each desktop, and activating it brings them back.
+- Control-Option with a number shows a list of numbered applications and their windows, and brings the window you choose to the front.
+
+For example, profile 1 holds a writing setup: an editor and a browser side by side on the built-in display, and Mail on a second desktop.
+Profile 2 holds a teaching setup: slides on the external monitor and a terminal on the built-in display.
+Command-Option-Shift-2 minimizes the editor, the browser and Mail, and brings back the slides and the terminal at the places that profile 2 recorded.
+Command-Option-Shift-2 again deactivates profile 2, and macOS manages the windows as usual.
+
+The tool runs on macOS 27.0.1 with Hammerspoon 1.1.1, the versions it was developed on.
 `requirements.md` states what the tool must do.
 
-## A profile records its desktops and windows, and a switch changes only what differs
+## Install the tool in seven steps
 
-When no profile is active, macOS manages the windows as usual.
+1. Install Hammerspoon from its website, or with `brew install --cask hammerspoon`, and start it.
+2. Clone this repository into a folder of your choice, and run `make install-loader` in that folder.
+   The command writes `~/.hammerspoon/init.lua` with the one line `dofile("<folder>/init.lua")`.
+   When `~/.hammerspoon/init.lua` exists already, the command leaves it unchanged, and you add the line to it yourself.
+3. Click the hammer icon in the menu bar and choose Reload Config.
+4. In System Settings, Privacy & Security, Accessibility, turn on Hammerspoon.
+5. In System Settings, Keyboard, Keyboard Shortcuts, Mission Control, turn on "Switch to Desktop 1" and the next ones up to the number of desktops you use.
+   The tool switches desktops with these shortcuts, Control-1 to Control-9.
+6. In System Settings, Desktop & Dock, Mission Control, keep "Displays have separate Spaces" on, and turn "Automatically rearrange Spaces based on most recent use" off.
+   The tool finds a desktop by its position, and a rearrangement moves the positions.
+7. Shorten the animations, if you like.
+   In System Settings, Desktop & Dock, set "Minimize windows using" to Scale Effect.
+   In System Settings, Accessibility, Display, turn on "Reduce motion".
 
-A profile holds one record per monitor configuration.
+The menu bar then shows `◧`, and `◧ 2` while profile 2 is active.
+The previews in the list of windows also need the permission for Screen Recording, as [the section on the limits of macOS](#hammerspoon-and-macos-2701-limit-what-the-tool-can-do) explains.
+
+## Command-Option-Shift with a number activates, switches and deactivates profiles
+
+| Keys | Effect |
+|---|---|
+| Command-Option-Shift-N, for N from 1 to 9 | activates profile N, or switches to it from the active profile |
+| Command-Option-Shift-N while profile N is active | deactivates profile N |
+| Command-Option-Shift-0 | deactivates the active profile |
+
+A switch starts once you release the modifier keys, because the Control-number that the tool presses to switch desktops would otherwise combine with them.
+While no profile is active, macOS manages the windows as usual.
+
+A profile keeps one record per monitor configuration.
 The record holds the number of desktops of each screen, the desktop in front, and every window that the tool sees while the profile is active.
-The record names each window by its application, its window id and its title.
-It keeps the window either as in sight, on a desktop with its frame, or as out of sight.
+Each window is recorded as in sight, on a desktop at its frame, or as out of sight.
 A window is out of sight when it is minimized or its application is hidden.
+The record names a window by its application, its window id and its title.
 Windows do not belong to profiles, and two profiles may record the same window.
 
-The tool updates the record of the active profile two seconds after a window opens, closes, moves, minimizes or changes its title.
-It also updates the record once a minute, at the end of a switch, and before a switch to another profile.
+The tool updates the record of the active profile at four times:
+
+- two seconds after a window opens, closes, moves, minimizes or changes its title;
+- once a minute;
+- at the end of a switch;
+- before a switch to another profile.
+
+When the monitors change to a configuration that the active profile recorded, the tool restores that record.
+When the monitors change to a configuration that is new to the profile, macOS arranges the windows, and the profile starts recording the new configuration.
+A choice in the menu bar item sets when two monitor configurations count as the same.
+
+| Choice under "Same monitor configuration by" | Configurations that count as different |
+|---|---|
+| Number of external monitors, the default | the built-in display alone, the built-in display with one external monitor, two external monitors, and so on |
+| Name of each external monitor | also the built-in display with `LG TV SSCR2` and the built-in display with `DELL U2720Q` |
+
+The menu bar item also has entries that deactivate the active profile, rename it, update its record at once and print diagnostics.
+
+## Control-Option with a number brings an application to the front
+
+Each profile gives the numbers from 1 to 9 to applications.
+While no profile is active, the numbers of profile 0 hold.
+Profile 0 records no windows, so a switch minimizes no window on its account.
+
+A press of Control-Option with a number shows a list of the numbered applications in the middle of the screen.
+By default each application is a column, with its number, its icon and its name on top, and its windows stacked below, each a blurred preview with its title under it.
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│  1 ▣ Firefox         2 ▣ Code             3 ▣ Mail       │
+│  ┌────────────┐      ┌────────────┐       ┌────────────┐ │
+│  │  preview   │      │  preview   │       │  preview   │ │
+│  └────────────┘      └────────────┘       └────────────┘ │
+│  GitHub - pull       README.md —          Inbox          │
+│  requests            desktop-manager                     │
+│  ┌────────────┐                                          │
+│  │  preview   │                                          │
+│  └────────────┘                                          │
+│  Hammerspoon docs                                        │
+└──────────────────────────────────────────────────────────┘
+```
+
+- The press selects a window of the application of that number: the window that had the focus last, or the next window when the application is in front.
+- Each further press of the same number, while you hold Control and Option, selects the next window of that application, in the order in which the windows opened.
+- A press of another number selects a window of that application.
+- Releasing Control or Option brings the selected window to the front.
+- Escape closes the list without a switch.
+- A press released at once brings the selected window to the front without showing the list.
+
+The list holds every window of the application, also the windows that the active profile did not record, such as the minimized windows of another profile.
+Bringing a window on another desktop to the front shows that desktop first.
+An application without windows shows "no window, a new one opens", and gets a new window from the same sources that replace a closed window at a switch.
+
+The tool gives the default numbers to the applications that the profile records in sight.
+The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
+A default number stays with its application while the profile records a window of it, in sight or out of sight.
+Profile 0 numbers the applications with a window in sight in the same order, and a default number stays while its application has a window open.
+Profile 0 updates its numbers when a profile would update its record, and at once when a profile is deactivated.
+
+You can give a number to any running application under "Application numbers" in the menu bar item.
+Each number there offers two choices: give the number to the application that was in front when the menu opened, or return the number to the default.
+A number that you give stays until you change it.
+Control-Option-0 returns every number of the active profile, or of profile 0, to the default, and an alert names the profile.
+Control-Option-0 does nothing while the list shows, so a slip during a press keeps the numbers you gave.
+
+Control-Option with a free number reaches the application in front unchanged.
+A number given to an application takes Control-Option with that number from every other application.
+On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
+Command with a number would clash, because it selects tabs, views and groups in many applications, and Command-Shift with 3, 4 and 5 takes screenshots in macOS.
+
+## Settings live in `desktop_manager/default_settings.lua`
+
+To change a setting, edit the file and choose Reload Config.
+The file writes each choice through its module, such as `list_layout.ROWS` for `rows`.
+
+| Setting | Default | What it sets |
+|---|---|---|
+| `hotkey_modifiers` | Command-Option-Shift | the modifiers of the profile shortcuts |
+| `app_hotkey_modifiers` | Control-Option | the modifiers of the application numbers |
+| `profile_count` | 9 | the number of profiles |
+| `app_number_count` | 9 | the number of application numbers |
+| `concealment_method` | `minimize_windows` | how a window goes out of sight: `minimize_windows` minimizes it, and `hide_applications` hides its application once all the windows of the application go out of sight |
+| `missing_window_policy` | `match_title_or_open_new_window` | what replaces a recorded window that no longer exists, as [the section on switches](#a-switch-changes-only-the-windows-that-differ-from-the-record) explains |
+| `list_layout` | `columns` | how the list arranges the applications |
+| `list_sizing` | `fill_screen` | how the list uses the screen |
+| `preview_method` | `blurred_snapshots` | what the list shows beside a title: `blurred_snapshots` a blurred image of the window, or the icon for a window without an image, and `app_icons` the icon of the application |
+| `preview_blur` | 1 | how blurred a preview is: 1 keeps full detail, 2 half of it, 4 a quarter |
+| `preview_size` | 0.1 by 0.1 | the width and height of a preview, as fractions of the screen in front |
+| `list_font_size` | 0.01 | the size of the titles, as a fraction of the height of the screen in front |
+| `title_overflow` | `wrap` | what happens to a title longer than its space |
+| `title_line_count` | 2 | the most lines of a title under `wrap` |
+| `timing` | | the waits and time limits of a switch, in seconds |
+
+Control alone does not work as `app_hotkey_modifiers`, because the tool presses Control with a number to switch desktops.
+
+On a screen of 1440 by 875 points, a preview of 0.1 by 0.1 is 144 by 88 points, and a font size of 0.01 is about 9 points.
+The names of applications are 2 points larger than the titles.
+A preview keeps the proportions of its window.
+The rows, the columns and the width of the list follow from the two sizes, so the list keeps its look on every display.
+
+| Value of `list_layout` | The list |
+|---|---|
+| `columns` | a column per application, side by side |
+| `columns_per_display` | the same columns in a group per display, from left to right as the displays stand, with the name of the display above its group |
+| `rows` | a line per application, and under it a line per window with its preview beside the title |
+
+Under `columns_per_display`, an application with windows on two displays has a column in each group.
+A last unnamed group holds the windows on an unknown display and the applications without windows.
+
+| Value of `list_sizing` | The list |
+|---|---|
+| `fill_screen` | grows or shrinks the previews and the fonts by one factor until the list fills 95 percent of the width or 90 percent of the height of the screen, up to 2.5 times the preview and 1.6 times the font of the settings |
+| `fixed` | keeps the sizes of the settings, and shrinks them only when the list would not fit |
+
+Under `fill_screen`, `preview_size` gives the shape of a preview and the size that the growth starts from.
+Under both, the columns fold into two lines when two lines make the previews at least 5 percent larger.
+The first line takes the larger half of the columns, so the numbers read from left to right and then downward.
+
+| Value of `title_overflow` | A long title |
+|---|---|
+| `wrap` | flows over up to `title_line_count` lines, and its cell grows to them |
+| `truncate` | is shortened to one line ending in an ellipsis |
+| `scroll` | scrolls from right to left after a pause of one second while its window is selected, and is shortened otherwise |
+
+## Asyar, Raycast and URLs reach the profiles from outside Hammerspoon
+
+### The Asyar extension in `asyar-extension/` shows each profile as an item
+
+The extension adds ten items to the search of [Asyar](https://asyar.org).
+
+| Item | Enter |
+|---|---|
+| Profile 1 to Profile 9, with the name of a renamed profile after it, such as "Profile 2 · Writing" | activates the profile, or deactivates it while it is active |
+| Reassign App Numbers | returns every number of the active profile, or of profile 0, to the default, as Control-Option-0 does |
+
+The active profile shows a green dot, the label "Active profile" and the line "Active. Enter deactivates it.", and the other profiles show a white dot.
+The extension reads `~/.hammerspoon/desktop-manager-state.json`, and draws the items again when the active profile or a name changes there.
+The manifest, `asyar-extension/manifest.json`, limits the extension to three permissions and holds the path of the state file.
+
+| Permission | Scope |
+|---|---|
+| `files:read` | `~/.hammerspoon/desktop-manager-state.json` alone |
+| `fs:watch` | the same file |
+| `shell:open-url` | the URLs that start with `hammerspoon://` |
+
+Setting up the extension takes two steps, with Node and npm installed.
+
+1. Run `npm install` in `asyar-extension/`.
+2. Run `make link-asyar-extension` in the folder of this repository.
+   The command builds the extension into `asyar-extension/dist/`, links the folder into `~/Library/Application Support/org.asyar.app/extensions/`, and registers it in `dev_extensions.json` there.
+
+Quit Asyar and start it again, so that it loads the extension.
+
+### The scripts in `launcher-scripts/` run in Asyar and Raycast
+
+The scripts cover the actions that the extension lacks, such as renaming a profile or giving a number to an application, and they serve Raycast.
+Each script opens one of the URLs below, and carries the headers of the Scripts feature of Asyar and of a Raycast script command.
+
+| Script title | Arguments |
+|---|---|
+| Activate Profile 1 to Activate Profile 9 | none |
+| Deactivate Profile 1 to Deactivate Profile 9 | none |
+| Deactivate Active Profile | none |
+| Rename Profile | the profile number and the new name |
+| Cycle Profile Monitor Matching | none |
+| Save Profile Arrangement | none |
+| Number App | the number and the name of a running application |
+| Release App Number | the number |
+
+In Asyar, add the folder `launcher-scripts/` in Settings, Scripts.
+Asyar reads the folder without its subfolders, and shows a notification each time a script ends.
+In Raycast, add the same folder in Settings, Script Commands, Add Script Directory.
+A script title is fixed, so the titles name the profiles by number.
+
+### A URL reaches every action
+
+| Action | Shortcut or menu | URL `hammerspoon://desktop-manager?...` |
+|---|---|---|
+| Activate profile N, or switch to it | Command-Option-Shift-N | `action=activate&profile=N` |
+| Deactivate profile N while it is active | Command-Option-Shift-N | `action=deactivate&profile=N` |
+| Deactivate the active profile | Command-Option-Shift-0 | `action=deactivate` |
+| Activate profile N, or deactivate it while it is active | Command-Option-Shift-N | `action=toggle&profile=N` |
+| Rename profile N | menu, Rename active profile… | `action=rename&profile=N&name=Writing` |
+| Change when monitor configurations are the same | menu, Same monitor configuration by | `action=cycle-monitor-matching` |
+| Update the record of the active profile now | menu, Save arrangement now | `action=save` |
+| Give number N to a running application | menu, Application numbers | `action=number-app&number=N&app=Firefox` |
+| Return number N to the default | menu, Application numbers | `action=release-app-number&number=N` |
+| Return every number to the default | Control-Option-0 | `action=reset-app-numbers` |
+
+The numbers belong to the active profile, or to profile 0 while no profile is active.
+In a terminal, `open -g "hammerspoon://desktop-manager?action=activate&profile=2"` activates profile 2.
+
+## A switch changes only the windows that differ from the record
 
 Activating a profile does the least work that brings back what the profile recorded.
 
@@ -37,17 +262,15 @@ Activating a profile adds the desktops that the profile recorded and a screen la
 The tool removes no desktop, because removing a desktop moves the windows on it and changes what the other profiles recorded.
 A switch shows another desktop for three reasons alone: to move a window to another screen, to open a new window on its recorded desktop, and to bring the desktop that the profile had in front back to the front.
 
-## A window that no longer exists gets a new window of its application
-
 macOS gives a window that its application reopens a new window id, such as a window of Visual Studio Code after the application restarts.
-When a profile is activated and the window of a record in sight no longer exists, the setting `missing_window_policy` in `desktop_manager/default_settings.lua` chooses what happens.
+When a recorded window in sight no longer exists, `missing_window_policy` chooses what replaces it.
 
 | Value of `missing_window_policy` | The tool |
 |---|---|
 | `match_title_or_open_new_window`, the default | takes an open window of the same application with the same title, and opens a new window when no title matches |
 | `open_new_window` | opens a new window of the same application |
 
-Under the default, the tool also treats an unrecorded window as the reopened copy of a closed recorded window of the same application with the same title, before each update of a record and each switch.
+Under the default, the tool also treats an unrecorded window as the reopened copy of a closed recorded window of the same application with the same title.
 Position and size play no part, because the tool sets them on the window it takes, and because macOS opens a new window at the place of the last closed one.
 A reopened window whose title changed, such as a browser window on another tab, counts as a new window.
 
@@ -61,218 +284,21 @@ The tool leaves out Command-N, because Calendar, Mail, Notes and Slack create an
 A window opens on the desktop that shows, so the tool shows the recorded desktop first, and then sets the recorded frame.
 The records of every profile then name the new window.
 An application that opens no new window within ten seconds is reported in a notification.
-New windows open for records in sight alone.
 
-The tool minimizes a window to take it out of sight.
-The setting `concealment_method` in `desktop_manager/default_settings.lua` makes the tool hide an application instead, when all the windows of the application go out of sight.
+The tool saves the profiles, their records and their application numbers in `~/.hammerspoon/desktop-manager-state.json`.
+A file that the tool cannot read is moved aside to a name that ends in `.unreadable-` and the time, and the tool starts a new state.
 
-When the monitors change to a configuration that the active profile recorded, the tool restores that record.
-When the monitors change to a configuration that is new to the profile, macOS arranges the windows, and the profile starts recording the new configuration.
-
-The menu bar item chooses when two monitor configurations are the same.
-
-| Choice in the menu | Configurations that count as different |
-|---|---|
-| Number of external monitors | built-in display alone, built-in display with one external monitor, two external monitors, and so on |
-| Name of each external monitor | also built-in display with `LG TV SSCR2` and built-in display with `DELL U2720Q` |
-
-## Control-Option with a number lists the applications of the profile and brings one to the front
-
-Each profile gives the numbers from 1 to 9 to applications.
-While no profile is active, the numbers of profile 0 hold.
-Profile 0 keeps numbers alone, so the switches work as before.
-A press of Control-Option with a number shows a list in the middle of the screen: the numbered applications of the active profile, or of profile 0, with their numbers, their icons and the titles of their windows.
-The setting `list_layout` in `desktop_manager/default_settings.lua` chooses how the list arranges them.
-
-| Value of `list_layout` | The list |
-|---|---|
-| `columns`, the default | a column per application, side by side, with the number and the icon on top and the windows stacked downward, each a preview with its title under it |
-| `columns_per_display` | the same columns in a group per display, from left to right as the displays stand, with the name of the display above its group, so an application with windows on two displays has a column in each group |
-| `rows` | a line per application, and under it a line per window with its preview beside the title |
-
-With `columns_per_display`, a last unnamed group holds the windows on an unknown display and the applications that have no window open.
-
-- The press selects a window of the application of that number: the window that had the focus last, or the next window when the application is in front.
-- Each further press of the same number, while you hold Control and Option, selects the next window of that application, in the order in which the windows opened.
-- A press of another number selects a window of that application.
-- Releasing Control or Option brings the selected window to the front.
-  Escape closes the list without a switch.
-- A press released at once brings the selected window to the front without showing the list.
-- Each application line shows the icon of the application, and each window line shows the icon beside the title, or a blurred preview of the window under the setting below.
-- The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
-- A window on another desktop is reached by showing that desktop first.
-- An application without windows shows "no window, a new one opens", and gets a new window from the same sources that replace a closed window at a switch.
-
-The setting `preview_method` in `desktop_manager/default_settings.lua` chooses what a window line shows beside the title.
-
-| Value of `preview_method` | A window line shows |
-|---|---|
-| `blurred_snapshots`, the default | a blurred image of the window, or the icon for a window without an image, such as a minimized one |
-| `app_icons` | the icon of the application |
-
-The setting `preview_blur` sets how blurred a preview is: 1 keeps full detail, the default, 2 half of it, and 4 a quarter.
-A preview keeps the proportions of its window.
-The sizes are fractions of the screen in front, so the list keeps its look on every display.
-The setting `preview_size` sets the width and height of a preview as fractions of the width and height of the screen, 0.1 by 0.1 by default, which is 144 by 88 points on a screen of 1440 by 875 points.
-The setting `list_font_size` sets the size of the titles as a fraction of the height of the screen, 0.01 by default, which is about 9 points on that screen, and the names of applications are 2 points larger.
-The rows, the columns and the width of the list follow from the two sizes.
-The setting `list_sizing` chooses how the list uses the screen.
-
-| Value of `list_sizing` | The list |
-|---|---|
-| `fill_screen`, the default | grows or shrinks the previews and the fonts by one factor until the list fills 95 percent of the width or 90 percent of the height of the screen, whichever it reaches first, up to 2.5 times the preview and 1.6 times the font of the settings |
-| `fixed` | keeps the sizes of the settings, and shrinks them only when the list would not fit |
-
-Under `fill_screen`, `preview_size` gives the shape of a preview and the size that the growth starts from.
-In both, the columns fold into two lines when two lines make the previews at least 5 percent larger than one line does.
-The first line takes the larger half of the columns, so the numbers read from left to right and then downward, and a display whose columns continue on the second line has its name above them there too.
-
-The setting `title_overflow` chooses what happens to a title longer than its space.
-
-| Value of `title_overflow` | A long title |
-|---|---|
-| `wrap`, the default | flows over the lines it needs, up to `title_line_count`, 2 by default, and its cell or line grows to them |
-| `truncate` | is shortened to one line and ends in an ellipsis |
-| `scroll` | scrolls from right to left after a pause of one second, when its window is selected, and is shortened otherwise |
-
-The images come after the list shows, one window at a time, and need the permission for Screen Recording.
-Hammerspoon takes them with an old screen capture function of macOS.
-On 2026-10-10, on macOS 27.0.1, that function blocked Hammerspoon for two minutes with every shortcut unresponsive, and after the permission was turned on it took less than 0.3 seconds.
-An image that takes longer than half a second therefore stops the images until the next reload, and the console says why.
-On a machine where Hammerspoon lacks the permission, choose `app_icons`, or time one image first:
-
-1. In System Settings, Privacy & Security, Screen & System Audio Recording, turn on Hammerspoon.
-2. In a terminal, run the command below, which may itself block Hammerspoon for minutes when the function blocks.
-
-```sh
-hs -c 'local started = hs.timer.secondsSinceEpoch(); local image = hs.window.snapshotForID(hs.window.focusedWindow():id()); return tostring(image ~= nil) .. " after " .. (hs.timer.secondsSinceEpoch() - started) .. " seconds"'
-```
-
-The images work when the command prints `true` after less than half a second.
-
-The tool gives the default numbers to the applications that the profile records in sight.
-The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
-A default number stays with its application while the profile records a window of it, in sight or out of sight, so the numbers stay put.
-Profile 0 gives the default numbers to the applications with a window in sight, in the same order, and a default number stays while its application has a window open.
-Profile 0 updates its numbers at the times when a profile updates its record, and at once when a profile is deactivated.
-The menu bar item lists the numbers of the active profile, or of profile 0, under Application numbers.
-Each number there has two choices: give the number to the application that was in front when the menu opened, or return the number to the default.
-A number given by hand stays until you change it.
-Control-Option-0 returns every number of the active profile, or of profile 0, to the default, also the numbers given by hand, and an alert names the profile.
-Control-Option-0 does nothing while the list shows, so a slip during a press keeps the numbers given by hand.
-
-Control-Option with a free number reaches the application in front unchanged.
-A number given to an application takes Control-Option with that number from every other application.
-On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
-Command with a number selects tabs, views and groups in many applications, and Command-Shift with 3, 4 and 5 takes screenshots in macOS.
-The setting `app_hotkey_modifiers` in `desktop_manager/default_settings.lua` changes the modifiers.
-Control alone does not work there, because the tool presses Control with a number to switch desktops.
-
-## Setting up the tool takes six steps
-
-1. Run `make install-loader` in this folder.
-   The command writes `~/.hammerspoon/init.lua` with one line that loads `init.lua` of this folder, and leaves an existing file unchanged.
-2. Click the hammer icon in the menu bar and choose Reload Config.
-3. In System Settings, Privacy & Security, Accessibility, turn on Hammerspoon.
-4. In System Settings, Keyboard, Keyboard Shortcuts, Mission Control, turn on "Switch to Desktop 1" and the next ones up to the number of desktops you use.
-   The tool switches desktops with these shortcuts, Control-1 to Control-9.
-5. In System Settings, Desktop & Dock, Mission Control, keep "Displays have separate Spaces" on and "Automatically rearrange Spaces based on most recent use" off.
-   The tool finds a desktop by its position, and a rearrangement moves the positions.
-6. Optional: shorten the animations.
-   In System Settings, Desktop & Dock, set "Minimize windows using" to Scale Effect.
-   In System Settings, Accessibility, Display, turn on "Reduce motion".
-
-The menu bar shows `◧` after the reload, and `◧ 2` while profile 2 is active.
-
-## Shortcuts, the menu bar item, URLs and launcher scripts control the profiles
-
-| Action | Shortcut | URL |
-|---|---|---|
-| Activate profile N, or switch to it | Command-Option-Shift-N, for N from 1 to 9 | `hammerspoon://desktop-manager?action=activate&profile=N` |
-| Deactivate profile N while it is active | Command-Option-Shift-N again | `hammerspoon://desktop-manager?action=deactivate&profile=N` |
-| Deactivate the active profile | Command-Option-Shift-0 | `hammerspoon://desktop-manager?action=deactivate` |
-| Activate profile N, or deactivate it while it is active | Command-Option-Shift-N | `hammerspoon://desktop-manager?action=toggle&profile=N` |
-| Rename profile N | menu bar item, Rename active profile… | `hammerspoon://desktop-manager?action=rename&profile=N&name=Writing` |
-| Change when monitor configurations are the same | menu bar item, Same monitor configuration by | `hammerspoon://desktop-manager?action=cycle-monitor-matching` |
-| Update the record of the active profile now | menu bar item, Save arrangement now | `hammerspoon://desktop-manager?action=save` |
-| List the numbered applications and select application N, or its next window | Control-Option-N, for N from 1 to 9, and release to go there | none |
-| Give number N to a running application in the active profile, or in profile 0 | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=number-app&number=N&app=Firefox` |
-| Return number N to the default in the active profile, or in profile 0 | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=release-app-number&number=N` |
-| Return every number of the active profile, or of profile 0, to the default | Control-Option-0 | `hammerspoon://desktop-manager?action=reset-app-numbers` |
-
-`open -g "hammerspoon://desktop-manager?action=activate&profile=2"` in a terminal activates profile 2.
-A switch starts once the modifier keys are released, because the simulated Control-number would otherwise combine with them.
-`desktop_manager/default_settings.lua` holds the modifiers of the profiles and of the application numbers, the number of profiles and of application numbers, the way of taking windows out of sight, what happens to a window that no longer exists, and the timings.
-
-## The Asyar extension in `asyar-extension/` shows each profile as an item
-
-The extension adds ten items to the search of Asyar.
-
-| Item | Enter |
-|---|---|
-| Profile 1 to Profile 9, with the name of a renamed profile after it, such as "Profile 2 · Writing" | activates the profile, or deactivates it while it is active |
-| Reassign App Numbers | returns every number of the active profile, or of profile 0, to the default, as Control-Option-0 does |
-
-The active profile shows a green dot, the label "Active profile" and the line "Active. Enter deactivates it.", and the other profiles show a white dot.
-The extension reads `~/.hammerspoon/desktop-manager-state.json`, and draws the items again when the active profile or a name changes there.
-The items open the URLs of the table above, `action=toggle` and `action=reset-app-numbers`.
-
-Asyar asks you to accept three permissions the first time an item of the extension runs.
-
-| Permission | Scope |
-|---|---|
-| `files:read` | `~/.hammerspoon/desktop-manager-state.json` alone |
-| `fs:watch` | the same file |
-| `shell:open-url` | the URLs that start with `hammerspoon://` |
-
-Until you accept them, the items show no dot.
-The extension takes the path of the state file from `asyar-extension/manifest.json`, so a state file elsewhere needs the path changed there.
-
-Setting up the extension takes two steps, with Node and npm installed.
-
-1. Run `npm install` in `asyar-extension/`.
-2. Run `make link-asyar-extension` in this folder.
-   The command builds the extension into `asyar-extension/dist/`, links the folder into `~/Library/Application Support/org.asyar.app/extensions/`, and registers it in `dev_extensions.json` there.
-
-`make check-asyar-extension` checks the types, runs the unit tests of `asyar-extension/src/profile-items.ts`, runs `asyar validate` of the SDK of Asyar, and builds the extension.
-Run `make link-asyar-extension` again after a change, or `npm run build` in `asyar-extension/`, because Asyar loads the built files through the link.
-`tools/write_asyar_extension_settings.lua` writes `asyar-extension/src/settings.generated.json` with the number of profiles from `desktop_manager/default_settings.lua`.
-`make asyar-extension-settings` writes it again after a change of the settings, and `make check` fails when the file differs from the output of the generator.
-
-## Asyar and Raycast also run the scripts in `launcher-scripts/`
-
-The scripts stay beside the extension, for Raycast, and for the actions that the extension does not offer, such as renaming a profile or giving a number to an application.
-Each script opens one of the URLs above, and carries the headers of the Scripts feature of Asyar and of a Raycast script command.
-
-| Script title | Arguments |
-|---|---|
-| Activate Profile 1 to Activate Profile 9 | none |
-| Deactivate Profile 1 to Deactivate Profile 9 | none |
-| Deactivate Active Profile | none |
-| Rename Profile | the profile number and the new name |
-| Cycle Profile Monitor Matching | none |
-| Save Profile Arrangement | none |
-| Number App | the number and the name of a running application |
-| Release App Number | the number |
-
-In Asyar, add the folder `launcher-scripts/` in Settings, Scripts.
-Asyar reads the folder without its subfolders, and shows a notification each time a script ends.
-In Raycast, add the same folder in Settings, Script Commands, Add Script Directory.
-
-A script title is fixed, so the titles name the profiles by number and not by name.
-`tools/write_launcher_scripts.lua` writes the scripts, with the numbers of profiles and of applications taken from `desktop_manager/default_settings.lua`.
-`make launcher-scripts` writes them again after a change of the generator, and `make check` fails when the folder differs from the output of the generator.
-
-## The tool works around the limits of Hammerspoon and macOS 27.0.1
+## Hammerspoon and macOS 27.0.1 limit what the tool can do
 
 The functions of Hammerspoon 1.1.1 that move a window to another desktop, or that switch, add or remove desktops, fail on macOS 27.0.1.
-The issues https://github.com/Hammerspoon/hammerspoon/issues/3903 and https://github.com/Hammerspoon/hammerspoon/issues/3897 report the failures.
+The issues [#3903](https://github.com/Hammerspoon/hammerspoon/issues/3903) and [#3897](https://github.com/Hammerspoon/hammerspoon/issues/3897) of Hammerspoon report the failures.
+The tool works around them as follows.
 
 - macOS 27.0.1 unminimizes a window onto the desktop it was minimized on, also when another desktop shows, as the log of the tool showed on 2026-10-10.
   A switch therefore brings minimized windows back without switching desktops.
   For the same reason, a window on another desktop of its screen stays there, and the console notes it.
   A window moves to another screen when the tool sets its frame there.
-- A desktop switch presses Control-N.
+- A desktop switch presses Control with the number of the desktop.
   Mission Control numbers the desktops of all screens in one sequence, so desktops after the ninth cannot be reached.
 - Adding a desktop presses the add button of Mission Control through accessibility, under the process WindowManager, which worked on 2026-10-10.
   Mission Control opens for a moment during the addition.
@@ -282,12 +308,28 @@ The issues https://github.com/Hammerspoon/hammerspoon/issues/3903 and https://gi
 - The window filter of Hammerspoon drops a window whose subrole changes while its application is hidden, as the window of Calendar does.
   The tool looks such windows up among all windows of macOS.
 
-Each desktop switch writes to the console how long it waited for the release of the modifiers and how long macOS took to report the new desktop.
-The rest of a switch is the animation of macOS, which "Reduce motion" in step 6 of the setup shortens.
+The previews in the list come after the list shows, one window at a time, and need the permission for Screen Recording.
+Hammerspoon takes them with an old screen capture function of macOS.
+On 2026-10-10, on macOS 27.0.1, that function blocked Hammerspoon for two minutes with every shortcut unresponsive, and took less than 0.3 seconds after the permission was turned on.
+An image that takes longer than half a second therefore stops the previews until the next reload, and the console says why.
+On a machine where Hammerspoon lacks the permission, choose `app_icons`, or time one image first.
+
+1. In System Settings, Privacy & Security, Screen & System Audio Recording, turn on Hammerspoon.
+2. In a terminal, run the command below, which may itself block Hammerspoon for minutes when the function blocks.
+
+```sh
+hs -c 'local started = hs.timer.secondsSinceEpoch(); local image = hs.window.snapshotForID(hs.window.focusedWindow():id()); return tostring(image ~= nil) .. " after " .. (hs.timer.secondsSinceEpoch() - started) .. " seconds"'
+```
+
+The previews work when the command prints `true` after less than half a second.
+
+## Diagnostics in the Hammerspoon console show what the tool reads
 
 `hs -c "desktop_manager:print_diagnostics()"` prints what the tool reads of the screens, desktops and windows, and which profiles recorded each window, and changes nothing.
-The menu bar item, Print diagnostics to the console, prints the same into the Hammerspoon console.
-Each switch writes its plan and its duration to the Hammerspoon console.
+"Print diagnostics to the console" in the menu bar item prints the same into the Hammerspoon console.
+Each switch writes its plan and its duration to the console.
+Each desktop switch also writes how long it waited for the release of the modifiers and how long macOS took to report the new desktop.
+The rest of a switch is the animation of macOS, which "Reduce motion" in step 7 of the installation shortens.
 
 ## The code splits into a tested core and a macOS layer
 
@@ -305,14 +347,19 @@ The modules of `desktop_manager/core/` call no Hammerspoon function, so `lua` 5.
 The fake of Hammerspoon unminimizes a window onto its own desktop, as macOS 27.0.1 does, and a test can make it unminimize onto the desktop that shows.
 The tests check the logic of the tool, and say nothing about the behaviour of macOS.
 
-`make check` checks the syntax with `luac -p`, lints with `luacheck`, checks the formatting with `stylua --check`, runs the tests and compares the launcher scripts with the generator.
+`make check` checks the syntax with `luac -p`, lints with `luacheck`, checks the formatting with `stylua --check`, runs the tests, and compares the generated files with their generators.
 `make format` formats the code with `stylua`.
 The tools come from Homebrew: `lua@5.4`, `luacheck`, `stylua` and `lua-language-server`.
 
-## The code follows the LuaRocks style guide with four departures
+`make check-asyar-extension` checks the types of the extension, runs its unit tests, runs `asyar validate` of the SDK of Asyar, and builds it.
+Run `make link-asyar-extension` again after a change to the extension, or `npm run build` in `asyar-extension/`, because Asyar loads the built files through the link.
 
-The code follows the LuaRocks style guide at https://github.com/luarocks/lua-style-guide, read on 2026-10-10, because Google publishes no style guide for Lua.
-The code departs from it in four places.
+Two generators take the numbers of profiles and of applications from `desktop_manager/default_settings.lua`.
+`make launcher-scripts` runs `tools/write_launcher_scripts.lua`, which writes the scripts.
+`make asyar-extension-settings` runs `tools/write_asyar_extension_settings.lua`, which writes `asyar-extension/src/settings.generated.json`.
+Run them after a change of the settings, because `make check` fails when a generated file differs from the output of its generator.
+
+The code follows the [LuaRocks style guide](https://github.com/luarocks/lua-style-guide), read on 2026-10-10, with four departures.
 
 - Indentation is four spaces, as in the Lua extensions that Hammerspoon 1.1.1 ships, where the guide uses three.
 - Types are written as annotations of lua-language-server, such as `---@param`, where the guide uses LDoc, because the language server checks them.
@@ -320,8 +367,3 @@ The code departs from it in four places.
 - `init.lua` sets one global, `desktop_manager`, because Hammerspoon stops the hotkeys and watchers that Lua garbage-collects, and because the command-line tool `hs` reaches the controller through it.
 
 Lines are at most 100 characters long, as `stylua.toml` and `.luacheckrc` set.
-
-## The state lives in one JSON file
-
-The tool saves the profiles, their records and their application numbers in `~/.hammerspoon/desktop-manager-state.json`.
-A file that the tool cannot read is moved aside to a name that ends in `.unreadable-` and the time, and the tool starts a new state.
