@@ -24,6 +24,7 @@ local state_file = require("desktop_manager.macos.state_file")
 local status_menu = require("desktop_manager.macos.status_menu")
 local switch_list = require("desktop_manager.core.switch_list")
 local switch_overlay = require("desktop_manager.macos.switch_overlay")
+local title_overflow = require("desktop_manager.core.title_overflow")
 local track_windows = require("desktop_manager.macos.track_windows")
 local url_command = require("desktop_manager.core.url_command")
 local window_matching = require("desktop_manager.core.window_matching")
@@ -897,6 +898,8 @@ function ProfileController:open_switch_list(entries, app_number)
         preview_size = self.settings.preview_size,
         font_size = self.settings.list_font_size,
         sizing = self.settings.list_sizing,
+        title_overflow = self.settings.title_overflow,
+        title_line_count = self.settings.title_line_count,
     })
     local event_types = hs.eventtap.event.types
     session.event_tap = hs.eventtap
@@ -1310,6 +1313,24 @@ function profile_controller.start(settings)
                 "the setting list_font_size is %s, and it must be a fraction of the height of the"
                     .. " screen, above 0 and at most 0.1",
                 tostring(settings.list_font_size)
+            ),
+            2
+        )
+    end
+    if not title_overflow.is_valid(settings.title_overflow) then
+        error(
+            string.format(
+                "the setting title_overflow is %q, which names no way",
+                tostring(settings.title_overflow)
+            ),
+            2
+        )
+    end
+    if math.type(settings.title_line_count) ~= "integer" or settings.title_line_count < 1 then
+        error(
+            string.format(
+                "the setting title_line_count is %s, and it must be a whole number of 1 or more",
+                tostring(settings.title_line_count)
             ),
             2
         )

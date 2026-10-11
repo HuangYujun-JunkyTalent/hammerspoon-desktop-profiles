@@ -3,6 +3,7 @@ local list_layout = require("desktop_manager.core.list_layout")
 local list_sizing = require("desktop_manager.core.list_sizing")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
+local title_overflow = require("desktop_manager.core.title_overflow")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 
 local default_settings = {}
@@ -42,6 +43,8 @@ local default_settings = {}
 ---in front
 ---@field list_layout string a value of list_layout
 ---@field list_sizing string a value of list_sizing
+---@field title_overflow string a value of title_overflow
+---@field title_line_count integer the most lines of a title under title_overflow wrap
 ---@field builtin_screen_name_patterns string[]
 ---@field timing Timing
 
@@ -64,6 +67,8 @@ function default_settings.create(state_file_path)
         list_font_size = 0.016,
         list_layout = list_layout.COLUMNS,
         list_sizing = list_sizing.FILL_SCREEN,
+        title_overflow = title_overflow.TRUNCATE,
+        title_line_count = 3,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         timing = {
             poll_interval_seconds = 0.05,

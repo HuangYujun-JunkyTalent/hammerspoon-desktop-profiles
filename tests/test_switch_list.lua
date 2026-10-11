@@ -147,4 +147,14 @@ return {
         expect.equal(groups[3].columns[2].number, 3)
         expect.equal(groups[3].columns[2].is_selected, true)
     end,
+
+    a_scrolling_title_moves_left_and_starts_again_after_its_end = function()
+        expect.equal(switch_list.scroll_title("Abcdef", 0, 4), "Abcd")
+        expect.equal(switch_list.scroll_title("Abcdef", 3, 4), "def ")
+        expect.equal(switch_list.scroll_title("Abcdef", 9, 4), "  Ab")
+        expect.equal(switch_list.scroll_title("Abcdef", 10, 4), " Abc")
+        expect.equal(switch_list.scroll_title("Abcdef", 11, 4), "Abcd")
+        expect.equal(switch_list.scroll_title("Ünï—x", 1, 3), "nï—")
+        expect.equal(switch_list.count_characters("Ünï—x"), 5)
+    end,
 }

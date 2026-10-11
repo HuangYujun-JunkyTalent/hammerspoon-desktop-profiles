@@ -8,6 +8,8 @@ local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
 local profile_controller = require("desktop_manager.macos.profile_controller")
 local profile_state = require("desktop_manager.core.profile_state")
+local retained_timers = require("desktop_manager.macos.retained_timers")
+local title_overflow = require("desktop_manager.core.title_overflow")
 
 local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
 local SETTLE_SECONDS = 30
@@ -765,6 +767,71 @@ return {
         end
         table.sort(counts)
         expect.equal(counts, { 4, 5 })
+    end,
+
+    a_wrapping_title_flows_over_the_lines_it_needs_up_to_the_limit = function()
+        local long_title = string.rep("word ", 12)
+        local function read_title_element(line_limit)
+            local world = start_world({
+                list_sizing = list_sizing.FIXED,
+                title_overflow = title_overflow.WRAP,
+                title_line_count = line_limit,
+            })
+            world.create_window("com.apple.Safari", long_title)
+            world.hotkeys["1"]()
+            world.advance(SETTLE_SECONDS)
+            world.held_modifiers = { ctrl = true, alt = true }
+            world.app_hotkeys["1"]()
+            for _, element in ipairs(world.overlay.elements) do
+                if element.type == "text" and element.text:match("^word") then
+                    return element
+                end
+            end
+            error("the list shows no long title")
+        end
+        local three_lines = read_title_element(3)
+        expect.equal(three_lines.frame.h, 60)
+        expect.equal(three_lines.textLineBreak, "wordWrap")
+        local two_lines = read_title_element(2)
+        expect.equal(two_lines.frame.h, 40)
+        expect.equal(two_lines.text:match("…$") ~= nil, true)
+    end,
+
+    the_selected_title_scrolls_and_the_scrolling_stops_with_the_list = function()
+        local long_title = "A very long title of a window that does not fit its column at all"
+        local world = start_world({
+            list_sizing = list_sizing.FIXED,
+            title_overflow = title_overflow.SCROLL,
+        })
+        local long_window = world.create_window("com.apple.Safari", long_title)
+        world.create_window("com.apple.Safari", "Another very long title that the list shortens")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local timers_before = retained_timers.count_running()
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.app_hotkeys["1"]()
+        local function find_text(prefix)
+            for _, element in ipairs(world.overlay.elements) do
+                if element.type == "text" and element.text:sub(1, #prefix) == prefix then
+                    return element
+                end
+            end
+            return nil
+        end
+        expect.equal(world.read_overlay()[3]:sub(1, 1), ">")
+        local scrolling = find_text("A very")
+        expect.equal(scrolling.text:match("…$"), nil)
+        expect.equal(find_text("Another").text:match("…$") ~= nil, true)
+        local first_line = world.read_overlay()[3]
+        world.advance(2)
+        local later_line = world.read_overlay()[3]
+        expect.equal(later_line:sub(1, 1), ">")
+        expect.equal(later_line ~= first_line, true)
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, long_window.id)
+        expect.equal(retained_timers.count_running(), timers_before)
     end,
 
     a_slow_snapshot_stops_the_snapshots_until_a_reload = function()

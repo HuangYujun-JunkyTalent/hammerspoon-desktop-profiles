@@ -605,6 +605,10 @@ function fake_hammerspoon.install(spec)
                     canvas.current_frame = new_frame
                     return canvas
                 end
+                function canvas:elementAttribute(index, key, value)
+                    canvas.elements[index][key] = value
+                    return canvas
+                end
                 function canvas:replaceElements(elements)
                     canvas.elements = elements
                     return canvas

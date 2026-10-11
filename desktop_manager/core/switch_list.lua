@@ -96,6 +96,48 @@ function switch_list.find_selected_window_id(applications, selection)
     return window and window.window_id or nil
 end
 
+local SCROLL_SPACER = "     "
+
+---@param title string
+---@return string[] the characters of the title, or its bytes when it is no valid UTF-8
+local function split_characters(title)
+    local characters = {}
+    local is_valid = pcall(function()
+        for _, code in utf8.codes(title) do
+            table.insert(characters, utf8.char(code))
+        end
+    end)
+    if is_valid then
+        return characters
+    end
+    characters = {}
+    for index = 1, #title do
+        table.insert(characters, title:sub(index, index))
+    end
+    return characters
+end
+
+---@param title string
+---@return integer the characters of the title
+function switch_list.count_characters(title)
+    return #split_characters(title)
+end
+
+---The part of a scrolling title that shows at a step: the title followed by a space, moved left by
+---one character per step and starting again after its end.
+---@param title string
+---@param step integer 0 for the start of the title
+---@param visible_count integer the characters that the space shows
+---@return string
+function switch_list.scroll_title(title, step, visible_count)
+    local characters = split_characters(title .. SCROLL_SPACER)
+    local visible = {}
+    for offset = 0, visible_count - 1 do
+        table.insert(visible, characters[(step + offset) % #characters + 1])
+    end
+    return table.concat(visible)
+end
+
 ---@param title string
 ---@param max_length integer the most characters that a title keeps, the ellipsis included
 ---@return string

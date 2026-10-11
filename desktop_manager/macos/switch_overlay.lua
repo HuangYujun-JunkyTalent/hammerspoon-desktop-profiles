@@ -1,5 +1,7 @@
 local list_sizing = require("desktop_manager.core.list_sizing")
+local retained_timers = require("desktop_manager.macos.retained_timers")
 local switch_list = require("desktop_manager.core.switch_list")
+local title_overflow = require("desktop_manager.core.title_overflow")
 
 ---Draws the list of numbered applications and their windows in the middle of the screen in front,
 ---as rows of lines or as columns of applications.
@@ -18,11 +20,13 @@ switch_overlay.MAX_TITLE_LENGTH = 60
 ---@field lines SwitchLine[]|nil
 ---@field groups SwitchColumnGroup[]|nil
 
----The sizes of the list as fractions of the screen in front.
----@class SwitchRelativeSizes
+---The settings of the list: its sizes as fractions of the screen in front, and its titles.
+---@class SwitchListSettings
 ---@field preview_size table the w and h of a preview, as fractions of the width and height
 ---@field font_size number the size of the titles, as a fraction of the height
 ---@field sizing string a value of list_sizing
+---@field title_overflow string a value of title_overflow
+---@field title_line_count integer the most lines of a title under title_overflow wrap
 
 ---The sizes of the list in points, which the fit to the screen chose.
 ---@class SwitchSizes
@@ -30,13 +34,30 @@ switch_overlay.MAX_TITLE_LENGTH = 60
 ---@field font_size number the size of the titles in points
 ---@field application_font_size number
 ---@field icon_size number
----@field text_height number
+---@field text_height number the height of a line of an application name
+---@field title_height number the height of a line of a title
 
----A list on the screen: its canvas, its sizes in points and the number of lines of its columns.
+---The title that scrolls: the index of its text element, the title and the characters it shows.
+---@class ScrollingTitle
+---@field element_index integer
+---@field title string
+---@field visible_count integer
+
+---What a drawing of the list reads.
+---@class DrawingContext
+---@field images SwitchImages
+---@field sizes SwitchSizes
+---@field line_count integer the lines of the columns, which the rows do not use
+---@field settings SwitchListSettings
+
+---A list on the screen: its canvas, its sizes in points, the number of lines of its columns, and
+---the timers of a scrolling title.
 ---@class SwitchOverlay
 ---@field canvas table an hs.canvas
 ---@field sizes SwitchSizes
 ---@field line_count integer
+---@field settings SwitchListSettings
+---@field scroll_timers table[]
 
 local PADDING = 16
 local GAP = 14
@@ -54,6 +75,8 @@ local MAX_FILL_SCALE = 2.5
 local MAX_FONT_SCALE = 1.6
 local MAX_LINE_COUNT = 2
 local REQUIRED_GAIN_OF_ANOTHER_LINE = 1.05
+local SCROLL_PAUSE_SECONDS = 1
+local SCROLL_STEP_SECONDS = 0.15
 local NO_WINDOW_NOTE = "no window, a new one opens"
 local BACKGROUND_COLOR = { white = 0.12, alpha = 0.92 }
 local SELECTION_COLOR = { red = 0.2, green = 0.45, blue = 0.95, alpha = 0.95 }
@@ -71,6 +94,7 @@ local function create_sizes(preview_size, font_size)
         application_font_size = application_font_size,
         icon_size = math.floor(application_font_size * LINE_HEIGHT_PER_POINT + 0.5),
         text_height = math.ceil(application_font_size * LINE_HEIGHT_PER_POINT),
+        title_height = math.ceil(font_size * LINE_HEIGHT_PER_POINT),
     }
 end
 
@@ -79,6 +103,61 @@ end
 ---@return integer the characters of a title that fit the width
 local function count_fitting_characters(width, font_size)
     return math.max(4, math.floor(width / (font_size * CHARACTER_WIDTH_PER_POINT)))
+end
+
+---A title laid out for its space: the text to draw, its lines, and whether it scrolls.
+---@class TitleLayout
+---@field text string
+---@field line_count integer
+---@field is_scrolling boolean
+
+---@param title string
+---@param visible_count integer the characters that one line holds
+---@return TitleLayout
+local function truncate_title(title, visible_count)
+    return {
+        text = switch_list.shorten(title, visible_count),
+        line_count = 1,
+        is_scrolling = false,
+    }
+end
+
+local TITLE_LAYOUTS = {
+    [title_overflow.TRUNCATE] = function(title, visible_count)
+        return truncate_title(title, visible_count)
+    end,
+    [title_overflow.WRAP] = function(title, visible_count, _, line_limit)
+        local needed = math.ceil(switch_list.count_characters(title) / visible_count)
+        return {
+            text = switch_list.shorten(title, visible_count * line_limit),
+            line_count = math.max(1, math.min(line_limit, needed)),
+            is_scrolling = false,
+        }
+    end,
+    [title_overflow.SCROLL] = function(title, visible_count, is_selected)
+        if not is_selected or switch_list.count_characters(title) <= visible_count then
+            return truncate_title(title, visible_count)
+        end
+        return {
+            text = switch_list.scroll_title(title, 0, visible_count),
+            line_count = 1,
+            is_scrolling = true,
+        }
+    end,
+}
+
+---@param title string
+---@param visible_count integer the characters that one line holds
+---@param is_selected boolean
+---@param settings SwitchListSettings
+---@return TitleLayout
+local function lay_out_title(title, visible_count, is_selected, settings)
+    return TITLE_LAYOUTS[settings.title_overflow](
+        title,
+        visible_count,
+        is_selected,
+        settings.title_line_count
+    )
 end
 
 ---An image element centered in its box, at the size of a preview or of an icon.
@@ -113,7 +192,7 @@ end
 ---@param text string
 ---@param frame table
 ---@param style TextStyle
----@return table a text element
+---@return table a text element, which wraps at words when its frame holds several lines
 local function build_text(text, frame, style)
     return {
         type = "text",
@@ -121,6 +200,7 @@ local function build_text(text, frame, style)
         textFont = style.is_bold and "Helvetica-Bold" or "Helvetica",
         textSize = style.font_size,
         textColor = style.is_bright and TEXT_COLOR or DIMMED_TEXT_COLOR,
+        textLineBreak = "wordWrap",
         frame = frame,
     }
 end
@@ -147,15 +227,31 @@ local function build_background()
     }
 end
 
+---Adds the text element of a title, and returns the scrolling title when it scrolls.
+---@param elements table[]
+---@param title string
+---@param layout TitleLayout
+---@param frame table
+---@param style TextStyle
+---@param visible_count integer
+---@return ScrollingTitle|nil
+local function add_title(elements, title, layout, frame, style, visible_count)
+    table.insert(elements, build_text(layout.text, frame, style))
+    if not layout.is_scrolling then
+        return nil
+    end
+    return { element_index = #elements, title = title, visible_count = visible_count }
+end
+
 ---Draws the rows: each application on a line, and under it a line per window with its preview.
 ---@param lines SwitchLine[]
----@param images SwitchImages
----@param sizes SwitchSizes
+---@param context DrawingContext
 ---@return table[] elements
 ---@return table size the w and h of the list
-local function draw_rows(lines, images, sizes)
+---@return ScrollingTitle|nil
+local function draw_rows(lines, context)
+    local sizes, images = context.sizes, context.images
     local application_line_height = math.max(sizes.icon_size, sizes.text_height) + 8
-    local window_line_height = math.max(sizes.preview_size.h, sizes.text_height) + 7
     local preview_inset = PADDING + GAP
     local window_text_inset = preview_inset + sizes.preview_size.w + GAP
     local application_text_inset = PADDING + sizes.icon_size + 10
@@ -163,10 +259,19 @@ local function draw_rows(lines, images, sizes)
         switch_overlay.MAX_TITLE_LENGTH * sizes.font_size * CHARACTER_WIDTH_PER_POINT + 0.5
     )
     local width = window_text_inset + title_width + PADDING
-    local elements = { build_background() }
+    local visible_count = count_fitting_characters(title_width, sizes.font_size)
+    local elements, scrolling = { build_background() }, nil
     local top = PADDING
     for _, line in ipairs(lines) do
-        local height = line.is_application and application_line_height or window_line_height
+        local text = line.is_application and line.text or (line.text:gsub("^%s+", ""))
+        local layout = { text = text, line_count = 1, is_scrolling = false }
+        if not line.is_application and line.window_id then
+            layout = lay_out_title(text, visible_count, line.is_selected, context.settings)
+        end
+        local text_height = line.is_application and sizes.text_height
+            or layout.line_count * sizes.title_height
+        local height = line.is_application and application_line_height
+            or math.max(sizes.preview_size.h, text_height) + 7
         if line.is_selected then
             table.insert(
                 elements,
@@ -184,47 +289,41 @@ local function draw_rows(lines, images, sizes)
             table.insert(elements, image)
         end
         local inset = line.is_application and application_text_inset or window_text_inset
-        local text = line.is_application and line.text or (line.text:gsub("^%s+", ""))
-        table.insert(
-            elements,
-            build_text(text, {
-                x = inset,
-                y = top + (height - sizes.text_height) / 2,
-                w = width - inset - PADDING,
-                h = sizes.text_height,
-            }, {
-                font_size = line.is_application and sizes.application_font_size or sizes.font_size,
-                is_bold = line.is_application,
-                is_bright = line.is_application or line.is_selected,
-            })
-        )
+        scrolling = add_title(elements, text, layout, {
+            x = inset,
+            y = top + (height - text_height) / 2,
+            w = width - inset - PADDING,
+            h = text_height,
+        }, {
+            font_size = line.is_application and sizes.application_font_size or sizes.font_size,
+            is_bold = line.is_application,
+            is_bright = line.is_application or line.is_selected,
+        }, visible_count) or scrolling
         top = top + height
     end
-    return elements, { w = width, h = top + PADDING }
+    return elements, { w = width, h = top + PADDING }, scrolling
 end
 
 ---The sizes in points that the columns derive from the sizes of the list.
 ---@class ColumnMetrics
----@field title_height number
 ---@field header_height number
----@field cell_height number
 ---@field column_width number
 ---@field title_width number
+---@field visible_count integer the characters of a title that one line holds
 
 ---@param sizes SwitchSizes
 ---@return ColumnMetrics
 local function measure_columns(sizes)
-    local title_height = math.ceil(sizes.font_size * LINE_HEIGHT_PER_POINT)
     local column_width = math.max(
         sizes.preview_size.w,
         HEADER_CHARACTERS * sizes.application_font_size
     ) + 2 * CELL_PADDING
+    local title_width = column_width - 2 * CELL_PADDING
     return {
-        title_height = title_height,
         header_height = math.max(sizes.icon_size, sizes.text_height) + 8,
-        cell_height = sizes.preview_size.h + title_height + 3 * CELL_PADDING / 2,
         column_width = column_width,
-        title_width = column_width - 2 * CELL_PADDING,
+        title_width = title_width,
+        visible_count = count_fitting_characters(title_width, sizes.font_size),
     }
 end
 
@@ -232,10 +331,10 @@ end
 ---@param elements table[]
 ---@param column SwitchColumn
 ---@param origin table the x and y of the column
----@param images SwitchImages
----@param sizes SwitchSizes
+---@param context DrawingContext
 ---@param metrics ColumnMetrics
-local function draw_column_header(elements, column, origin, images, sizes, metrics)
+local function draw_column_header(elements, column, origin, context, metrics)
+    local sizes = context.sizes
     if column.is_selected then
         table.insert(
             elements,
@@ -247,7 +346,7 @@ local function draw_column_header(elements, column, origin, images, sizes, metri
             })
         )
     end
-    local icon = build_image(sizes, images.app_icons[column.bundle_id], false, {
+    local icon = build_image(sizes, context.images.app_icons[column.bundle_id], false, {
         x = origin.x + CELL_PADDING,
         y = origin.y,
         w = sizes.icon_size,
@@ -277,25 +376,30 @@ end
 ---@param elements table[]
 ---@param column SwitchColumn
 ---@param origin table the x and y of the first cell
----@param images SwitchImages
----@param sizes SwitchSizes
+---@param context DrawingContext
 ---@param metrics ColumnMetrics
-local function draw_column_cells(elements, column, origin, images, sizes, metrics)
-    local characters = count_fitting_characters(metrics.title_width, sizes.font_size)
-    local dimmed_style = { font_size = sizes.font_size, is_bold = false, is_bright = false }
+---@return number the height of the cells
+---@return ScrollingTitle|nil
+local function draw_column_cells(elements, column, origin, context, metrics)
+    local sizes = context.sizes
     if #column.cells == 0 then
         table.insert(
             elements,
-            build_text(switch_list.shorten(NO_WINDOW_NOTE, characters), {
+            build_text(switch_list.shorten(NO_WINDOW_NOTE, metrics.visible_count), {
                 x = origin.x + CELL_PADDING,
                 y = origin.y + CELL_PADDING,
                 w = metrics.title_width,
-                h = metrics.title_height,
-            }, dimmed_style)
+                h = sizes.title_height,
+            }, { font_size = sizes.font_size, is_bold = false, is_bright = false })
         )
+        return sizes.title_height + 2 * CELL_PADDING, nil
     end
-    local top = origin.y
+    local top, scrolling = origin.y, nil
     for _, cell in ipairs(column.cells) do
+        local layout =
+            lay_out_title(cell.title, metrics.visible_count, cell.is_selected, context.settings)
+        local title_height = layout.line_count * sizes.title_height
+        local cell_height = sizes.preview_size.h + title_height + 3 * CELL_PADDING / 2
         if cell.is_selected then
             table.insert(
                 elements,
@@ -303,36 +407,34 @@ local function draw_column_cells(elements, column, origin, images, sizes, metric
                     x = origin.x,
                     y = top,
                     w = metrics.column_width,
-                    h = metrics.cell_height,
+                    h = cell_height,
                 })
             )
         end
-        local preview = images.previews[cell.window_id]
-        local image =
-            build_image(sizes, preview or images.app_icons[column.bundle_id], preview ~= nil, {
-                x = origin.x + CELL_PADDING,
-                y = top + CELL_PADDING / 2,
-                w = metrics.title_width,
-                h = sizes.preview_size.h,
-            })
+        local preview = context.images.previews[cell.window_id]
+        local icon = context.images.app_icons[column.bundle_id]
+        local image = build_image(sizes, preview or icon, preview ~= nil, {
+            x = origin.x + CELL_PADDING,
+            y = top + CELL_PADDING / 2,
+            w = metrics.title_width,
+            h = sizes.preview_size.h,
+        })
         if image then
             table.insert(elements, image)
         end
-        table.insert(
-            elements,
-            build_text(switch_list.shorten(cell.title, characters), {
-                x = origin.x + CELL_PADDING,
-                y = top + CELL_PADDING + sizes.preview_size.h,
-                w = metrics.title_width,
-                h = metrics.title_height,
-            }, {
-                font_size = sizes.font_size,
-                is_bold = false,
-                is_bright = cell.is_selected,
-            })
-        )
-        top = top + metrics.cell_height
+        scrolling = add_title(elements, cell.title, layout, {
+            x = origin.x + CELL_PADDING,
+            y = top + CELL_PADDING + sizes.preview_size.h,
+            w = metrics.title_width,
+            h = title_height,
+        }, {
+            font_size = sizes.font_size,
+            is_bold = false,
+            is_bright = cell.is_selected,
+        }, metrics.visible_count) or scrolling
+        top = top + cell_height
     end
+    return top - origin.y, scrolling
 end
 
 ---A run of columns of one group on one line of the list.
@@ -374,31 +476,27 @@ local function fold_columns(groups, line_count)
 end
 
 ---Draws the columns: a column per application with its windows stacked downward, the name of a
----display above its columns, and the columns folded into the given number of lines.
+---display above its columns, and the columns folded into the lines of the context.
 ---@param groups SwitchColumnGroup[]
----@param images SwitchImages
----@param sizes SwitchSizes
----@param line_count integer
+---@param context DrawingContext
 ---@return table[] elements
 ---@return table size the w and h of the list
-local function draw_columns(groups, images, sizes, line_count)
+---@return ScrollingTitle|nil
+local function draw_columns(groups, context)
+    local sizes = context.sizes
     local metrics = measure_columns(sizes)
     local has_display_names = false
     for _, group in ipairs(groups) do
         has_display_names = has_display_names or group.display_name ~= nil
     end
-    local label_height = has_display_names and metrics.title_height + 6 or 0
-    local elements = { build_background() }
+    local label_height = has_display_names and sizes.title_height + 6 or 0
+    local elements, scrolling = { build_background() }, nil
     local top, width = PADDING, 0
-    local lines = fold_columns(groups, line_count)
+    local lines = fold_columns(groups, context.line_count)
     for line_index, segments in ipairs(lines) do
-        local most_cells = 1
-        for _, segment in ipairs(segments) do
-            for _, column in ipairs(segment.columns) do
-                most_cells = math.max(most_cells, #column.cells)
-            end
-        end
         local columns_top = top + label_height
+        local cells_top = columns_top + metrics.header_height
+        local tallest_cells = 0
         local left = PADDING
         for segment_index, segment in ipairs(segments) do
             if segment.display_name then
@@ -408,84 +506,92 @@ local function draw_columns(groups, images, sizes, line_count)
                     elements,
                     build_text(
                         segment.display_name,
-                        { x = left, y = top, w = segment_width, h = metrics.title_height },
+                        { x = left, y = top, w = segment_width, h = sizes.title_height },
                         { font_size = sizes.font_size, is_bold = false, is_bright = false }
                     )
                 )
             end
             for _, column in ipairs(segment.columns) do
-                local origin = { x = left, y = columns_top }
-                draw_column_header(elements, column, origin, images, sizes, metrics)
-                draw_column_cells(
+                draw_column_header(
                     elements,
                     column,
-                    { x = left, y = columns_top + metrics.header_height },
-                    images,
-                    sizes,
+                    { x = left, y = columns_top },
+                    context,
                     metrics
                 )
+                local cells_height, column_scrolling = draw_column_cells(
+                    elements,
+                    column,
+                    { x = left, y = cells_top },
+                    context,
+                    metrics
+                )
+                tallest_cells = math.max(tallest_cells, cells_height)
+                scrolling = column_scrolling or scrolling
                 left = left + metrics.column_width + COLUMN_GAP
             end
             left = left - COLUMN_GAP + (segment_index < #segments and GROUP_GAP or 0)
         end
         width = math.max(width, left + PADDING)
-        top = columns_top + metrics.header_height + most_cells * metrics.cell_height
+        top = cells_top + tallest_cells
         if line_index < #lines then
             top = top + LINE_GAP
         end
     end
-    return elements, { w = width, h = top + PADDING }
+    return elements, { w = width, h = top + PADDING }, scrolling
 end
 
 ---@param view SwitchView
----@param images SwitchImages
----@param sizes SwitchSizes
----@param line_count integer the lines of the columns, which the rows do not use
+---@param context DrawingContext
 ---@return table[] elements
 ---@return table size the w and h of the list
-local function draw(view, images, sizes, line_count)
+---@return ScrollingTitle|nil
+local function draw(view, context)
     if view.lines then
-        return draw_rows(view.lines, images, sizes)
+        return draw_rows(view.lines, context)
     end
-    return draw_columns(view.groups, images, sizes, line_count)
+    return draw_columns(view.groups, context)
 end
 
----@param relative_sizes SwitchRelativeSizes
+---@param settings SwitchListSettings
 ---@param screen table the frame of the screen in front
 ---@param scale number
 ---@return SwitchSizes the sizes of the settings in points, times the scale
-local function scale_sizes(relative_sizes, screen, scale)
+local function scale_sizes(settings, screen, scale)
     return create_sizes({
-        w = relative_sizes.preview_size.w * screen.w * scale,
-        h = relative_sizes.preview_size.h * screen.h * scale,
-    }, relative_sizes.font_size * screen.h * math.min(scale, MAX_FONT_SCALE))
+        w = settings.preview_size.w * screen.w * scale,
+        h = settings.preview_size.h * screen.h * scale,
+    }, settings.font_size * screen.h * math.min(scale, MAX_FONT_SCALE))
 end
 
 ---The largest scale up to the limit at which the list fits within the screen.
 ---Each round shrinks the scale by the share by which the list is too large, and the paddings,
 ---which do not scale, need a few rounds.
 ---@param view SwitchView
----@param images SwitchImages
----@param relative_sizes SwitchRelativeSizes
+---@param context DrawingContext the images, the settings and the lines; the sizes are replaced
 ---@param screen table
 ---@param max_scale number
----@param line_count integer
 ---@return number scale
 ---@return SwitchSizes sizes
-local function find_largest_scale(view, images, relative_sizes, screen, max_scale, line_count)
+local function find_largest_scale(view, context, screen, max_scale)
     local scale = max_scale
-    local sizes = scale_sizes(relative_sizes, screen, scale)
+    local trial = {
+        images = context.images,
+        settings = context.settings,
+        line_count = context.line_count,
+        sizes = scale_sizes(context.settings, screen, scale),
+    }
     for _ = 1, FIT_ROUNDS do
-        local _, size = draw(view, images, sizes, line_count)
+        local _, size = draw(view, trial)
         local share =
             math.max(size.w / (MAX_WIDTH_SHARE * screen.w), size.h / (MAX_HEIGHT_SHARE * screen.h))
         if share <= 1 then
-            return scale, sizes
+            return scale, trial.sizes
         end
         scale = scale / share
-        sizes = scale_sizes(relative_sizes, screen, scale)
+        trial.sizes = scale_sizes(context.settings, screen, scale)
     end
-    return scale, sizes
+    return scale, trial.sizes
 end
 
 ---@param view SwitchView
@@ -504,22 +610,22 @@ end
 ---A second line wins only when it makes the previews larger by REQUIRED_GAIN_OF_ANOTHER_LINE.
 ---@param view SwitchView
 ---@param images SwitchImages
----@param relative_sizes SwitchRelativeSizes
+---@param settings SwitchListSettings
 ---@param screen table the frame of the screen in front
----@return SwitchSizes sizes
----@return integer line_count
-local function fit_sizes(view, images, relative_sizes, screen)
-    local max_scale = relative_sizes.sizing == list_sizing.FILL_SCREEN and MAX_FILL_SCALE or 1
+---@return DrawingContext
+local function fit_to_screen(view, images, settings, screen)
+    local max_scale = settings.sizing == list_sizing.FILL_SCREEN and MAX_FILL_SCALE or 1
     local most_lines = math.min(MAX_LINE_COUNT, math.max(1, count_columns(view)))
-    local best_scale, best_sizes, best_line_count = nil, nil, 1
+    local best_scale, best_context = nil, nil
     for line_count = 1, most_lines do
-        local scale, sizes =
-            find_largest_scale(view, images, relative_sizes, screen, max_scale, line_count)
+        local context = { images = images, settings = settings, line_count = line_count }
+        local scale, sizes = find_largest_scale(view, context, screen, max_scale)
         if not best_scale or scale > best_scale * REQUIRED_GAIN_OF_ANOTHER_LINE then
-            best_scale, best_sizes, best_line_count = scale, sizes, line_count
+            context.sizes = sizes
+            best_scale, best_context = scale, context
         end
     end
-    return best_sizes, best_line_count
+    return best_context
 end
 
 ---@param size table the w and h of the list
@@ -534,28 +640,76 @@ local function center_on_screen(size)
     }
 end
 
+---@param overlay SwitchOverlay
+local function stop_scrolling(overlay)
+    for _, timer in ipairs(overlay.scroll_timers) do
+        retained_timers.stop(timer)
+    end
+    overlay.scroll_timers = {}
+end
+
+---Scrolls the title after a pause, one character per step, until the list changes or closes.
+---@param overlay SwitchOverlay
+---@param scrolling ScrollingTitle|nil
+local function start_scrolling(overlay, scrolling)
+    stop_scrolling(overlay)
+    if not scrolling then
+        return
+    end
+    local step = 0
+    table.insert(
+        overlay.scroll_timers,
+        retained_timers.after(SCROLL_PAUSE_SECONDS, function()
+            table.insert(
+                overlay.scroll_timers,
+                retained_timers.every(SCROLL_STEP_SECONDS, function()
+                    step = step + 1
+                    overlay.canvas:elementAttribute(
+                        scrolling.element_index,
+                        "text",
+                        switch_list.scroll_title(scrolling.title, step, scrolling.visible_count)
+                    )
+                end)
+            )
+        end)
+    )
+end
+
 ---@param view SwitchView
 ---@param images SwitchImages
----@param relative_sizes SwitchRelativeSizes
+---@param settings SwitchListSettings
 ---@return SwitchOverlay
-function switch_overlay.show(view, images, relative_sizes)
-    local sizes, line_count =
-        fit_sizes(view, images, relative_sizes, hs.screen.mainScreen():frame())
-    local elements, size = draw(view, images, sizes, line_count)
+function switch_overlay.show(view, images, settings)
+    local context = fit_to_screen(view, images, settings, hs.screen.mainScreen():frame())
+    local elements, size, scrolling = draw(view, context)
     local canvas = hs.canvas.new(center_on_screen(size))
     canvas:level(hs.canvas.windowLevels.overlay)
     canvas:replaceElements(elements)
     canvas:show()
-    return { canvas = canvas, sizes = sizes, line_count = line_count }
+    local overlay = {
+        canvas = canvas,
+        sizes = context.sizes,
+        line_count = context.line_count,
+        settings = settings,
+        scroll_timers = {},
+    }
+    start_scrolling(overlay, scrolling)
+    return overlay
 end
 
 ---@param overlay SwitchOverlay
 ---@param view SwitchView
 ---@param images SwitchImages
 function switch_overlay.update(overlay, view, images)
-    local elements, size = draw(view, images, overlay.sizes, overlay.line_count)
+    local elements, size, scrolling = draw(view, {
+        images = images,
+        sizes = overlay.sizes,
+        line_count = overlay.line_count,
+        settings = overlay.settings,
+    })
     overlay.canvas:frame(center_on_screen(size))
     overlay.canvas:replaceElements(elements)
+    start_scrolling(overlay, scrolling)
 end
 
 ---@param overlay SwitchOverlay
@@ -566,6 +720,7 @@ end
 
 ---@param overlay SwitchOverlay
 function switch_overlay.hide(overlay)
+    stop_scrolling(overlay)
     overlay.canvas:delete()
 end
 
