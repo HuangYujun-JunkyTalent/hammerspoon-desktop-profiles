@@ -544,6 +544,48 @@ return {
         expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1", "ctrl+2" })
     end,
 
+    a_held_press_shows_the_list_and_the_release_goes_to_the_selection = function()
+        local world = start_world()
+        local news = world.create_window("com.apple.Safari", "News")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        expect.equal(world.read_overlay(), {
+            " 1   Safari",
+            ">      Inbox",
+            "       News",
+            " 2   Microsoft Word",
+            "       Draft.docx",
+        })
+        world.app_hotkeys["1"]()
+        expect.equal(world.read_overlay()[3], ">      News")
+        world.app_hotkeys["7"]()
+        expect.equal(world.key_strokes, {})
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.read_overlay(), nil)
+        expect.equal(world.focused_window_id, news.id)
+    end,
+
+    a_press_of_another_number_selects_its_application_and_escape_closes_the_list = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        expect.equal(world.read_overlay()[2], ">      Draft.docx")
+        world.app_hotkeys["2"]()
+        expect.equal(world.read_overlay()[4], ">      Inbox")
+        world.press_escape()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.read_overlay(), nil)
+        expect.equal(world.focused_window_id, nil)
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, nil)
+    end,
+
     a_number_reaches_a_window_that_another_profile_recorded = function()
         local world = start_world()
         world.hotkeys["1"]()

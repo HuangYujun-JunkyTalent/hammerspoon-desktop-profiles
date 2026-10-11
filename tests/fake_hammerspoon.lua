@@ -31,6 +31,7 @@ local fake_hammerspoon = {}
 ---@field windows FakeWindowSpec[]
 
 local USER_SPACE_TYPE = 0
+local ESCAPE_KEY_CODE = 53
 
 ---@param spec FakeWorldSpec
 ---@return table world
@@ -51,6 +52,8 @@ function fake_hammerspoon.install(spec)
         hotkeys = {},
         app_hotkeys = {},
         hotkey_events = {},
+        event_taps = {},
+        overlay = nil,
         focused_window_id = nil,
         url_handlers = {},
         filter_callbacks = {},
@@ -296,6 +299,57 @@ function fake_hammerspoon.install(spec)
         return window
     end
 
+    ---@param event table the fake hs.eventtap.event
+    local function send_to_event_taps(event)
+        for _, tap in ipairs(world.event_taps) do
+            if tap.is_running then
+                tap.callback(event)
+            end
+        end
+    end
+
+    ---Releases every modifier key, as the user lifts the fingers.
+    function world.release_modifiers()
+        world.held_modifiers = {}
+        send_to_event_taps({
+            getType = function()
+                return 12
+            end,
+            getFlags = function()
+                return {}
+            end,
+        })
+    end
+
+    function world.press_escape()
+        send_to_event_taps({
+            getType = function()
+                return 10
+            end,
+            getKeyCode = function()
+                return ESCAPE_KEY_CODE
+            end,
+        })
+    end
+
+    ---The texts of the list on the screen, with the selected line marked by ">".
+    ---@return string[]|nil
+    function world.read_overlay()
+        if not world.overlay or not world.overlay.is_visible then
+            return nil
+        end
+        local texts, is_next_selected = {}, false
+        for _, element in ipairs(world.overlay.elements) do
+            if element.type == "rectangle" and element.frame then
+                is_next_selected = true
+            elseif element.type == "text" then
+                table.insert(texts, (is_next_selected and ">" or " ") .. element.text)
+                is_next_selected = false
+            end
+        end
+        return texts
+    end
+
     ---Closes a window, as a click on its red button does.
     ---@param window_id integer
     function world.close_window(window_id)
@@ -463,6 +517,9 @@ function fake_hammerspoon.install(spec)
             primaryScreen = function()
                 return screen_objects[1]
             end,
+            mainScreen = function()
+                return screen_objects[1]
+            end,
             watcher = {
                 new = function(callback)
                     table.insert(world.screen_watchers, callback)
@@ -498,6 +555,43 @@ function fake_hammerspoon.install(spec)
                 if #modifiers == 1 and modifiers[1] == "ctrl" and tonumber(character) then
                     switch_by_shortcut(tonumber(character))
                 end
+            end,
+            event = { types = { keyDown = 10, flagsChanged = 12 } },
+            new = function(_, callback)
+                local tap = { is_running = false, callback = callback }
+                function tap:start()
+                    tap.is_running = true
+                    return tap
+                end
+                function tap:stop()
+                    tap.is_running = false
+                    return tap
+                end
+                table.insert(world.event_taps, tap)
+                return tap
+            end,
+        },
+        keycodes = { map = { escape = ESCAPE_KEY_CODE } },
+        canvas = {
+            windowLevels = { overlay = 102 },
+            new = function(frame)
+                local canvas = { frame = frame, elements = {}, is_visible = false }
+                function canvas:level()
+                    return canvas
+                end
+                function canvas:replaceElements(elements)
+                    canvas.elements = elements
+                    return canvas
+                end
+                function canvas:show()
+                    canvas.is_visible = true
+                    world.overlay = canvas
+                    return canvas
+                end
+                function canvas:delete()
+                    canvas.is_visible = false
+                end
+                return canvas
             end,
         },
         window = {

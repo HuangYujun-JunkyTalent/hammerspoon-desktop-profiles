@@ -15,6 +15,24 @@ function keyboard_modifiers.are_released()
     return true
 end
 
+---@param flags table<string, boolean> the modifiers held, as hs.eventtap reports them
+---@param modifiers string[]
+---@return boolean whether every one of the modifiers is in the flags
+function keyboard_modifiers.are_all_in(flags, modifiers)
+    for _, modifier in ipairs(modifiers) do
+        if not flags[modifier] then
+            return false
+        end
+    end
+    return true
+end
+
+---@param modifiers string[]
+---@return boolean whether the user holds every one of the modifiers now
+function keyboard_modifiers.are_held(modifiers)
+    return keyboard_modifiers.are_all_in(hs.eventtap.checkKeyboardModifiers(), modifiers)
+end
+
 ---A simulated Control-number would combine with modifiers that the user still holds.
 ---@param timing Timing
 ---@param on_done fun()

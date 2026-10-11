@@ -11,7 +11,7 @@ local app_switcher = {}
 ---@param bundle_id string
 ---@param filter_windows table[] the hs.window objects of the window filter
 ---@return table[] hs.window objects
-local function list_windows_of_application(bundle_id, filter_windows)
+function app_switcher.list_windows(bundle_id, filter_windows)
     local windows, is_listed = {}, {}
     local function add(window)
         local window_id = window:id()
@@ -37,23 +37,50 @@ local function list_windows_of_application(bundle_id, filter_windows)
     return windows
 end
 
----The window after the focused one when the application is in front, and otherwise the window of
----the application that had the focus last.
----@param bundle_id string
----@param windows table[] hs.window objects, the most recently focused first
----@return table an hs.window
-local function pick_window(bundle_id, windows)
-    local frontmost = hs.application.frontmostApplication()
-    local focused = hs.window.focusedWindow()
-    if not frontmost or not focused or track_windows.bundle_id_of(frontmost) ~= bundle_id then
-        return windows[1]
-    end
+---The application of the number for the list, with its windows in the order of the window ids.
+---The first press selects the window after the focused one when the application is in front, and
+---otherwise the window of the application that had the focus last.
+---@param entry AppNumber
+---@param filter_windows table[] the hs.window objects of the window filter
+---@return SwitchApplication
+---@return table<integer, table> the hs.window of each window id
+function app_switcher.describe_application(entry, filter_windows)
+    local windows = app_switcher.list_windows(entry.bundle_id, filter_windows)
     local window_by_id, window_ids = {}, {}
     for _, window in ipairs(windows) do
         window_by_id[window:id()] = window
         table.insert(window_ids, window:id())
     end
-    return window_by_id[app_numbers.find_next_window_id(window_ids, focused:id())]
+    table.sort(window_ids)
+    local first_window_id = windows[1] and windows[1]:id()
+    local frontmost = hs.application.frontmostApplication()
+    local focused = hs.window.focusedWindow()
+    if
+        frontmost
+        and focused
+        and track_windows.bundle_id_of(frontmost) == entry.bundle_id
+        and window_by_id[focused:id()]
+    then
+        first_window_id = app_numbers.find_next_window_id(window_ids, focused:id())
+    end
+    local switch_windows, first_window_index = {}, 0
+    for index, window_id in ipairs(window_ids) do
+        table.insert(
+            switch_windows,
+            { window_id = window_id, title = window_by_id[window_id]:title() or "" }
+        )
+        if window_id == first_window_id then
+            first_window_index = index
+        end
+    end
+    return {
+        number = entry.number,
+        bundle_id = entry.bundle_id,
+        app_name = entry.app_name,
+        windows = switch_windows,
+        first_window_index = first_window_index,
+    },
+        window_by_id
 end
 
 ---Shows the desktop of the window when another desktop shows, then unhides its application,
@@ -61,7 +88,7 @@ end
 ---@param window table an hs.window
 ---@param timing Timing
 ---@param on_done fun(error_message: string|nil)
-local function bring_to_front(window, timing, on_done)
+function app_switcher.bring_to_front(window, timing, on_done)
     local function focus()
         local application = window:application()
         if application and application:isHidden() then
@@ -102,38 +129,29 @@ local function open_new_window(entry, timing, on_done)
     end)
 end
 
----Brings a window of the application of the number to the front.
----The windows are all the windows of the application, also those that the active profile did not
----record.
----A recorded window on a desktop that Hammerspoon has not seen is reached by showing that desktop.
----An application without a window gets a new window.
+---Brings the selected window of the application of the number to the front.
+---Without a selected window, a recorded window on a desktop that Hammerspoon has not seen is
+---reached by showing that desktop, and an application without such a window gets a new window.
 ---@param entry AppNumber
----@param filter_windows table[] the hs.window objects of the window filter
+---@param window table|nil the selected hs.window
 ---@param recorded_window_ids integer[] the windows of the application that some profile recorded
 ---@param timing Timing
 ---@param on_done fun(error_message: string|nil)
-function app_switcher.switch_to_application(
-    entry,
-    filter_windows,
-    recorded_window_ids,
-    timing,
-    on_done
-)
-    local windows = list_windows_of_application(entry.bundle_id, filter_windows)
-    if #windows > 0 then
-        bring_to_front(pick_window(entry.bundle_id, windows), timing, on_done)
+function app_switcher.switch_to_selection(entry, window, recorded_window_ids, timing, on_done)
+    if window then
+        app_switcher.bring_to_front(window, timing, on_done)
         return
     end
     for _, window_id in ipairs(recorded_window_ids) do
         local space_id = read_desktops.find_window_space_id(window_id)
         if space_id then
             switch_desktops.switch_to_space(space_id, timing, function(error_message)
-                local reached = list_windows_of_application(entry.bundle_id, {})
+                local reached = app_switcher.list_windows(entry.bundle_id, {})
                 if error_message or #reached == 0 then
                     open_new_window(entry, timing, on_done)
                     return
                 end
-                bring_to_front(reached[1], timing, on_done)
+                app_switcher.bring_to_front(reached[1], timing, on_done)
             end)
             return
         end

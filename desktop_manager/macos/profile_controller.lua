@@ -3,6 +3,7 @@ local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local concealment_method = require("desktop_manager.core.concealment_method")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
+local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local missing_windows = require("desktop_manager.core.missing_windows")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
@@ -18,6 +19,8 @@ local restore_windows = require("desktop_manager.macos.restore_windows")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local state_file = require("desktop_manager.macos.state_file")
 local status_menu = require("desktop_manager.macos.status_menu")
+local switch_list = require("desktop_manager.core.switch_list")
+local switch_overlay = require("desktop_manager.macos.switch_overlay")
 local track_windows = require("desktop_manager.macos.track_windows")
 local url_command = require("desktop_manager.core.url_command")
 local window_matching = require("desktop_manager.core.window_matching")
@@ -43,6 +46,16 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---@field screen_signature string the screens that the last arrangement was restored for
 ---@field window_ids_out_of_sight table<integer, boolean> the windows that the last switch took out
 ---of sight
+---@field switch_session SwitchSession|nil the list of applications while it shows
+
+---The list of numbered applications that a press of their modifiers with a number opens.
+---@class SwitchSession
+---@field entries AppNumber[]
+---@field applications SwitchApplication[]
+---@field window_by_id table<integer, table> the hs.window of each window id in the list
+---@field selection SwitchSelection|nil
+---@field overlay table|nil the hs.canvas of the list
+---@field event_tap table|nil the hs.eventtap that watches the modifiers and Escape
 local ProfileController = {}
 ProfileController.__index = ProfileController
 
@@ -747,26 +760,129 @@ function ProfileController:list_recorded_window_ids_of_application(bundle_id)
     return window_ids
 end
 
----Brings a window of the application of the number to the front, or passes the keys through to
----the application in front when the active profile gives the number to no application.
+---@param session SwitchSession
+---@return SwitchLine[]
+local function describe_switch_lines(session)
+    return switch_list.describe_lines(
+        session.applications,
+        session.selection,
+        switch_overlay.MAX_TITLE_LENGTH
+    )
+end
+
+---Opens the list of numbered applications with the window of the number selected, or moves the
+---selection while the list shows.
+---A number that the active profile gives to no application passes its keys through to the
+---application in front while the list is closed.
 ---@param app_number integer
 ---@param hotkey table the hs.hotkey of the number
 function ProfileController:press_app_number(app_number, hotkey)
+    local session = self.switch_session
+    if session then
+        session.selection = switch_list.press(session.applications, session.selection, app_number)
+        if session.overlay then
+            switch_overlay.update(session.overlay, describe_switch_lines(session))
+        end
+        return
+    end
     local number = self.state.active_profile_number
-    local entry = number
-        and app_numbers.find_by_number(
-            profile_state.profile_or_default(self.state, number).app_numbers,
-            app_number
-        )
-    if not entry then
+    local entries = number and profile_state.profile_or_default(self.state, number).app_numbers
+        or {}
+    if not app_numbers.find_by_number(entries, app_number) then
         hotkey:disable()
         hs.eventtap.keyStroke(self.settings.app_hotkey_modifiers, tostring(app_number), 0)
         hotkey:enable()
         return
     end
-    app_switcher.switch_to_application(
+    self:open_switch_list(entries, app_number)
+end
+
+---Shows the list while the user holds the modifiers, and goes to the selection when they are
+---released, or at once when they were released before the event tap started.
+---@param entries AppNumber[]
+---@param app_number integer
+function ProfileController:open_switch_list(entries, app_number)
+    local filter_windows = self.window_filter:getWindows()
+    local applications, window_by_id = {}, {}
+    for _, entry in ipairs(entries) do
+        local application, windows = app_switcher.describe_application(entry, filter_windows)
+        table.insert(applications, application)
+        for window_id, window in pairs(windows) do
+            window_by_id[window_id] = window
+        end
+    end
+    local session = {
+        entries = entries,
+        applications = applications,
+        window_by_id = window_by_id,
+        selection = switch_list.press(applications, nil, app_number),
+    }
+    self.switch_session = session
+    if not keyboard_modifiers.are_held(self.settings.app_hotkey_modifiers) then
+        self:go_to_switch_selection()
+        return
+    end
+    session.overlay = switch_overlay.show(describe_switch_lines(session))
+    local event_types = hs.eventtap.event.types
+    session.event_tap = hs.eventtap
+        .new({ event_types.flagsChanged, event_types.keyDown }, function(event)
+            return self:handle_switch_event(event)
+        end)
+        :start()
+    if not keyboard_modifiers.are_held(self.settings.app_hotkey_modifiers) then
+        self:go_to_switch_selection()
+    end
+end
+
+---Goes to the selection when a modifier of the numbers is released, and closes the list on Escape.
+---The work runs after the event tap returns, because a desktop switch posts key events itself.
+---@param event table an hs.eventtap.event
+---@return boolean whether the event stops here
+function ProfileController:handle_switch_event(event)
+    local event_types = hs.eventtap.event.types
+    if event:getType() == event_types.keyDown then
+        if event:getKeyCode() == hs.keycodes.map.escape then
+            retained_timers.defer(function()
+                self:close_switch_list()
+            end)
+            return true
+        end
+        return false
+    end
+    if not keyboard_modifiers.are_all_in(event:getFlags(), self.settings.app_hotkey_modifiers) then
+        retained_timers.defer(function()
+            self:go_to_switch_selection()
+        end)
+    end
+    return false
+end
+
+---@return SwitchSession|nil the session that was open
+function ProfileController:close_switch_list()
+    local session = self.switch_session
+    if not session then
+        return nil
+    end
+    self.switch_session = nil
+    if session.event_tap then
+        session.event_tap:stop()
+    end
+    if session.overlay then
+        switch_overlay.hide(session.overlay)
+    end
+    return session
+end
+
+function ProfileController:go_to_switch_selection()
+    local session = self:close_switch_list()
+    if not session or not session.selection then
+        return
+    end
+    local entry = app_numbers.find_by_number(session.entries, session.selection.number)
+    local window_id = switch_list.find_selected_window_id(session.applications, session.selection)
+    app_switcher.switch_to_selection(
         entry,
-        self.window_filter:getWindows(),
+        window_id and session.window_by_id[window_id],
         self:list_recorded_window_ids_of_application(entry.bundle_id),
         self.settings.timing,
         function(error_message)
