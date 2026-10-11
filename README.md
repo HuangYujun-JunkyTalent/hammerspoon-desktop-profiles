@@ -2,7 +2,7 @@
 
 The tool runs inside Hammerspoon and keeps nine numbered profiles.
 A profile records how many desktops each screen has, which windows are on each desktop, and where each window sits.
-Each profile also gives numbers to applications, and Control-Option with a number brings that application to the front.
+Each profile also gives numbers to applications, and Control-Option with a number lists them and brings one to the front.
 `requirements.md` states what the tool must do.
 
 ## A profile records its desktops and windows, and a switch changes only what differs
@@ -75,16 +75,20 @@ The menu bar item chooses when two monitor configurations are the same.
 | Number of external monitors | built-in display alone, built-in display with one external monitor, two external monitors, and so on |
 | Name of each external monitor | also built-in display with `LG TV SSCR2` and built-in display with `DELL U2720Q` |
 
-## Control-Option with a number brings an application of the profile to the front
+## Control-Option with a number lists the applications of the profile and brings one to the front
 
 Each profile gives the numbers from 1 to 9 to applications.
-Control-Option with a number brings the application of that number to the front.
+A press of Control-Option with a number shows a list in the middle of the screen: the numbered applications of the active profile, with their numbers, and under each the titles of its windows.
 
-- The first press shows the window of the application that had the focus last.
-- Each further press, while the application is in front, shows its next window, in the order in which the windows opened.
+- The press selects a window of the application of that number: the window that had the focus last, or the next window when the application is in front.
+- Each further press of the same number, while you hold Control and Option, selects the next window of that application, in the order in which the windows opened.
+- A press of another number selects a window of that application.
+- Releasing Control or Option brings the selected window to the front.
+  Escape closes the list without a switch.
+- A press released at once brings the selected window to the front without showing the list.
 - The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
 - A window on another desktop is reached by showing that desktop first.
-- An application without windows gets a new window, from the same sources that replace a closed window at a switch.
+- An application without windows shows "no window, a new one opens", and gets a new window from the same sources that replace a closed window at a switch.
 
 The tool gives the default numbers to the applications that the profile records in sight.
 The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
@@ -127,7 +131,7 @@ The menu bar shows `◧` after the reload, and `◧ 2` while profile 2 is active
 | Rename profile N | menu bar item, Rename active profile… | `hammerspoon://desktop-manager?action=rename&profile=N&name=Writing` |
 | Change when monitor configurations are the same | menu bar item, Same monitor configuration by | `hammerspoon://desktop-manager?action=cycle-monitor-matching` |
 | Update the record of the active profile now | menu bar item, Save arrangement now | `hammerspoon://desktop-manager?action=save` |
-| Bring the application of number N to the front, or show its next window | Control-Option-N, for N from 1 to 9 | none |
+| List the numbered applications and select application N, or its next window | Control-Option-N, for N from 1 to 9, and release to go there | none |
 | Give number N to a running application in the active profile | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=number-app&number=N&app=Firefox` |
 | Return number N to the default in the active profile | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=release-app-number&number=N` |
 
@@ -176,6 +180,9 @@ The issues https://github.com/Hammerspoon/hammerspoon/issues/3903 and https://gi
   A switch leaves the windows of unvisited desktops as they are, and a record keeps their last known place.
 - The window filter of Hammerspoon drops a window whose subrole changes while its application is hidden, as the window of Calendar does.
   The tool looks such windows up among all windows of macOS.
+
+Each desktop switch writes to the console how long it waited for the release of the modifiers and how long macOS took to report the new desktop.
+The rest of a switch is the animation of macOS, which "Reduce motion" in step 6 of the setup shortens.
 
 `hs -c "desktop_manager:print_diagnostics()"` prints what the tool reads of the screens, desktops and windows, and which profiles recorded each window, and changes nothing.
 The menu bar item, Print diagnostics to the console, prints the same into the Hammerspoon console.

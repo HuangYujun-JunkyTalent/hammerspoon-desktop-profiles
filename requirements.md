@@ -93,9 +93,12 @@ Each script opens a URL `hammerspoon://...` that the tool binds.
 ## Numbers within a profile bring applications to the front
 
 Each profile gives the numbers from 1 to 9 to applications.
-Control-Option with a number brings the application of that number to the front.
-The first press shows the window of the application that had the focus last.
-Each further press, while the application is in front, shows its next window.
+A press of Control-Option with a number shows a list of the numbered applications of the active profile, with their numbers and the titles of their windows.
+The press selects a window of the application of that number: the window that had the focus last, or the next window when the application is in front.
+Each further press of the same number, while Control and Option stay held, selects the next window of that application.
+A press of another number selects a window of that application.
+Releasing Control or Option brings the selected window to the front, and Escape closes the list without a switch.
+A press released at once brings the selected window to the front without the list.
 The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
 A window on another desktop is reached by showing that desktop.
 An application without windows gets a new window, from the same sources that replace a closed window at a switch.
