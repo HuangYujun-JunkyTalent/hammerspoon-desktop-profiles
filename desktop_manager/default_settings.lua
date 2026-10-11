@@ -22,6 +22,8 @@ local default_settings = {}
 ---@field state_file_path string
 ---@field profile_count integer
 ---@field hotkey_modifiers string[]
+---@field app_hotkey_modifiers string[] the modifiers that, with a number, reach an application
+---@field app_number_count integer
 ---@field url_event_name string
 ---@field initial_monitor_matching string
 ---@field concealment_method string a value of concealment_method
@@ -36,6 +38,8 @@ function default_settings.create(state_file_path)
         state_file_path = state_file_path,
         profile_count = 9,
         hotkey_modifiers = { "cmd", "alt", "shift" },
+        app_hotkey_modifiers = { "cmd" },
+        app_number_count = 9,
         url_event_name = "desktop-manager",
         initial_monitor_matching = monitor_matching.BY_COUNT,
         concealment_method = concealment_method.MINIMIZE_WINDOWS,

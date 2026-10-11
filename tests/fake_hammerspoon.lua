@@ -49,6 +49,9 @@ function fake_hammerspoon.install(spec)
         alerts = {},
         notifications = {},
         hotkeys = {},
+        app_hotkeys = {},
+        hotkey_events = {},
+        focused_window_id = nil,
         url_handlers = {},
         filter_callbacks = {},
         application_watchers = {},
@@ -195,6 +198,14 @@ function fake_hammerspoon.install(spec)
         local object = {}
         function object:id()
             return window.id
+        end
+        function object:focus()
+            world.focused_window_id = window.id
+            table.insert(world.window_operations, "focus " .. window.id)
+            return object
+        end
+        function object:isStandard()
+            return true
         end
         function object:title()
             return window.title
@@ -491,6 +502,10 @@ function fake_hammerspoon.install(spec)
         },
         window = {
             allWindows = list_window_objects,
+            focusedWindow = function()
+                local window = world.focused_window_id and world.windows[world.focused_window_id]
+                return window and window.object
+            end,
             get = function(window_id)
                 local window = world.windows[window_id]
                 return window and window.object
@@ -516,12 +531,19 @@ function fake_hammerspoon.install(spec)
                 end
                 return {}
             end,
-            get = function(bundle_id)
-                local application = world.applications[bundle_id]
-                if application and application.is_running then
-                    return application_object(bundle_id)
+            get = function(hint)
+                for bundle_id, application in pairs(world.applications) do
+                    if
+                        (bundle_id == hint or application.name == hint) and application.is_running
+                    then
+                        return application_object(bundle_id)
+                    end
                 end
                 return nil
+            end,
+            frontmostApplication = function()
+                local window = world.focused_window_id and world.windows[world.focused_window_id]
+                return window and application_object(window.bundle_id)
             end,
             launchOrFocusByBundleID = function(bundle_id)
                 local application = world.applications[bundle_id]
@@ -556,9 +578,25 @@ function fake_hammerspoon.install(spec)
             end,
         },
         hotkey = {
-            bind = function(_, key, callback)
-                world.hotkeys[key] = callback
-                return {}
+            bind = function(modifiers, key, callback)
+                local modifier_key = table.concat(modifiers, "+")
+                local hotkey = { is_enabled = true }
+                function hotkey:disable()
+                    hotkey.is_enabled = false
+                    table.insert(world.hotkey_events, "disable " .. modifier_key .. " " .. key)
+                    return hotkey
+                end
+                function hotkey:enable()
+                    hotkey.is_enabled = true
+                    table.insert(world.hotkey_events, "enable " .. modifier_key .. " " .. key)
+                    return hotkey
+                end
+                if modifier_key == "cmd" then
+                    world.app_hotkeys[key] = callback
+                else
+                    world.hotkeys[key] = callback
+                end
+                return hotkey
             end,
         },
         urlevent = {

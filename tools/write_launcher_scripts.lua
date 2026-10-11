@@ -36,11 +36,11 @@ local function url_script(file_name, title, query)
     }
 end
 
----@param profile_count integer
----@return string the JSON list of the profile numbers, for a dropdown
-local function profile_dropdown_data(profile_count)
+---@param count integer
+---@return string the JSON list of the numbers from 1 to the count, for a dropdown
+local function number_dropdown_data(count)
     local items = {}
-    for number = 1, profile_count do
+    for number = 1, count do
         table.insert(items, string.format('{ "title": "%d", "value": "%d" }', number, number))
     end
     return "[" .. table.concat(items, ", ") .. "]"
@@ -51,7 +51,7 @@ end
 ---@param profile_count integer
 ---@return LauncherScript
 local function rename_script(profile_count)
-    local data = profile_dropdown_data(profile_count)
+    local data = number_dropdown_data(profile_count)
     return {
         file_name = "rename-profile.sh",
         title = "Rename Profile",
@@ -75,9 +75,58 @@ local function rename_script(profile_count)
     }
 end
 
+---@param app_number_count integer
+---@return LauncherScript
+local function number_app_script(app_number_count)
+    local data = number_dropdown_data(app_number_count)
+    return {
+        file_name = "number-app.sh",
+        title = "Number App",
+        raycast_arguments = {
+            string.format('{ "type": "dropdown", "placeholder": "Number", "data": %s }', data),
+            '{ "type": "text", "placeholder": "Running app" }',
+        },
+        asyar_arguments = {
+            string.format(
+                '{ "name": "number", "type": "dropdown", "default": "1", "required": true,'
+                    .. ' "data": %s }',
+                data
+            ),
+            '{ "name": "app", "type": "text", "placeholder": "Running app", "required": true }',
+        },
+        body = {
+            "encoded_app=$(osascript -l JavaScript"
+                .. " -e 'function run(argv) { return encodeURIComponent(argv[0]) }' \"$2\")",
+            'open -g "' .. URL_PREFIX .. 'action=number-app&number=$1&app=$encoded_app"',
+        },
+    }
+end
+
+---@param app_number_count integer
+---@return LauncherScript
+local function release_app_number_script(app_number_count)
+    local data = number_dropdown_data(app_number_count)
+    return {
+        file_name = "release-app-number.sh",
+        title = "Release App Number",
+        raycast_arguments = {
+            string.format('{ "type": "dropdown", "placeholder": "Number", "data": %s }', data),
+        },
+        asyar_arguments = {
+            string.format(
+                '{ "name": "number", "type": "dropdown", "default": "1", "required": true,'
+                    .. ' "data": %s }',
+                data
+            ),
+        },
+        body = { 'open -g "' .. URL_PREFIX .. 'action=release-app-number&number=$1"' },
+    }
+end
+
 ---@param profile_count integer
+---@param app_number_count integer
 ---@return LauncherScript[]
-local function list_scripts(profile_count)
+local function list_scripts(profile_count, app_number_count)
     local scripts = {}
     for number = 1, profile_count do
         table.insert(
@@ -114,6 +163,8 @@ local function list_scripts(profile_count)
         scripts,
         url_script("save-profile-arrangement.sh", "Save Profile Arrangement", "action=save")
     )
+    table.insert(scripts, number_app_script(app_number_count))
+    table.insert(scripts, release_app_number_script(app_number_count))
     return scripts
 end
 
@@ -167,7 +218,7 @@ local output_folder = arg[1]
 if not output_folder then
     error("the output folder is missing: lua " .. GENERATOR_PATH .. " <output folder>", 0)
 end
-local profile_count = default_settings.create(UNUSED_STATE_FILE_PATH).profile_count
-for _, script in ipairs(list_scripts(profile_count)) do
+local settings = default_settings.create(UNUSED_STATE_FILE_PATH)
+for _, script in ipairs(list_scripts(settings.profile_count, settings.app_number_count)) do
     write_script(output_folder, script)
 end

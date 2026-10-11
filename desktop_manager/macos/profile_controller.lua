@@ -1,3 +1,5 @@
+local app_numbers = require("desktop_manager.core.app_numbers")
+local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local concealment_method = require("desktop_manager.core.concealment_method")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
@@ -73,7 +75,10 @@ function ProfileController:write_state()
 end
 
 function ProfileController:refresh_menu()
-    status_menu.show(self.menubar, self.state, self.settings.profile_count, {
+    local function read_state()
+        return self.state
+    end
+    status_menu.show(self.menubar, read_state, self.settings, {
         toggle_profile = function(number)
             self:toggle_profile(number)
         end,
@@ -91,6 +96,12 @@ function ProfileController:refresh_menu()
         end,
         print_diagnostics = function()
             self:print_diagnostics()
+        end,
+        choose_app_number = function(app_number, bundle_id, app_name)
+            self:choose_app_number(app_number, bundle_id, app_name)
+        end,
+        release_app_number = function(app_number)
+            self:release_app_number(app_number)
         end,
     })
 end
@@ -302,6 +313,16 @@ function ProfileController:capture_active_arrangement()
         previous
     )
     self.state = profile_state.with_arrangement(self.state, number, arrangement)
+    self.state = profile_state.with_app_numbers(
+        self.state,
+        number,
+        app_numbers.update_defaults(
+            profile_state.profile_or_default(self.state, number).app_numbers,
+            arrangement,
+            configuration,
+            self.settings.app_number_count
+        )
+    )
     self:write_state()
 end
 
@@ -663,9 +684,115 @@ function ProfileController:set_monitor_matching(matching)
     hs.alert.show("Same monitor configuration by " .. monitor_matching.label_of(matching):lower())
 end
 
+---Gives the number to the application in the active profile, as the user chose.
+---@param app_number integer
+---@param bundle_id string
+---@param app_name string
+function ProfileController:choose_app_number(app_number, bundle_id, app_name)
+    local number = self.state.active_profile_number
+    if not number then
+        notify("No profile is active, so no application can get a number")
+        return
+    end
+    local profile = profile_state.profile_or_default(self.state, number)
+    self.state = profile_state.with_app_numbers(
+        self.state,
+        number,
+        app_numbers.choose(profile.app_numbers, app_number, bundle_id, app_name)
+    )
+    self:write_state()
+    hs.alert.show(string.format("%s is number %d in %s", app_name, app_number, profile.name))
+end
+
+---Returns the number to the defaults of the active profile, which the next update gives again.
+---@param app_number integer
+function ProfileController:release_app_number(app_number)
+    local number = self.state.active_profile_number
+    if not number then
+        return
+    end
+    local profile = profile_state.profile_or_default(self.state, number)
+    self.state = profile_state.with_app_numbers(
+        self.state,
+        number,
+        app_numbers.release(profile.app_numbers, app_number)
+    )
+    self:capture_active_arrangement()
+end
+
+---@param app_number integer
+---@param name_or_bundle_id string
+function ProfileController:number_running_application(app_number, name_or_bundle_id)
+    local application = hs.application.get(name_or_bundle_id)
+    if not application then
+        notify(string.format("No running application is named %q", name_or_bundle_id))
+        return
+    end
+    self:choose_app_number(
+        app_number,
+        track_windows.bundle_id_of(application),
+        application:name() or name_or_bundle_id
+    )
+end
+
+---@param bundle_id string
+---@return integer[] the windows of the application that some profile recorded
+function ProfileController:list_recorded_window_ids_of_application(bundle_id)
+    local window_ids = {}
+    for _, record in ipairs(profile_state.list_all_records(self.state)) do
+        if record.bundle_id == bundle_id and record.window_id then
+            table.insert(window_ids, record.window_id)
+        end
+    end
+    return window_ids
+end
+
+---Brings a window of the application of the number to the front, or passes the keys through to
+---the application in front when the active profile gives the number to no application.
+---@param app_number integer
+---@param hotkey table the hs.hotkey of the number
+function ProfileController:press_app_number(app_number, hotkey)
+    local number = self.state.active_profile_number
+    local entry = number
+        and app_numbers.find_by_number(
+            profile_state.profile_or_default(self.state, number).app_numbers,
+            app_number
+        )
+    if not entry then
+        hotkey:disable()
+        hs.eventtap.keyStroke(self.settings.app_hotkey_modifiers, tostring(app_number), 0)
+        hotkey:enable()
+        return
+    end
+    app_switcher.switch_to_application(
+        entry,
+        self.window_filter:getWindows(),
+        self:list_recorded_window_ids_of_application(entry.bundle_id),
+        self.settings.timing,
+        function(error_message)
+            if error_message then
+                self:report_failures({ error_message })
+            end
+        end
+    )
+end
+
+function ProfileController:bind_app_hotkeys()
+    for app_number = 1, self.settings.app_number_count do
+        local hotkey
+        hotkey = hs.hotkey.bind(self.settings.app_hotkey_modifiers, tostring(app_number), function()
+            self:press_app_number(app_number, hotkey)
+        end)
+        table.insert(self.hotkeys, hotkey)
+    end
+end
+
 ---@param params table<string, string>
 function ProfileController:run_url_command(params)
-    local command, error_message = url_command.parse(params, self.settings.profile_count)
+    local command, error_message = url_command.parse(params, {
+        profile_count = self.settings.profile_count,
+        app_number_count = self.settings.app_number_count,
+    })
     if not command then
         notify(error_message)
         return
@@ -682,6 +809,10 @@ function ProfileController:run_url_command(params)
         self:rename_profile(command.profile_number, command.name)
     elseif command.action == url_command.CYCLE_MONITOR_MATCHING then
         self:set_monitor_matching(monitor_matching.next_after(self.state.monitor_matching))
+    elseif command.action == url_command.NUMBER_APP then
+        self:number_running_application(command.app_number, command.app)
+    elseif command.action == url_command.RELEASE_APP_NUMBER then
+        self:release_app_number(command.app_number)
     elseif command.action == url_command.SAVE then
         self:capture_active_arrangement()
     end
@@ -779,6 +910,19 @@ function ProfileController:print_diagnostics()
     end
     add("focused desktop: %s", tostring(layout.focused_space_id))
     add("active profile: %s", tostring(self.state.active_profile_number))
+    if self.state.active_profile_number then
+        local profile =
+            profile_state.profile_or_default(self.state, self.state.active_profile_number)
+        for _, entry in ipairs(profile.app_numbers) do
+            add(
+                "  app number %d: %s %s%s",
+                entry.number,
+                entry.app_name,
+                entry.bundle_id,
+                entry.is_chosen_by_user and " (chosen)" or ""
+            )
+        end
+    end
     local records_by_profile = {}
     for number = 1, self.settings.profile_count do
         local arrangement = profile_state.find_arrangement(self.state, number, configuration.key)
@@ -937,6 +1081,7 @@ function profile_controller.start(settings)
     controller.menubar = hs.menubar.new()
     controller:refresh_menu()
     controller:bind_hotkeys()
+    controller:bind_app_hotkeys()
     hs.urlevent.bind(settings.url_event_name, function(_, params)
         controller:run_url_command(params)
     end)

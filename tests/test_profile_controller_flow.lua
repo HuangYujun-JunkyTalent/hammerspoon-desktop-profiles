@@ -521,6 +521,111 @@ return {
         expect.equal(world.alerts, { "Profile 1", "Restoring built-in" })
     end,
 
+    a_number_brings_its_application_and_the_next_press_its_next_window = function()
+        local world, controller = start_world()
+        local news = world.create_window("com.apple.Safari", "News")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local entries = profile_state.profile_or_default(controller.state, 1).app_numbers
+        expect.equal(entries[1].bundle_id, "com.apple.Safari")
+        expect.equal(entries[2].bundle_id, "com.microsoft.Word")
+        world.key_strokes = {}
+        world.app_hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, 41)
+        expect.equal(world.displays[1].active_space_id, 14)
+        world.app_hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, news.id)
+        expect.equal(world.displays[1].active_space_id, 3)
+        world.app_hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, 41)
+        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1", "ctrl+2" })
+    end,
+
+    a_number_reaches_a_window_that_another_profile_recorded = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[41].is_minimized, true)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "5", app = "Safari" }
+        )
+        world.app_hotkeys["5"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[41].is_minimized, false)
+        expect.equal(world.focused_window_id, 41)
+    end,
+
+    a_number_of_an_application_without_a_window_opens_one = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "4", app = "com.microsoft.Word" }
+        )
+        world.app_hotkeys["4"]()
+        world.advance(SETTLE_SECONDS)
+        local opened = find_window_titled(world, "Document1")
+        expect.equal(opened ~= nil, true)
+        expect.equal(world.focused_window_id, opened.id)
+    end,
+
+    a_number_without_an_application_passes_its_keys_through = function()
+        local world = start_world()
+        world.app_hotkeys["7"]()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.app_hotkeys["7"]()
+        expect.equal(world.key_strokes, { "cmd+7", "cmd+7" })
+        expect.equal(world.hotkey_events, {
+            "disable cmd 7",
+            "enable cmd 7",
+            "disable cmd 7",
+            "enable cmd 7",
+        })
+    end,
+
+    a_number_chosen_by_the_user_survives_the_updates_and_returns_to_the_default = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "1", app = "Microsoft Word" }
+        )
+        world.advance(61)
+        local entries = profile_state.profile_or_default(controller.state, 1).app_numbers
+        expect.equal(entries[1].bundle_id, "com.microsoft.Word")
+        expect.equal(entries[1].is_chosen_by_user, true)
+        expect.equal(entries[2].bundle_id, "com.apple.Safari")
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "release-app-number", number = "1" }
+        )
+        entries = profile_state.profile_or_default(controller.state, 1).app_numbers
+        expect.equal(entries[1].bundle_id, "com.microsoft.Word")
+        expect.equal(entries[1].is_chosen_by_user, false)
+        expect.equal(entries[1].number, 1)
+    end,
+
+    numbering_an_application_that_is_not_running_is_reported = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "3", app = "Notes" }
+        )
+        expect.equal(world.notifications, { 'No running application is named "Notes"' })
+    end,
+
     the_same_key_on_the_active_profile_deactivates_it = function()
         local world, controller = start_world()
         world.hotkeys["3"]()
