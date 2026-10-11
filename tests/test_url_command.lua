@@ -9,6 +9,13 @@ return {
         expect.equal(command, { action = "activate", profile_number = 3 })
     end,
 
+    reset_app_numbers_needs_no_number = function()
+        expect.equal(
+            url_command.parse({ action = "reset-app-numbers" }, LIMITS),
+            { action = "reset-app-numbers" }
+        )
+    end,
+
     deactivate_needs_no_profile = function()
         expect.equal(
             url_command.parse({ action = "deactivate" }, LIMITS),

@@ -1014,6 +1014,20 @@ return {
         expect.equal(world.alerts[#world.alerts], "Profile 0 has the default application numbers")
     end,
 
+    a_url_returns_every_number_to_the_default = function()
+        local world, controller = start_world()
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "7", app = "Microsoft Word" }
+        )
+        world.url_handlers["desktop-manager"]("desktop-manager", { action = "reset-app-numbers" })
+        local entries = profile_state.profile_or_default(controller.state, 0).app_numbers
+        expect.equal(entries[1].bundle_id, "com.microsoft.Word")
+        expect.equal(entries[1].number, 1)
+        expect.equal(entries[1].is_chosen_by_user, false)
+        expect.equal(world.alerts[#world.alerts], "Profile 0 has the default application numbers")
+    end,
+
     control_option_0_does_nothing_while_the_list_shows = function()
         local world, controller = start_world()
         world.hotkeys["1"]()

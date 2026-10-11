@@ -8,6 +8,7 @@ local url_command = {
     SAVE = "save",
     NUMBER_APP = "number-app",
     RELEASE_APP_NUMBER = "release-app-number",
+    RESET_APP_NUMBERS = "reset-app-numbers",
 }
 
 ---@class Command
@@ -30,6 +31,7 @@ local ACTIONS_WITH_PROFILE = {
 local ACTIONS_WITHOUT_PROFILE = {
     [url_command.CYCLE_MONITOR_MATCHING] = true,
     [url_command.SAVE] = true,
+    [url_command.RESET_APP_NUMBERS] = true,
 }
 
 ---`deactivate` without a profile deactivates the active profile, and with a profile deactivates

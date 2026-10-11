@@ -1122,6 +1122,8 @@ function ProfileController:run_url_command(params)
         self:number_running_application(command.app_number, command.app)
     elseif command.action == url_command.RELEASE_APP_NUMBER then
         self:release_app_number(command.app_number)
+    elseif command.action == url_command.RESET_APP_NUMBERS then
+        self:reset_app_numbers()
     elseif command.action == url_command.SAVE then
         self:capture_active_arrangement()
     end
