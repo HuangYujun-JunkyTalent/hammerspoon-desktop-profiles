@@ -1,5 +1,6 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
 local default_settings = require("desktop_manager.default_settings")
+local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
 local profile_controller = require("desktop_manager.macos.profile_controller")
@@ -24,6 +25,18 @@ local function expect_frame_near(actual, expected)
     end
 end
 
+---@param world table
+---@param title string
+---@return table|nil the window of the fake world with the title
+local function find_window_titled(world, title)
+    for _, window in pairs(world.windows) do
+        if window.title == title then
+            return window
+        end
+    end
+    return nil
+end
+
 ---@param controller ProfileController
 ---@param number integer
 ---@param window_id integer
@@ -39,10 +52,10 @@ local function recorded_sight(controller, number, window_id)
     return nil
 end
 
----@param method string|nil a value of concealment_method, or nil for the default
+---@param setting_changes table|nil settings that replace the defaults, such as concealment_method
 ---@return table world
 ---@return ProfileController controller
-local function start_world(method)
+local function start_world(setting_changes)
     local world = fake_hammerspoon.install({
         screens = {
             {
@@ -54,8 +67,18 @@ local function start_world(method)
         },
         displays = { { uuid = "BUILTIN-UUID", space_ids = { 3, 14, 64 }, active_space_id = 3 } },
         applications = {
-            { bundle_id = "com.apple.Safari", name = "Safari", is_running = true },
-            { bundle_id = "com.microsoft.Word", name = "Microsoft Word", is_running = true },
+            {
+                bundle_id = "com.apple.Safari",
+                name = "Safari",
+                is_running = true,
+                new_window_title = "Start Page",
+            },
+            {
+                bundle_id = "com.microsoft.Word",
+                name = "Microsoft Word",
+                is_running = true,
+                new_window_title = "Document1",
+            },
             {
                 bundle_id = "com.apple.Notes",
                 name = "Notes",
@@ -81,7 +104,9 @@ local function start_world(method)
         },
     })
     local settings = default_settings.create("/fake/state.json")
-    settings.concealment_method = method or settings.concealment_method
+    for name, value in pairs(setting_changes or {}) do
+        settings[name] = value
+    end
     local controller = profile_controller.start(settings)
     return world, controller
 end
@@ -156,7 +181,8 @@ return {
     end,
 
     the_hiding_setting_hides_an_application_of_the_old_profile = function()
-        local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
+        local world, controller =
+            start_world({ concealment_method = concealment_method.HIDE_APPLICATIONS })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()
@@ -168,7 +194,8 @@ return {
     end,
 
     the_hiding_setting_minimizes_the_other_windows_of_a_shared_application = function()
-        local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
+        local world, controller =
+            start_world({ concealment_method = concealment_method.HIDE_APPLICATIONS })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()
@@ -322,7 +349,7 @@ return {
     end,
 
     a_window_that_the_filter_drops_while_hidden_comes_back = function()
-        local world = start_world(concealment_method.HIDE_APPLICATIONS)
+        local world = start_world({ concealment_method = concealment_method.HIDE_APPLICATIONS })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.applications["com.microsoft.Word"].is_dropped_by_filter_while_hidden = true
@@ -338,7 +365,8 @@ return {
     end,
 
     an_unhide_by_the_user_leaves_the_windows_in_sight_for_the_next_capture = function()
-        local world, controller = start_world(concealment_method.HIDE_APPLICATIONS)
+        local world, controller =
+            start_world({ concealment_method = concealment_method.HIDE_APPLICATIONS })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()
@@ -350,26 +378,115 @@ return {
         expect.equal(recorded_sight(controller, 2, 41), "in sight")
     end,
 
-    a_saved_window_that_was_closed_is_skipped_without_a_notification = function()
+    a_closed_window_gets_a_new_window_on_its_desktop = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(41)
+        world.key_strokes = {}
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local opened = find_window_titled(world, "Start Page")
+        expect.equal(opened ~= nil, true)
+        expect.equal(opened.space_id, 14)
+        expect.equal(opened.is_minimized, false)
+        expect_frame_near(opened.frame, { x = 0, y = 25, w = 720, h = 875 })
+        expect.equal(world.menu_selections, { "com.apple.Safari New Window" })
+        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1" })
+        expect.equal(recorded_sight(controller, 1, opened.id), "in sight")
+        expect.equal(world.notifications, {})
+    end,
+
+    a_window_with_the_recorded_title_is_taken_and_no_window_opens = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["0"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        local reopened = world.create_window("com.microsoft.Word", "Draft.docx")
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.menu_selections, {})
+        expect.equal(world.windows[reopened.id].is_minimized, false)
+        expect.equal(recorded_sight(controller, 1, reopened.id), "in sight")
+    end,
+
+    the_policy_that_opens_new_windows_opens_one_despite_a_window_with_the_title = function()
+        local world, controller = start_world({
+            missing_window_policy = missing_window_policy.OPEN_NEW_WINDOW,
+        })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        local reopened = world.create_window("com.microsoft.Word", "Draft.docx")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, reopened.id), nil)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local opened = find_window_titled(world, "Document1")
+        expect.equal(opened ~= nil, true)
+        expect.equal(opened.is_minimized, false)
+        expect.equal(world.windows[reopened.id].is_minimized, true)
+        expect.equal(world.notifications, {})
+    end,
+
+    an_application_without_the_menu_item_gets_a_reopen = function()
+        local world = start_world()
+        world.applications["com.microsoft.Word"].new_window_title = nil
+        world.applications["com.microsoft.Word"].reopen_title = "Main Window"
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local opened = find_window_titled(world, "Main Window")
+        expect.equal(opened ~= nil, true)
+        expect.equal(opened.space_id, 3)
+        expect.equal(world.notifications, {})
+    end,
+
+    an_application_that_opens_no_window_is_reported = function()
+        local world = start_world()
+        world.applications["com.microsoft.Word"].new_window_title = nil
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.notifications, {
+            "Microsoft Word opened no new window after a reopen"
+                .. " (1 problems in the Hammerspoon console)",
+        })
+    end,
+
+    a_window_recorded_out_of_sight_and_closed_gets_no_new_window = function()
         local world = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
-        world.windows[41] = nil
-        for index, window_id in ipairs(world.window_order) do
-            if window_id == 41 then
-                table.remove(world.window_order, index)
-            end
-        end
-        world.hotkeys["1"]()
+        world.close_window(41)
+        world.hotkeys["3"]()
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.notifications, {})
-        expect.equal(world.windows[42].is_minimized, false)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.menu_selections, {})
     end,
 
     an_application_that_stays_hidden_is_reported = function()
-        local world = start_world(concealment_method.HIDE_APPLICATIONS)
+        local world = start_world({ concealment_method = concealment_method.HIDE_APPLICATIONS })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()

@@ -229,7 +229,6 @@ local function decode_window_records(raw_records)
                 desktop_number = to_integer(raw.desktop_number),
                 unit_frame = type(raw.unit_frame) == "table" and raw.unit_frame or nil,
                 is_out_of_sight = raw.is_out_of_sight == true or raw.is_minimized == true,
-                document = type(raw.document) == "string" and raw.document or nil,
             })
         end
     end

@@ -11,13 +11,14 @@ local fake_hammerspoon = {}
 ---@field title string
 ---@field space_id integer
 ---@field frame Rect
----@field document string|nil
 
 ---@class FakeApplicationSpec
 ---@field bundle_id string
 ---@field name string
 ---@field is_running boolean
 ---@field launch_titles string[]|nil the titles of the windows that a launch opens
+---@field new_window_title string|nil the title of the window that the menu item New Window opens
+---@field reopen_title string|nil the title of the window that a reopen opens
 ---A test sets these fields on `world.applications[bundle_id]` after the install:
 ---`is_dropped_by_filter_while_hidden` makes the window filter leave out the windows of the hidden
 ---application, as Hammerspoon does with a window that reports another subrole while hidden.
@@ -52,6 +53,7 @@ function fake_hammerspoon.install(spec)
         filter_callbacks = {},
         application_watchers = {},
         screen_watchers = {},
+        menu_selections = {},
         saved_json = nil,
         next_window_id = 1000,
     }
@@ -103,6 +105,8 @@ function fake_hammerspoon.install(spec)
         table.insert(screen_objects, object)
     end
 
+    local new_timer
+
     local application_objects = {}
     local function application_object(bundle_id)
         if application_objects[bundle_id] then
@@ -134,6 +138,17 @@ function fake_hammerspoon.install(spec)
                     watcher(application.name, hs.application.watcher.unhidden, object)
                 end
             end
+            return true
+        end
+        function object:selectMenuItem(item)
+            local title = application.new_window_title
+            if item ~= "New Window" or not title then
+                return nil
+            end
+            table.insert(world.menu_selections, bundle_id .. " " .. item)
+            new_timer(0.2, function()
+                world.create_window(bundle_id, title)
+            end, false)
             return true
         end
         function object:allWindows()
@@ -175,7 +190,6 @@ function fake_hammerspoon.install(spec)
             title = window_spec.title,
             space_id = window_spec.space_id,
             frame = window_spec.frame,
-            document = window_spec.document,
             is_minimized = false,
         }
         local object = {}
@@ -228,6 +242,8 @@ function fake_hammerspoon.install(spec)
             is_running = application.is_running,
             is_hidden = false,
             launch_titles = application.launch_titles or {},
+            new_window_title = application.new_window_title,
+            reopen_title = application.reopen_title,
         }
     end
     for _, window_spec in ipairs(spec.windows) do
@@ -248,9 +264,8 @@ function fake_hammerspoon.install(spec)
 
     ---@param bundle_id string
     ---@param title string
-    ---@param document string|nil
     ---@return table window
-    function world.create_window(bundle_id, title, document)
+    function world.create_window(bundle_id, title)
         world.next_window_id = world.next_window_id + 1
         local application = world.applications[bundle_id]
         application.is_running = true
@@ -262,7 +277,6 @@ function fake_hammerspoon.install(spec)
             title = title,
             space_id = display.active_space_id,
             frame = { x = screen.frame.x, y = screen.frame.y, w = 600, h = 400 },
-            document = document,
         })
         if application.is_hidden then
             application_object(bundle_id):unhide()
@@ -290,7 +304,7 @@ function fake_hammerspoon.install(spec)
         application_object(bundle_id):unhide()
     end
 
-    local function new_timer(seconds, callback, is_repeating)
+    new_timer = function(seconds, callback, is_repeating)
         local timer = { due = world.clock + seconds, interval = seconds, callback = callback }
         timer.is_repeating = is_repeating
         timer.is_running = true
@@ -509,6 +523,18 @@ function fake_hammerspoon.install(spec)
                 end
                 return nil
             end,
+            launchOrFocusByBundleID = function(bundle_id)
+                local application = world.applications[bundle_id]
+                if not application.is_running then
+                    return hs.application.open(bundle_id) ~= nil
+                end
+                if application.reopen_title then
+                    new_timer(0.2, function()
+                        world.create_window(bundle_id, application.reopen_title)
+                    end, false)
+                end
+                return true
+            end,
             open = function(bundle_id)
                 local application = world.applications[bundle_id]
                 application.is_running = true
@@ -521,14 +547,6 @@ function fake_hammerspoon.install(spec)
             end,
         },
         axuielement = {
-            windowElement = function(window_object)
-                local window = world.windows[window_object:id()]
-                return {
-                    attributeValue = function(_, name)
-                        return name == "AXDocument" and window and window.document or nil
-                    end,
-                }
-            end,
             applicationElement = function()
                 return {
                     attributeValue = function()

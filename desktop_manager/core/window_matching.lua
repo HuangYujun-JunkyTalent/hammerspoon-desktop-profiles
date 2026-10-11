@@ -1,3 +1,5 @@
+local missing_window_policy = require("desktop_manager.core.missing_window_policy")
+
 local window_matching = {}
 
 ---A saved window of an arrangement.
@@ -12,13 +14,11 @@ local window_matching = {}
 ---@field desktop_number integer|nil
 ---@field unit_frame Rect|nil
 ---@field is_out_of_sight boolean
----@field document string|nil the file or URL that the window shows, when its application says
 
 ---@class LiveWindow
 ---@field window_id integer
 ---@field bundle_id string
 ---@field title string
----@field document string|nil
 
 ---@class WindowMatch
 ---@field record WindowRecord
@@ -38,19 +38,6 @@ end
 ---@type MatchCriterion
 local function has_same_title(record, window)
     return record.bundle_id == window.bundle_id and record.title == window.title
-end
-
----@type MatchCriterion
-local function has_same_document(record, window)
-    return record.bundle_id == window.bundle_id
-        and record.document ~= nil
-        and record.document ~= ""
-        and record.document == window.document
-end
-
----@type MatchCriterion
-local function has_same_application(record, window)
-    return record.bundle_id == window.bundle_id
 end
 
 ---Pairs each saved record with at most one live window, and each window with at most one record,
@@ -87,34 +74,35 @@ local function match_by_criteria(criteria, records, live_windows)
     return { matches = matches, unmatched_records = unmatched_records }
 end
 
----Matches the records to windows that were open before the switch.
+local OPEN_WINDOW_CRITERIA = {
+    [missing_window_policy.OPEN_NEW_WINDOW] = { has_same_id },
+    [missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW] = { has_same_id, has_same_title },
+}
+
+---Matches the records to the windows that are open at a switch.
 ---A window keeps its id while it stays open, so the id decides first.
----A window that its application reopened has a new id, and its title decides next.
+---Under the policy that matches titles, a window with the same title takes a record whose window no
+---longer exists.
+---@param policy string a value of missing_window_policy
 ---@param records WindowRecord[]
 ---@param live_windows LiveWindow[]
 ---@return WindowMatchResult
-function window_matching.match_records_to_open_windows(records, live_windows)
-    return match_by_criteria({ has_same_id, has_same_title }, records, live_windows)
+function window_matching.match_records_to_open_windows(policy, records, live_windows)
+    local criteria = OPEN_WINDOW_CRITERIA[policy]
+    if not criteria then
+        error(string.format("unknown missing window policy %q", tostring(policy)), 2)
+    end
+    return match_by_criteria(criteria, records, live_windows)
 end
 
 ---Matches the records of windows that no longer exist to open windows that no profile recorded.
----macOS gives a window that its application reopens a new id, so the document decides first and
----the title next.
+---macOS gives a window that its application reopens a new id, so the title decides.
 ---The place is left out, because macOS opens a new window at the place of the last closed one.
 ---@param records WindowRecord[]
 ---@param live_windows LiveWindow[]
 ---@return WindowMatchResult
 function window_matching.match_records_to_reopened_windows(records, live_windows)
-    return match_by_criteria({ has_same_document, has_same_title }, records, live_windows)
-end
-
----Matches the records to the windows of applications that the tool has just launched.
----The windows have new ids, so the title decides first and the application last.
----@param records WindowRecord[]
----@param live_windows LiveWindow[]
----@return WindowMatchResult
-function window_matching.match_records_to_launched_windows(records, live_windows)
-    return match_by_criteria({ has_same_title, has_same_application }, records, live_windows)
+    return match_by_criteria({ has_same_title }, records, live_windows)
 end
 
 return window_matching

@@ -1,10 +1,10 @@
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
+local place_windows = require("desktop_manager.macos.place_windows")
 local poll_until = require("desktop_manager.macos.poll_until")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local step_sequence = require("desktop_manager.core.step_sequence")
-local switch_desktops = require("desktop_manager.macos.switch_desktops")
 local track_windows = require("desktop_manager.macos.track_windows")
 
 local restore_windows = {}
@@ -20,47 +20,10 @@ local restore_windows = {}
 ---@field placement WindowPlacement
 ---@field space_id integer
 
----@param screen_uuid string
----@return ScreenDesktops|nil
-local function read_screen_desktops(screen_uuid)
-    for _, screen in ipairs(read_desktops.read_desktop_layout().screens) do
-        if screen.screen_uuid == screen_uuid then
-            return screen
-        end
-    end
-    return nil
-end
-
-local FRAME_TOLERANCE_POINTS = 2
-
----@param first Rect
----@param second Rect
----@return boolean
-local function are_frames_close(first, second)
-    return math.abs(first.x - second.x) <= FRAME_TOLERANCE_POINTS
-        and math.abs(first.y - second.y) <= FRAME_TOLERANCE_POINTS
-        and math.abs(first.w - second.w) <= FRAME_TOLERANCE_POINTS
-        and math.abs(first.h - second.h) <= FRAME_TOLERANCE_POINTS
-end
-
----Sets the saved frame of the window, unless the window already has it.
----@param window table an hs.window
----@param placement WindowPlacement
-local function fit_frame(window, placement)
-    local screen = read_screens.find_screen(placement.screen_uuid)
-    if not screen or not placement.unit_frame then
-        return
-    end
-    local target = screen:fromUnitRect(placement.unit_frame)
-    if not are_frames_close(read_screens.to_rect(window:frame()), read_screens.to_rect(target)) then
-        window:setFrame(target, 0)
-    end
-end
-
 ---@param placement WindowPlacement
 ---@return integer|nil the space of the desktop that the placement names
 local function find_target_space_id(placement)
-    local screen = read_screen_desktops(placement.screen_uuid)
+    local screen = place_windows.read_screen_desktops(placement.screen_uuid)
     return screen and screen.space_ids[placement.desktop_number]
 end
 
@@ -130,7 +93,7 @@ local function unminimize_and_fit(windows_to_bring, timing, on_done)
         function()
             retained_timers.after(timing.window_settle_seconds, function()
                 for _, entry in ipairs(windows_to_bring) do
-                    fit_frame(entry.window, entry.placement)
+                    place_windows.fit_frame(entry.window, entry.placement)
                 end
                 retained_timers.after(timing.window_settle_seconds, function()
                     local off_desktop = {}
@@ -174,23 +137,6 @@ local function bring_windows(placements, space_id, context, failures, on_done)
     end)
 end
 
----@param screen_uuid string
----@param desktop_number integer
----@param context RestoreContext
----@param on_done fun(space_id: integer|nil, error_message: string|nil)
-local function show_desktop(screen_uuid, desktop_number, context, on_done)
-    local screen = read_screen_desktops(screen_uuid)
-    local space_ids = screen and screen.space_ids or {}
-    local space_id = space_ids[math.min(desktop_number, #space_ids)]
-    if not space_id then
-        on_done(nil, string.format("screen %s has no desktops", screen_uuid))
-        return
-    end
-    switch_desktops.switch_to_space(space_id, context.timing, function(error_message)
-        on_done(space_id, error_message)
-    end)
-end
-
 ---Shows each desktop in turn and brings its windows there.
 ---@param visits DesktopVisit[]
 ---@param context RestoreContext
@@ -205,10 +151,10 @@ local function run_visits(visits, context, failures, on_done)
             return
         end
         next_index = next_index + 1
-        show_desktop(
+        place_windows.show_desktop(
             visit.screen_uuid,
             visit.desktop_number,
-            context,
+            context.timing,
             function(space_id, error_message)
                 if error_message or not space_id then
                     table.insert(failures, error_message or "the desktop was not found")
@@ -278,7 +224,7 @@ local function build_steps(plan, context, failures)
         for _, placement in ipairs(plan.placements_in_place) do
             local window = context.find_window(placement.window_id)
             if window then
-                fit_frame(window, placement)
+                place_windows.fit_frame(window, placement)
             end
         end
         continue()
@@ -304,10 +250,10 @@ local function build_steps(plan, context, failures)
     end)
     if plan.focus then
         table.insert(steps, function(continue)
-            show_desktop(
+            place_windows.show_desktop(
                 plan.focus.screen_uuid,
                 plan.focus.desktop_number,
-                context,
+                context.timing,
                 function(_, error_message)
                     if error_message then
                         table.insert(failures, error_message)

@@ -44,20 +44,6 @@ function track_windows.describe(window)
     )
 end
 
----Reads the attribute AXDocument, which document windows carry, such as a file URL.
----@param window table an hs.window
----@return string|nil
-function track_windows.read_document(window)
-    local is_read, document = pcall(function()
-        local element = hs.axuielement.windowElement(window)
-        return element and element:attributeValue("AXDocument")
-    end)
-    if is_read and type(document) == "string" and document ~= "" then
-        return document
-    end
-    return nil
-end
-
 ---@param window table an hs.window
 ---@return WindowObservation
 function track_windows.observe(window)
@@ -73,7 +59,6 @@ function track_windows.observe(window)
         space_id = not is_minimized and read_desktops.find_window_space_id(window_id) or nil,
         frame = not is_minimized and read_screens.to_rect(window:frame()) or nil,
         is_out_of_sight = is_minimized or is_app_hidden,
-        document = track_windows.read_document(window),
     }
 end
 

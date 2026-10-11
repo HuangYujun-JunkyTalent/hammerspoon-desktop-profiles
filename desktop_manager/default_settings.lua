@@ -1,4 +1,5 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
+local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 
 local default_settings = {}
@@ -24,6 +25,7 @@ local default_settings = {}
 ---@field url_event_name string
 ---@field initial_monitor_matching string
 ---@field concealment_method string a value of concealment_method
+---@field missing_window_policy string a value of missing_window_policy
 ---@field builtin_screen_name_patterns string[]
 ---@field timing Timing
 
@@ -37,6 +39,7 @@ function default_settings.create(state_file_path)
         url_event_name = "desktop-manager",
         initial_monitor_matching = monitor_matching.BY_COUNT,
         concealment_method = concealment_method.MINIMIZE_WINDOWS,
+        missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         timing = {
             poll_interval_seconds = 0.05,

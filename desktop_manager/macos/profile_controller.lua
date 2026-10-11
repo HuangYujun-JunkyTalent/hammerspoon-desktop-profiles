@@ -1,9 +1,12 @@
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local concealment_method = require("desktop_manager.core.concealment_method")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
-local launch_applications = require("desktop_manager.macos.launch_applications")
+local missing_window_policy = require("desktop_manager.core.missing_window_policy")
+local missing_windows = require("desktop_manager.core.missing_windows")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
+local new_windows = require("desktop_manager.macos.new_windows")
+local place_windows = require("desktop_manager.macos.place_windows")
 local profile_state = require("desktop_manager.core.profile_state")
 local profile_switch = require("desktop_manager.core.profile_switch")
 local read_desktops = require("desktop_manager.macos.read_desktops")
@@ -177,26 +180,30 @@ function ProfileController:list_known_windows(window_ids)
 end
 
 ---Gives the records of a window that its application reopened the id of the new window, in every
----profile.
+---profile, under the policy that matches titles.
 ---A reopened window is an open window that no profile recorded, of the same application and with
----the same document or title as a recorded window that no longer exists.
+---the same title as a recorded window that no longer exists.
 ---@param windows table[] the hs.window objects that the tool knows
 function ProfileController:rename_reopened_windows(windows)
+    if
+        self.settings.missing_window_policy ~= missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW
+    then
+        return
+    end
     local recorded = profile_state.index_recorded_windows(self.state)
-    local new_windows = {}
+    local unrecorded_windows = {}
     for _, window in ipairs(windows) do
         local window_id = window:id()
         local bundle_id = track_windows.bundle_id_of(window:application())
         if not (recorded[window_id] and recorded[window_id][bundle_id]) then
-            table.insert(new_windows, {
+            table.insert(unrecorded_windows, {
                 window_id = window_id,
                 bundle_id = bundle_id,
                 title = window:title() or "",
-                document = track_windows.read_document(window),
             })
         end
     end
-    if #new_windows == 0 then
+    if #unrecorded_windows == 0 then
         return
     end
     local open_ids = track_windows.index_by_id(windows)
@@ -214,7 +221,7 @@ function ProfileController:rename_reopened_windows(windows)
         end
     end
     local match_result =
-        window_matching.match_records_to_reopened_windows(closed_records, new_windows)
+        window_matching.match_records_to_reopened_windows(closed_records, unrecorded_windows)
     if #match_result.matches == 0 then
         return
     end
@@ -381,8 +388,11 @@ end
 function ProfileController:restore_open_windows(number, arrangement, on_done)
     local windows = self:list_known_windows(list_recorded_window_ids(arrangement))
     local _, live_windows = describe_open_windows(windows)
-    local match_result =
-        window_matching.match_records_to_open_windows(arrangement.windows, live_windows)
+    local match_result = window_matching.match_records_to_open_windows(
+        self.settings.missing_window_policy,
+        arrangement.windows,
+        live_windows
+    )
     self:restore_matched_windows(
         number,
         arrangement,
@@ -394,25 +404,23 @@ function ProfileController:restore_open_windows(number, arrangement, on_done)
     )
 end
 
----Launches the applications of the records that found no window, and places their new windows.
----A record whose application runs belongs to a window that was closed, or that sits on a desktop
----that Hammerspoon has not seen since it started.
+---Gives each record in sight whose window no longer exists a new window of its application, on its
+---recorded desktop and with its recorded frame, and writes the new window ids into the records of
+---every profile.
+---A record whose window sits on a desktop that Hammerspoon has not seen keeps that window.
 ---@param number integer
----@param arrangement Arrangement
 ---@param unmatched_records WindowRecord[]
 ---@param on_done fun(failures: string[])
-function ProfileController:restore_launched_windows(number, arrangement, unmatched_records, on_done)
-    local bundle_ids, records_to_launch, is_listed = {}, {}, {}
+function ProfileController:open_missing_windows(number, unmatched_records, on_done)
+    local missing_records = {}
     for _, record in ipairs(unmatched_records) do
         local space_id = record.window_id and read_desktops.find_window_space_id(record.window_id)
         if record.is_out_of_sight then
-            self.log.f("%s window %q is recorded out of sight", record.app_name, record.title)
-        elseif hs.application.get(record.bundle_id) == nil then
-            table.insert(records_to_launch, record)
-            if not is_listed[record.bundle_id] then
-                is_listed[record.bundle_id] = true
-                table.insert(bundle_ids, record.bundle_id)
-            end
+            self.log.f(
+                "%s window %q is recorded out of sight and gone",
+                record.app_name,
+                record.title
+            )
         elseif space_id then
             self.log.f(
                 "%s window %q stays on desktop %d, where Hammerspoon has not seen it yet",
@@ -421,39 +429,86 @@ function ProfileController:restore_launched_windows(number, arrangement, unmatch
                 space_id
             )
         else
-            self.log.f("%s window %q was closed", record.app_name, record.title)
+            table.insert(missing_records, record)
         end
     end
-    if #bundle_ids == 0 then
-        on_done({})
-        return
+    local plan = missing_windows.plan_visits(
+        missing_records,
+        self:read_monitor_configuration(),
+        read_desktops.read_desktop_layout()
+    )
+    for _, record in ipairs(plan.unplaced_records) do
+        self.log.f("%s window %q has no recorded desktop here", record.app_name, record.title)
     end
-    self.log.f("launching %s for profile %d", table.concat(bundle_ids, ", "), number)
-    launch_applications.launch_and_wait(bundle_ids, self.settings.timing, function()
-        local windows = {}
-        for _, bundle_id in ipairs(bundle_ids) do
-            local application = hs.application.get(bundle_id)
-            for _, window in ipairs(application and application:allWindows() or {}) do
-                table.insert(windows, window)
+    local session = new_windows.start_session(self.settings.timing)
+    local failures, renames = {}, {}
+    local visit_index, window_index = 1, 0
+    local next_window
+    local function finish()
+        if #renames > 0 then
+            self.state = profile_state.rename_windows(self.state, renames)
+            self:write_state()
+        end
+        on_done(failures)
+    end
+    local function open_on_visit(visit)
+        window_index = window_index + 1
+        local missing_window = visit.missing_windows[window_index]
+        if not missing_window then
+            visit_index, window_index = visit_index + 1, 0
+            next_window()
+            return
+        end
+        local record = missing_window.record
+        session:provide_window(record, function(window, error_message)
+            if not window then
+                table.insert(failures, error_message)
+            else
+                place_windows.fit_frame(window, missing_window.placement)
+                self.log.f(
+                    "profile %d: %s window %q is now window %d",
+                    number,
+                    record.app_name,
+                    record.title,
+                    window:id()
+                )
+                if record.window_id then
+                    table.insert(renames, {
+                        bundle_id = record.bundle_id,
+                        old_window_id = record.window_id,
+                        new_window_id = window:id(),
+                    })
+                end
             end
+            open_on_visit(visit)
+        end)
+    end
+    next_window = function()
+        local visit = plan.visits[visit_index]
+        if not visit then
+            finish()
+            return
         end
-        local _, live_windows = describe_open_windows(windows)
-        local match_result =
-            window_matching.match_records_to_launched_windows(records_to_launch, live_windows)
-        local launched_arrangement = {
-            monitor_configuration_key = arrangement.monitor_configuration_key,
-            monitors = arrangement.monitors,
-            focus = arrangement.focus,
-            windows = records_to_launch,
-        }
-        self:restore_matched_windows(
-            number,
-            launched_arrangement,
-            match_result.matches,
-            track_windows.index_by_id(windows),
-            on_done
+        if window_index > 0 then
+            open_on_visit(visit)
+            return
+        end
+        place_windows.show_desktop(
+            visit.screen_uuid,
+            visit.desktop_number,
+            self.settings.timing,
+            function(_, error_message)
+                if error_message then
+                    table.insert(failures, error_message)
+                    visit_index = visit_index + 1
+                    next_window()
+                    return
+                end
+                open_on_visit(visit)
+            end
         )
-    end)
+    end
+    next_window()
 end
 
 ---@param number integer
@@ -480,8 +535,11 @@ function ProfileController:activate_profile(number)
     local arrangement = saved_arrangement
         or { monitor_configuration_key = configuration_key, monitors = {}, windows = {} }
     local open_windows, live_windows = describe_open_windows(windows)
-    local match_result =
-        window_matching.match_records_to_open_windows(arrangement.windows, live_windows)
+    local match_result = window_matching.match_records_to_open_windows(
+        self.settings.missing_window_policy,
+        arrangement.windows,
+        live_windows
+    )
     local candidates = profile_switch.mark_kept_windows(
         open_windows,
         match_result.matches,
@@ -525,22 +583,17 @@ function ProfileController:activate_profile(number)
         return
     end
     retained_timers.after(self.settings.timing.window_settle_seconds, function()
-        self:restore_matched_windows(
-            number,
-            arrangement,
-            match_result.matches,
-            window_by_id,
-            function(open_failures)
-                self:restore_launched_windows(
-                    number,
-                    arrangement,
-                    match_result.unmatched_records,
-                    function(launch_failures)
-                        finish(concatenate(open_failures, launch_failures))
-                    end
-                )
-            end
-        )
+        self:open_missing_windows(number, match_result.unmatched_records, function(opening_failures)
+            self:restore_matched_windows(
+                number,
+                arrangement,
+                match_result.matches,
+                window_by_id,
+                function(restore_failures)
+                    finish(concatenate(opening_failures, restore_failures))
+                end
+            )
+        end)
     end)
 end
 
@@ -845,6 +898,15 @@ end
 ---@param settings Settings
 ---@return ProfileController
 function profile_controller.start(settings)
+    if not missing_window_policy.is_valid(settings.missing_window_policy) then
+        error(
+            string.format(
+                "the setting missing_window_policy is %q, which names no policy",
+                tostring(settings.missing_window_policy)
+            ),
+            2
+        )
+    end
     if not concealment_method.is_valid(settings.concealment_method) then
         error(
             string.format(

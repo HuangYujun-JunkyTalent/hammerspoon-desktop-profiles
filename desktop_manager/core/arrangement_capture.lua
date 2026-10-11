@@ -14,7 +14,6 @@ local arrangement_capture = {}
 ---@field space_id integer|nil
 ---@field frame Rect|nil
 ---@field is_out_of_sight boolean
----@field document string|nil
 
 ---@class ScreenDesktops
 ---@field screen_uuid string
@@ -123,7 +122,6 @@ local function record_window(configuration, desktop_layout, observation, previou
         app_name = observation.app_name,
         title = observation.title,
         is_out_of_sight = observation.is_out_of_sight,
-        document = observation.document,
     }
     local location = arrangement_capture.locate_space(desktop_layout, observation.space_id)
     local slot = location
