@@ -90,6 +90,26 @@ The plugin for Asyar is a set of shell scripts.
 Each script carries the headers `@asyar.*` that the Scripts extension of Asyar reads and the headers `@raycast.*` that Raycast reads, so both launchers run it.
 Each script opens a URL `hammerspoon://...` that the tool binds.
 
+## Numbers within a profile bring applications to the front
+
+Each profile gives the numbers from 1 to 9 to applications.
+Command with a number brings the application of that number to the front.
+The first press shows the window of the application that had the focus last.
+Each further press, while the application is in front, shows its next window.
+The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
+A window on another desktop is reached by showing that desktop.
+An application without windows gets a new window, from the same sources that replace a closed window at a switch.
+
+The tool gives the default numbers to the applications that the profile records in sight.
+The order follows the screens of the monitor configuration, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
+A default number stays with its application while the profile records a window of it in sight.
+The user can give any number to any running application, in the menu bar item or with a launcher script, and the number then stays until the user changes it.
+A number that the user returns to the default goes back to the default rule.
+
+Command with a free number, or with any number while no profile is active, reaches the application in front unchanged.
+A number given to an application takes Command with that number from every other application.
+The modifiers are a setting, and their default is Command.
+
 ## Development practices that the project follows
 
 The code is Lua 5.4, the version that Hammerspoon 1.1.1 embeds.
