@@ -89,8 +89,9 @@ local function sort_by_number(entries)
     return sorted
 end
 
----Keeps the numbers that the user chose, keeps a default number while the profile records its
----application in sight, and gives the lowest free numbers to the other applications in sight.
+---Keeps the numbers that the user chose, keeps a default number while the profile records a window
+---of its application, in sight or out of sight, and gives the lowest free numbers to the other
+---applications in sight.
 ---The other applications take numbers in the order of the screens, the desktops and the left edges
 ---of their windows.
 ---@param entries AppNumber[]
@@ -101,8 +102,8 @@ end
 function app_numbers.update_defaults(entries, arrangement, configuration, number_count)
     local applications = order_recorded_applications(arrangement, configuration)
     local is_recorded = {}
-    for _, application in ipairs(applications) do
-        is_recorded[application.bundle_id] = true
+    for _, record in ipairs(arrangement.windows) do
+        is_recorded[record.bundle_id] = true
     end
     local kept, used_numbers, numbered_bundles = {}, {}, {}
     for _, entry in ipairs(entries) do

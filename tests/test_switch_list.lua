@@ -57,17 +57,30 @@ return {
         }
         local lines = switch_list.describe_lines(applications, { number = 2, window_index = 1 }, 12)
         expect.equal(lines, {
-            { text = "2   Safari", is_application = true, is_selected = false },
-            { text = "      Abcdefghij …", is_application = false, is_selected = true },
+            {
+                text = "2   Safari",
+                is_application = true,
+                is_selected = false,
+                bundle_id = "com.apple.Safari",
+            },
+            {
+                text = "      Abcdefghij …",
+                is_application = false,
+                is_selected = true,
+                bundle_id = "com.apple.Safari",
+                window_id = 5,
+            },
         })
     end,
 
     an_application_without_windows_is_selected_on_its_own_line = function()
         local lines = switch_list.describe_lines(APPLICATIONS, { number = 3, window_index = 0 }, 40)
-        expect.equal(
-            lines[5],
-            { text = "3   Microsoft Word", is_application = true, is_selected = true }
-        )
+        expect.equal(lines[5], {
+            text = "3   Microsoft Word",
+            is_application = true,
+            is_selected = true,
+            bundle_id = "com.microsoft.Word",
+        })
         expect.equal(lines[6].text, "      no window, a new one opens")
         expect.equal(lines[4].text, "      untitled window")
     end,

@@ -53,6 +53,8 @@ function fake_hammerspoon.install(spec)
         app_hotkeys = {},
         hotkey_events = {},
         event_taps = {},
+        snapshot_count = 0,
+        snapshot_seconds = 0.05,
         overlay = nil,
         focused_window_id = nil,
         url_handlers = {},
@@ -350,6 +352,20 @@ function fake_hammerspoon.install(spec)
         return texts
     end
 
+    ---@return string[]|nil the sources of the images of the list on the screen, in order
+    function world.read_overlay_images()
+        if not world.overlay or not world.overlay.is_visible then
+            return nil
+        end
+        local sources = {}
+        for _, element in ipairs(world.overlay.elements) do
+            if element.type == "image" then
+                table.insert(sources, element.image.source)
+            end
+        end
+        return sources
+    end
+
     ---Closes a window, as a click on its red button does.
     ---@param window_id integer
     function world.close_window(window_id)
@@ -572,6 +588,11 @@ function fake_hammerspoon.install(spec)
             end,
         },
         keycodes = { map = { escape = ESCAPE_KEY_CODE } },
+        image = {
+            imageFromAppBundle = function(bundle_id)
+                return { source = "icon " .. bundle_id }
+            end,
+        },
         canvas = {
             windowLevels = { overlay = 102 },
             new = function(frame)
@@ -596,6 +617,19 @@ function fake_hammerspoon.install(spec)
         },
         window = {
             allWindows = list_window_objects,
+            snapshotForID = function(window_id)
+                world.snapshot_count = world.snapshot_count + 1
+                world.clock = world.clock + world.snapshot_seconds
+                local window = world.windows[window_id]
+                if not window or window.is_minimized then
+                    return nil
+                end
+                return {
+                    bitmapRepresentation = function()
+                        return { source = "blurred " .. window_id }
+                    end,
+                }
+            end,
             focusedWindow = function()
                 local window = world.focused_window_id and world.windows[world.focused_window_id]
                 return window and window.object

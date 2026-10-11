@@ -1,6 +1,7 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
 local default_settings = require("desktop_manager.default_settings")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
+local preview_method = require("desktop_manager.core.preview_method")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
 local profile_controller = require("desktop_manager.macos.profile_controller")
@@ -553,13 +554,20 @@ return {
         world.app_hotkeys["1"]()
         expect.equal(world.read_overlay(), {
             " 1   Safari",
-            ">      Inbox",
-            "       News",
+            ">Inbox",
+            " News",
             " 2   Microsoft Word",
-            "       Draft.docx",
+            " Draft.docx",
+        })
+        expect.equal(world.read_overlay_images(), {
+            "icon com.apple.Safari",
+            "icon com.apple.Safari",
+            "icon com.apple.Safari",
+            "icon com.microsoft.Word",
+            "icon com.microsoft.Word",
         })
         world.app_hotkeys["1"]()
-        expect.equal(world.read_overlay()[3], ">      News")
+        expect.equal(world.read_overlay()[3], ">News")
         world.app_hotkeys["7"]()
         expect.equal(world.key_strokes, {})
         world.release_modifiers()
@@ -574,9 +582,9 @@ return {
         world.advance(SETTLE_SECONDS)
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["1"]()
-        expect.equal(world.read_overlay()[2], ">      Draft.docx")
+        expect.equal(world.read_overlay()[2], ">Draft.docx")
         world.app_hotkeys["2"]()
-        expect.equal(world.read_overlay()[4], ">      Inbox")
+        expect.equal(world.read_overlay()[4], ">Inbox")
         world.press_escape()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.read_overlay(), nil)
@@ -584,6 +592,48 @@ return {
         world.release_modifiers()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.focused_window_id, nil)
+    end,
+
+    the_setting_for_snapshots_shows_blurred_previews_and_icons_without_them = function()
+        local world = start_world({ preview_method = preview_method.BLURRED_SNAPSHOTS })
+        local news = world.create_window("com.apple.Safari", "News")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.minimize_window(42)
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.advance(1)
+        expect.equal(world.read_overlay_images(), {
+            "icon com.apple.Safari",
+            "blurred 41",
+            "blurred " .. news.id,
+            "icon com.microsoft.Word",
+            "icon com.microsoft.Word",
+        })
+    end,
+
+    a_slow_snapshot_stops_the_snapshots_until_a_reload = function()
+        local world = start_world({ preview_method = preview_method.BLURRED_SNAPSHOTS })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.snapshot_seconds = 2
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.advance(1)
+        expect.equal(world.snapshot_count, 1)
+        expect.equal(world.read_overlay_images(), {
+            "icon com.microsoft.Word",
+            "icon com.microsoft.Word",
+            "icon com.apple.Safari",
+            "icon com.apple.Safari",
+        })
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.advance(1)
+        expect.equal(world.snapshot_count, 1)
     end,
 
     a_number_reaches_a_window_that_another_profile_recorded = function()

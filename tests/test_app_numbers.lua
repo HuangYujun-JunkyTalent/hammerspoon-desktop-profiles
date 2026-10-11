@@ -104,6 +104,27 @@ return {
         })
     end,
 
+    a_default_number_stays_while_the_windows_of_its_application_are_out_of_sight = function()
+        local before = app_numbers.update_defaults(
+            {},
+            arrangement_of({
+                record_of("com.microsoft.VSCode", "built-in", 1, 0),
+            }),
+            CONFIGURATION,
+            9
+        )
+        local minimized = record_of("com.microsoft.VSCode", "built-in", 1, 0)
+        minimized.is_out_of_sight = true
+        local after =
+            app_numbers.update_defaults(before, arrangement_of({ minimized }), CONFIGURATION, 9)
+        expect.equal(bundles_by_number(after), { [1] = "com.microsoft.VSCode" })
+        local hidden_elsewhere = record_of("com.apple.Notes", "built-in", 1, 0)
+        hidden_elsewhere.is_out_of_sight = true
+        local unnumbered =
+            app_numbers.update_defaults({}, arrangement_of({ hidden_elsewhere }), CONFIGURATION, 9)
+        expect.equal(unnumbered, {})
+    end,
+
     a_number_chosen_by_the_user_stays_and_moves_the_default = function()
         local chosen = app_numbers.choose({}, 1, "com.apple.Music", "Music")
         local entries = app_numbers.update_defaults(

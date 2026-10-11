@@ -10,6 +10,7 @@ local monitor_configuration = require("desktop_manager.core.monitor_configuratio
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 local new_windows = require("desktop_manager.macos.new_windows")
 local place_windows = require("desktop_manager.macos.place_windows")
+local preview_method = require("desktop_manager.core.preview_method")
 local profile_state = require("desktop_manager.core.profile_state")
 local profile_switch = require("desktop_manager.core.profile_switch")
 local read_desktops = require("desktop_manager.macos.read_desktops")
@@ -24,6 +25,7 @@ local switch_overlay = require("desktop_manager.macos.switch_overlay")
 local track_windows = require("desktop_manager.macos.track_windows")
 local url_command = require("desktop_manager.core.url_command")
 local window_matching = require("desktop_manager.core.window_matching")
+local window_previews = require("desktop_manager.macos.window_previews")
 
 local profile_controller = {}
 
@@ -47,6 +49,7 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---@field window_ids_out_of_sight table<integer, boolean> the windows that the last switch took out
 ---of sight
 ---@field switch_session SwitchSession|nil the list of applications while it shows
+---@field are_snapshots_stopped boolean whether a slow snapshot stopped the snapshots until a reload
 
 ---The list of numbered applications that a press of their modifiers with a number opens.
 ---@class SwitchSession
@@ -54,6 +57,7 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---@field applications SwitchApplication[]
 ---@field window_by_id table<integer, table> the hs.window of each window id in the list
 ---@field selection SwitchSelection|nil
+---@field images SwitchImages the icons and the previews that the list shows
 ---@field overlay table|nil the hs.canvas of the list
 ---@field event_tap table|nil the hs.eventtap that watches the modifiers and Escape
 local ProfileController = {}
@@ -781,7 +785,7 @@ function ProfileController:press_app_number(app_number, hotkey)
     if session then
         session.selection = switch_list.press(session.applications, session.selection, app_number)
         if session.overlay then
-            switch_overlay.update(session.overlay, describe_switch_lines(session))
+            switch_overlay.update(session.overlay, describe_switch_lines(session), session.images)
         end
         return
     end
@@ -811,18 +815,23 @@ function ProfileController:open_switch_list(entries, app_number)
             window_by_id[window_id] = window
         end
     end
+    local app_icons = {}
+    for _, entry in ipairs(entries) do
+        app_icons[entry.bundle_id] = window_previews.read_app_icon(entry.bundle_id)
+    end
     local session = {
         entries = entries,
         applications = applications,
         window_by_id = window_by_id,
         selection = switch_list.press(applications, nil, app_number),
+        images = { app_icons = app_icons, previews = {} },
     }
     self.switch_session = session
     if not keyboard_modifiers.are_held(self.settings.app_hotkey_modifiers) then
         self:go_to_switch_selection()
         return
     end
-    session.overlay = switch_overlay.show(describe_switch_lines(session))
+    session.overlay = switch_overlay.show(describe_switch_lines(session), session.images)
     local event_types = hs.eventtap.event.types
     session.event_tap = hs.eventtap
         .new({ event_types.flagsChanged, event_types.keyDown }, function(event)
@@ -831,7 +840,50 @@ function ProfileController:open_switch_list(entries, app_number)
         :start()
     if not keyboard_modifiers.are_held(self.settings.app_hotkey_modifiers) then
         self:go_to_switch_selection()
+        return
     end
+    if self.settings.preview_method == preview_method.BLURRED_SNAPSHOTS then
+        self:load_switch_previews(session)
+    end
+end
+
+---Takes the snapshots of the windows of the list one at a time, after the list shows, and draws
+---each as it comes, in the place of the icon.
+---A snapshot slower than the time limit stops the snapshots until the next reload, because the
+---function behind it once blocked Hammerspoon for two minutes on macOS 27.0.1.
+---@param session SwitchSession
+function ProfileController:load_switch_previews(session)
+    local window_ids = {}
+    for _, application in ipairs(session.applications) do
+        for _, window in ipairs(application.windows) do
+            table.insert(window_ids, window.window_id)
+        end
+    end
+    local index = 0
+    local function take_next_snapshot()
+        index = index + 1
+        local window_id = window_ids[index]
+        if not window_id or self.switch_session ~= session or self.are_snapshots_stopped then
+            return
+        end
+        local image, seconds = window_previews.take_blurred_snapshot(window_id)
+        if seconds > self.settings.timing.snapshot_time_limit_seconds then
+            self.are_snapshots_stopped = true
+            self.log.w(
+                string.format(
+                    "a snapshot took %.1f seconds, so the list shows icons until the next reload",
+                    seconds
+                )
+            )
+            return
+        end
+        if image and session.overlay then
+            session.images.previews[window_id] = image
+            switch_overlay.update(session.overlay, describe_switch_lines(session), session.images)
+        end
+        retained_timers.defer(take_next_snapshot)
+    end
+    retained_timers.defer(take_next_snapshot)
 end
 
 ---Goes to the selection when a modifier of the numbers is released, and closes the list on Escape.
@@ -1158,6 +1210,15 @@ end
 ---@param settings Settings
 ---@return ProfileController
 function profile_controller.start(settings)
+    if not preview_method.is_valid(settings.preview_method) then
+        error(
+            string.format(
+                "the setting preview_method is %q, which names no method",
+                tostring(settings.preview_method)
+            ),
+            2
+        )
+    end
     if not missing_window_policy.is_valid(settings.missing_window_policy) then
         error(
             string.format(
@@ -1184,6 +1245,7 @@ function profile_controller.start(settings)
         is_busy = false,
         are_saves_suspended = false,
         window_ids_out_of_sight = {},
+        are_snapshots_stopped = false,
     }, ProfileController)
     local state, warning =
         state_file.read(settings.state_file_path, settings.initial_monitor_matching)

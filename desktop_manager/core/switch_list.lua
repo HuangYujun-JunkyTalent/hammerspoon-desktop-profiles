@@ -23,6 +23,8 @@ local switch_list = {}
 ---@field text string
 ---@field is_application boolean
 ---@field is_selected boolean
+---@field bundle_id string the application of the line, whose icon the line shows
+---@field window_id integer|nil the window of the line, whose preview the line shows
 
 local ELLIPSIS = "…"
 local WINDOW_INDENT = "      "
@@ -95,12 +97,14 @@ function switch_list.describe_lines(applications, selection, max_title_length)
             text = string.format("%d   %s", application.number, application.app_name),
             is_application = true,
             is_selected = is_selected_application and selection.window_index == 0,
+            bundle_id = application.bundle_id,
         })
         if #application.windows == 0 then
             table.insert(lines, {
                 text = WINDOW_INDENT .. "no window, a new one opens",
                 is_application = false,
                 is_selected = false,
+                bundle_id = application.bundle_id,
             })
         end
         for index, window in ipairs(application.windows) do
@@ -109,6 +113,8 @@ function switch_list.describe_lines(applications, selection, max_title_length)
                 text = WINDOW_INDENT .. shorten(title, max_title_length),
                 is_application = false,
                 is_selected = is_selected_application and selection.window_index == index,
+                bundle_id = application.bundle_id,
+                window_id = window.window_id,
             })
         end
     end
