@@ -135,4 +135,6 @@ workerContext.setExtensionId(manifest.id);
 
 extensionBridge.registerManifest(manifest as never);
 extensionBridge.registerExtensionImplementation(manifest.id, new DesktopProfilesExtension());
-extensionBridge.initializeExtensions();
+// Asyar 4.14 loads the worker and calls neither initialize() nor activate(), so the worker calls
+// both, and the items show as soon as Asyar starts the worker.
+void extensionBridge.initializeExtensions().then(() => extensionBridge.activateExtensions());
