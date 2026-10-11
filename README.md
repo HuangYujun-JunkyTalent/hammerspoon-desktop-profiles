@@ -198,14 +198,50 @@ The menu bar shows `◧` after the reload, and `◧ 2` while profile 2 is active
 | List the numbered applications and select application N, or its next window | Control-Option-N, for N from 1 to 9, and release to go there | none |
 | Give number N to a running application in the active profile, or in profile 0 | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=number-app&number=N&app=Firefox` |
 | Return number N to the default in the active profile, or in profile 0 | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=release-app-number&number=N` |
-| Return every number of the active profile, or of profile 0, to the default | Control-Option-0 | none |
+| Return every number of the active profile, or of profile 0, to the default | Control-Option-0 | `hammerspoon://desktop-manager?action=reset-app-numbers` |
 
 `open -g "hammerspoon://desktop-manager?action=activate&profile=2"` in a terminal activates profile 2.
 A switch starts once the modifier keys are released, because the simulated Control-number would otherwise combine with them.
 `desktop_manager/default_settings.lua` holds the modifiers of the profiles and of the application numbers, the number of profiles and of application numbers, the way of taking windows out of sight, what happens to a window that no longer exists, and the timings.
 
-## Asyar and Raycast run the scripts in `launcher-scripts/`
+## The Asyar extension in `asyar-extension/` shows each profile as an item
 
+The extension adds ten items to the search of Asyar.
+
+| Item | Enter |
+|---|---|
+| Profile 1 to Profile 9, with the name of a renamed profile after it, such as "Profile 2 · Writing" | activates the profile, or deactivates it while it is active |
+| Reassign App Numbers | returns every number of the active profile, or of profile 0, to the default, as Control-Option-0 does |
+
+The active profile shows a green dot, the label "Active profile" and the line "Active. Enter deactivates it.", and the other profiles show a white dot.
+The extension reads `~/.hammerspoon/desktop-manager-state.json`, and draws the items again when the active profile or a name changes there.
+The items open the URLs of the table above, `action=toggle` and `action=reset-app-numbers`.
+
+Asyar asks you to accept three permissions the first time an item of the extension runs.
+
+| Permission | Scope |
+|---|---|
+| `files:read` | `~/.hammerspoon/desktop-manager-state.json` alone |
+| `fs:watch` | the same file |
+| `shell:open-url` | the URLs that start with `hammerspoon://` |
+
+Until you accept them, the items show no dot.
+The extension takes the path of the state file from `asyar-extension/manifest.json`, so a state file elsewhere needs the path changed there.
+
+Setting up the extension takes two steps, with Node and npm installed.
+
+1. Run `npm install` in `asyar-extension/`.
+2. Run `make link-asyar-extension` in this folder.
+   The command builds the extension into `asyar-extension/dist/`, links the folder into `~/Library/Application Support/org.asyar.app/extensions/`, and registers it in `dev_extensions.json` there.
+
+`make check-asyar-extension` checks the types, runs the unit tests of `asyar-extension/src/profile-items.ts`, runs `asyar validate` of the SDK of Asyar, and builds the extension.
+Run `make link-asyar-extension` again after a change, or `npm run build` in `asyar-extension/`, because Asyar loads the built files through the link.
+`tools/write_asyar_extension_settings.lua` writes `asyar-extension/src/settings.generated.json` with the number of profiles from `desktop_manager/default_settings.lua`.
+`make asyar-extension-settings` writes it again after a change of the settings, and `make check` fails when the file differs from the output of the generator.
+
+## Asyar and Raycast also run the scripts in `launcher-scripts/`
+
+The scripts stay beside the extension, for Raycast, and for the actions that the extension does not offer, such as renaming a profile or giving a number to an application.
 Each script opens one of the URLs above, and carries the headers of the Scripts feature of Asyar and of a Raycast script command.
 
 | Script title | Arguments |
@@ -261,8 +297,9 @@ Each switch writes its plan and its duration to the Hammerspoon console.
 | `desktop_manager/core/` | the decisions: monitor configurations, window matching, profile records, plans for concealing, restoring and opening missing windows, application numbers, URL commands |
 | `desktop_manager/macos/` | the calls to Hammerspoon: reading screens, desktops and windows, switching desktops, opening new windows, switching to the application of a number, Mission Control, the menu bar item and the controller |
 | `tests/` | unit tests of the core, and tests of whole switches against `tests/fake_hammerspoon.lua` |
-| `tools/` | the generator of the launcher scripts |
+| `tools/` | the generators of the launcher scripts and of the settings of the Asyar extension |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |
+| `asyar-extension/` | the Asyar extension, in TypeScript, with its manifest, its worker and the unit tests of its items |
 
 The modules of `desktop_manager/core/` call no Hammerspoon function, so `lua` 5.4 runs their tests outside Hammerspoon.
 The fake of Hammerspoon unminimizes a window onto its own desktop, as macOS 27.0.1 does, and a test can make it unminimize onto the desktop that shows.

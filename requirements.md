@@ -86,7 +86,13 @@ The same keys on the active profile deactivate it.
 The modifiers with 0 deactivate the active profile.
 The modifiers are a setting, and their default is Command-Option-Shift.
 
-The plugin for Asyar is a set of shell scripts.
+The plugin for Asyar is an extension of Asyar.
+It shows one item per profile, and marks the active profile with a dot.
+Running the item of a profile activates it, or deactivates it while it is active.
+Another item returns the application numbers of the active profile, or of profile 0, to the default.
+The items open the URLs `hammerspoon://...` that the tool binds.
+
+A set of shell scripts stays beside the extension.
 Each script carries the headers `@asyar.*` that the Scripts extension of Asyar reads and the headers `@raycast.*` that Raycast reads, so both launchers run it.
 Each script opens a URL `hammerspoon://...` that the tool binds.
 
