@@ -2,6 +2,7 @@
 
 The tool runs inside Hammerspoon and keeps nine numbered profiles.
 A profile records how many desktops each screen has, which windows are on each desktop, and where each window sits.
+Each profile also gives numbers to applications, and Control-Option with a number brings that application to the front.
 `requirements.md` states what the tool must do.
 
 ## A profile records its desktops and windows, and a switch changes only what differs
@@ -74,6 +75,31 @@ The menu bar item chooses when two monitor configurations are the same.
 | Number of external monitors | built-in display alone, built-in display with one external monitor, two external monitors, and so on |
 | Name of each external monitor | also built-in display with `LG TV SSCR2` and built-in display with `DELL U2720Q` |
 
+## Control-Option with a number brings an application of the profile to the front
+
+Each profile gives the numbers from 1 to 9 to applications.
+Control-Option with a number brings the application of that number to the front.
+
+- The first press shows the window of the application that had the focus last.
+- Each further press, while the application is in front, shows its next window, in the order in which the windows opened.
+- The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
+- A window on another desktop is reached by showing that desktop first.
+- An application without windows gets a new window, from the same sources that replace a closed window at a switch.
+
+The tool gives the default numbers to the applications that the profile records in sight.
+The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
+A default number stays with its application while the profile records a window of it in sight, so the numbers stay put.
+The menu bar item lists the numbers of the active profile under Application numbers.
+Each number there has two choices: give the number to the application that was in front when the menu opened, or return the number to the default.
+A number given by hand stays until you change it.
+
+Control-Option with a free number, or with any number while no profile is active, reaches the application in front unchanged.
+A number given to an application takes Control-Option with that number from every other application.
+On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
+Command with a number selects tabs, views and groups in many applications, and Command-Shift with 3, 4 and 5 takes screenshots in macOS.
+The setting `app_hotkey_modifiers` in `desktop_manager/default_settings.lua` changes the modifiers.
+Control alone does not work there, because the tool presses Control with a number to switch desktops.
+
 ## Setting up the tool takes six steps
 
 1. Run `make install-loader` in this folder.
@@ -101,10 +127,13 @@ The menu bar shows `◧` after the reload, and `◧ 2` while profile 2 is active
 | Rename profile N | menu bar item, Rename active profile… | `hammerspoon://desktop-manager?action=rename&profile=N&name=Writing` |
 | Change when monitor configurations are the same | menu bar item, Same monitor configuration by | `hammerspoon://desktop-manager?action=cycle-monitor-matching` |
 | Update the record of the active profile now | menu bar item, Save arrangement now | `hammerspoon://desktop-manager?action=save` |
+| Bring the application of number N to the front, or show its next window | Control-Option-N, for N from 1 to 9 | none |
+| Give number N to a running application in the active profile | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=number-app&number=N&app=Firefox` |
+| Return number N to the default in the active profile | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=release-app-number&number=N` |
 
 `open -g "hammerspoon://desktop-manager?action=activate&profile=2"` in a terminal activates profile 2.
 A switch starts once the modifier keys are released, because the simulated Control-number would otherwise combine with them.
-`desktop_manager/default_settings.lua` holds the modifiers, the number of profiles, the way of taking windows out of sight, what happens to a window that no longer exists, and the timings.
+`desktop_manager/default_settings.lua` holds the modifiers of the profiles and of the application numbers, the number of profiles and of application numbers, the way of taking windows out of sight, what happens to a window that no longer exists, and the timings.
 
 ## Asyar and Raycast run the scripts in `launcher-scripts/`
 
@@ -118,13 +147,15 @@ Each script opens one of the URLs above, and carries the headers of the Scripts 
 | Rename Profile | the profile number and the new name |
 | Cycle Profile Monitor Matching | none |
 | Save Profile Arrangement | none |
+| Number App | the number and the name of a running application |
+| Release App Number | the number |
 
 In Asyar, add the folder `launcher-scripts/` in Settings, Scripts.
 Asyar reads the folder without its subfolders, and shows a notification each time a script ends.
 In Raycast, add the same folder in Settings, Script Commands, Add Script Directory.
 
 A script title is fixed, so the titles name the profiles by number and not by name.
-`tools/write_launcher_scripts.lua` writes the scripts, with the number of profiles taken from `desktop_manager/default_settings.lua`.
+`tools/write_launcher_scripts.lua` writes the scripts, with the numbers of profiles and of applications taken from `desktop_manager/default_settings.lua`.
 `make launcher-scripts` writes them again after a change of the generator, and `make check` fails when the folder differs from the output of the generator.
 
 ## The tool works around the limits of Hammerspoon and macOS 27.0.1
@@ -155,8 +186,8 @@ Each switch writes its plan and its duration to the Hammerspoon console.
 | Folder or file | Content |
 |---|---|
 | `init.lua` | the file that Hammerspoon loads, which starts the controller |
-| `desktop_manager/core/` | the decisions: monitor configurations, window matching, profile records, plans for concealing, restoring and opening missing windows, URL commands |
-| `desktop_manager/macos/` | the calls to Hammerspoon: reading screens, desktops and windows, switching desktops, opening new windows, Mission Control, the menu bar item and the controller |
+| `desktop_manager/core/` | the decisions: monitor configurations, window matching, profile records, plans for concealing, restoring and opening missing windows, application numbers, URL commands |
+| `desktop_manager/macos/` | the calls to Hammerspoon: reading screens, desktops and windows, switching desktops, opening new windows, switching to the application of a number, Mission Control, the menu bar item and the controller |
 | `tests/` | unit tests of the core, and tests of whole switches against `tests/fake_hammerspoon.lua` |
 | `tools/` | the generator of the launcher scripts |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |
@@ -183,5 +214,5 @@ Lines are at most 100 characters long, as `stylua.toml` and `.luacheckrc` set.
 
 ## The state lives in one JSON file
 
-The tool saves the profiles and their records in `~/.hammerspoon/desktop-manager-state.json`.
+The tool saves the profiles, their records and their application numbers in `~/.hammerspoon/desktop-manager-state.json`.
 A file that the tool cannot read is moved aside to a name that ends in `.unreadable-` and the time, and the tool starts a new state.
