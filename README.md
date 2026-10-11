@@ -78,7 +78,16 @@ The menu bar item chooses when two monitor configurations are the same.
 ## Control-Option with a number lists the applications of the profile and brings one to the front
 
 Each profile gives the numbers from 1 to 9 to applications.
-A press of Control-Option with a number shows a list in the middle of the screen: the numbered applications of the active profile, with their numbers, and under each the titles of its windows.
+A press of Control-Option with a number shows a list in the middle of the screen: the numbered applications of the active profile, with their numbers, their icons and the titles of their windows.
+The setting `list_layout` in `desktop_manager/default_settings.lua` chooses how the list arranges them.
+
+| Value of `list_layout` | The list |
+|---|---|
+| `columns`, the default | a column per application, side by side, with the number and the icon on top and the windows stacked downward, each a preview with its title under it |
+| `columns_per_display` | the same columns in a group per display, from left to right as the displays stand, with the name of the display above its group, so an application with windows on two displays has a column in each group |
+| `rows` | a line per application, and under it a line per window with its preview beside the title |
+
+With `columns_per_display`, a last unnamed group holds the windows on an unknown display and the applications that have no window open.
 
 - The press selects a window of the application of that number: the window that had the focus last, or the next window when the application is in front.
 - Each further press of the same number, while you hold Control and Option, selects the next window of that application, in the order in which the windows opened.
@@ -100,9 +109,11 @@ The setting `preview_method` in `desktop_manager/default_settings.lua` chooses w
 
 The setting `preview_blur` sets how blurred a preview is: 1 keeps full detail, the default, 2 half of it, and 4 a quarter.
 A preview keeps the proportions of its window.
-The setting `preview_size` sets the width and height of a preview in points, 56 by 35 by default.
-The setting `list_font_size` sets the size of the titles in points, 14 by default, and the names of applications are 2 points larger.
-The heights of the lines and the width of the list follow from the two sizes.
+The sizes are fractions of the screen in front, so the list keeps its look on every display.
+The setting `preview_size` sets the width and height of a preview as fractions of the width and height of the screen, 0.1 by 0.1 by default, which is 144 by 88 points on a screen of 1440 by 875 points.
+The setting `list_font_size` sets the size of the titles as a fraction of the height of the screen, 0.016 by default, which is 14 points on that screen, and the names of applications are 2 points larger.
+The rows, the columns and the width of the list follow from the two sizes.
+When the list would be wider than 95 percent or taller than 90 percent of the screen, the previews and the fonts shrink by one factor until it fits.
 
 The images come after the list shows, one window at a time, and need the permission for Screen Recording.
 Hammerspoon takes them with an old screen capture function of macOS.

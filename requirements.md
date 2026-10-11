@@ -94,6 +94,8 @@ Each script opens a URL `hammerspoon://...` that the tool binds.
 
 Each profile gives the numbers from 1 to 9 to applications.
 A press of Control-Option with a number shows a list of the numbered applications of the active profile, with their numbers and the titles of their windows.
+By default each application is a column, side by side, with its number on top and its windows stacked downward, each a preview with its title under it.
+An option groups the columns by display, so that the applications on each display have columns of their own, and another option shows the former rows.
 The press selects a window of the application of that number: the window that had the focus last, or the next window when the application is in front.
 Each further press of the same number, while Control and Option stay held, selects the next window of that application.
 A press of another number selects a window of that application.
@@ -102,7 +104,8 @@ A press released at once brings the selected window to the front without the lis
 Each application line of the list shows the icon of the application, and each window line shows the icon beside the title.
 A setting shows a blurred image of each window in the place of the icon, and the icon stays for a window without an image, such as a minimized one.
 Another setting sets how strong the blur is.
-Two more settings set the size of a preview and the size of the font of the list, and the lines of the list follow from them.
+Two more settings set the size of a preview and the size of the font of the list, as fractions of the screen in front, and the list follows from them.
+The list shrinks until it fits within the screen.
 The images need the permission for Screen Recording, and they follow one at a time after the list shows.
 An image that takes longer than half a second stops the images until the next reload, because the screen capture function of macOS behind them blocked Hammerspoon for two minutes on this machine on 2026-10-10.
 The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
