@@ -100,7 +100,7 @@ The setting `preview_method` in `desktop_manager/default_settings.lua` chooses w
 
 The images come after the list shows, one window at a time, and need the permission for Screen Recording.
 Hammerspoon takes them with an old screen capture function of macOS.
-On 2026-10-10, on macOS 27.0.1, that function blocked Hammerspoon for two minutes with every shortcut unresponsive, before Hammerspoon had the permission, and took less than 0.3 seconds once it had it.
+On 2026-10-10, on macOS 27.0.1, that function blocked Hammerspoon for two minutes with every shortcut unresponsive, and after the permission was turned on it took less than 0.3 seconds.
 An image that takes longer than half a second therefore stops the images until the next reload, and the console says why.
 On a machine where Hammerspoon lacks the permission, choose `app_icons`, or time one image first:
 
