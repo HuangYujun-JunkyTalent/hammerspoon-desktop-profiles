@@ -3,6 +3,7 @@
 The tool runs inside Hammerspoon and keeps nine numbered profiles.
 A profile records how many desktops each screen has, which windows are on each desktop, and where each window sits.
 Each profile also gives numbers to applications, and Control-Option with a number lists them and brings one to the front.
+While no profile is active, profile 0 gives the numbers.
 `requirements.md` states what the tool must do.
 
 ## A profile records its desktops and windows, and a switch changes only what differs
@@ -78,7 +79,9 @@ The menu bar item chooses when two monitor configurations are the same.
 ## Control-Option with a number lists the applications of the profile and brings one to the front
 
 Each profile gives the numbers from 1 to 9 to applications.
-A press of Control-Option with a number shows a list in the middle of the screen: the numbered applications of the active profile, with their numbers, their icons and the titles of their windows.
+While no profile is active, the numbers of profile 0 hold.
+Profile 0 keeps numbers alone, so the switches work as before.
+A press of Control-Option with a number shows a list in the middle of the screen: the numbered applications of the active profile, or of profile 0, with their numbers, their icons and the titles of their windows.
 The setting `list_layout` in `desktop_manager/default_settings.lua` chooses how the list arranges them.
 
 | Value of `list_layout` | The list |
@@ -111,7 +114,7 @@ The setting `preview_blur` sets how blurred a preview is: 1 keeps full detail, t
 A preview keeps the proportions of its window.
 The sizes are fractions of the screen in front, so the list keeps its look on every display.
 The setting `preview_size` sets the width and height of a preview as fractions of the width and height of the screen, 0.1 by 0.1 by default, which is 144 by 88 points on a screen of 1440 by 875 points.
-The setting `list_font_size` sets the size of the titles as a fraction of the height of the screen, 0.016 by default, which is 14 points on that screen, and the names of applications are 2 points larger.
+The setting `list_font_size` sets the size of the titles as a fraction of the height of the screen, 0.01 by default, which is about 9 points on that screen, and the names of applications are 2 points larger.
 The rows, the columns and the width of the list follow from the two sizes.
 The setting `list_sizing` chooses how the list uses the screen.
 
@@ -150,11 +153,15 @@ The images work when the command prints `true` after less than half a second.
 The tool gives the default numbers to the applications that the profile records in sight.
 The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
 A default number stays with its application while the profile records a window of it, in sight or out of sight, so the numbers stay put.
-The menu bar item lists the numbers of the active profile under Application numbers.
+Profile 0 gives the default numbers to the applications with a window in sight, in the same order, and a default number stays while its application has a window open.
+Profile 0 updates its numbers at the times when a profile updates its record, and at once when a profile is deactivated.
+The menu bar item lists the numbers of the active profile, or of profile 0, under Application numbers.
 Each number there has two choices: give the number to the application that was in front when the menu opened, or return the number to the default.
 A number given by hand stays until you change it.
+Control-Option-0 returns every number of the active profile, or of profile 0, to the default, also the numbers given by hand, and an alert names the profile.
+Control-Option-0 does nothing while the list shows, so a slip during a press keeps the numbers given by hand.
 
-Control-Option with a free number, or with any number while no profile is active, reaches the application in front unchanged.
+Control-Option with a free number reaches the application in front unchanged.
 A number given to an application takes Control-Option with that number from every other application.
 On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
 Command with a number selects tabs, views and groups in many applications, and Command-Shift with 3, 4 and 5 takes screenshots in macOS.
@@ -189,8 +196,9 @@ The menu bar shows `◧` after the reload, and `◧ 2` while profile 2 is active
 | Change when monitor configurations are the same | menu bar item, Same monitor configuration by | `hammerspoon://desktop-manager?action=cycle-monitor-matching` |
 | Update the record of the active profile now | menu bar item, Save arrangement now | `hammerspoon://desktop-manager?action=save` |
 | List the numbered applications and select application N, or its next window | Control-Option-N, for N from 1 to 9, and release to go there | none |
-| Give number N to a running application in the active profile | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=number-app&number=N&app=Firefox` |
-| Return number N to the default in the active profile | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=release-app-number&number=N` |
+| Give number N to a running application in the active profile, or in profile 0 | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=number-app&number=N&app=Firefox` |
+| Return number N to the default in the active profile, or in profile 0 | menu bar item, Application numbers | `hammerspoon://desktop-manager?action=release-app-number&number=N` |
+| Return every number of the active profile, or of profile 0, to the default | Control-Option-0 | none |
 
 `open -g "hammerspoon://desktop-manager?action=activate&profile=2"` in a terminal activates profile 2.
 A switch starts once the modifier keys are released, because the simulated Control-number would otherwise combine with them.

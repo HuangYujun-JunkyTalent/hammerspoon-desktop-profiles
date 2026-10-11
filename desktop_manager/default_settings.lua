@@ -64,7 +64,7 @@ function default_settings.create(state_file_path)
         preview_method = preview_method.BLURRED_SNAPSHOTS,
         preview_blur = 1,
         preview_size = { w = 0.1, h = 0.1 },
-        list_font_size = 0.016,
+        list_font_size = 0.01,
         list_layout = list_layout.COLUMNS,
         list_sizing = list_sizing.FILL_SCREEN,
         title_overflow = title_overflow.WRAP,

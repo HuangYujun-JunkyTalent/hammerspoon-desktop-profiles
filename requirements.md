@@ -93,7 +93,9 @@ Each script opens a URL `hammerspoon://...` that the tool binds.
 ## Numbers within a profile bring applications to the front
 
 Each profile gives the numbers from 1 to 9 to applications.
-A press of Control-Option with a number shows a list of the numbered applications of the active profile, with their numbers and the titles of their windows.
+While no profile is active, the numbers of profile 0 hold.
+Profile 0 keeps numbers alone, so the switches work as before.
+A press of Control-Option with a number shows a list of the numbered applications of the active profile, or of profile 0, with their numbers and the titles of their windows.
 By default each application is a column, side by side, with its number on top and its windows stacked downward, each a preview with its title under it.
 An option groups the columns by display, so that the applications on each display have columns of their own, and another option shows the former rows.
 The press selects a window of the application of that number: the window that had the focus last, or the next window when the application is in front.
@@ -121,8 +123,11 @@ The order follows the screens of the monitor configuration, then the desktops, t
 A default number stays with its application while the profile records a window of it, in sight or out of sight.
 The user can give any number to any running application, in the menu bar item or with a launcher script, and the number then stays until the user changes it.
 A number that the user returns to the default goes back to the default rule.
+Profile 0 gives the default numbers to the applications with a window in sight, in the same order, and a default number stays while its application has a window open.
+Control-Option-0 returns every number of the active profile, or of profile 0, to the default, also the numbers that the user gave.
+Control-Option-0 does nothing while the list shows.
 
-Control-Option with a free number, or with any number while no profile is active, reaches the application in front unchanged.
+Control-Option with a free number reaches the application in front unchanged.
 A number given to an application takes Control-Option with that number from every other application.
 The modifiers are a setting, and their default is Control-Option.
 On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
