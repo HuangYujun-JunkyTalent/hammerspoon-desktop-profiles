@@ -113,7 +113,16 @@ The sizes are fractions of the screen in front, so the list keeps its look on ev
 The setting `preview_size` sets the width and height of a preview as fractions of the width and height of the screen, 0.1 by 0.1 by default, which is 144 by 88 points on a screen of 1440 by 875 points.
 The setting `list_font_size` sets the size of the titles as a fraction of the height of the screen, 0.016 by default, which is 14 points on that screen, and the names of applications are 2 points larger.
 The rows, the columns and the width of the list follow from the two sizes.
-When the list would be wider than 95 percent or taller than 90 percent of the screen, the previews and the fonts shrink by one factor until it fits.
+The setting `list_sizing` chooses how the list uses the screen.
+
+| Value of `list_sizing` | The list |
+|---|---|
+| `fill_screen`, the default | grows or shrinks the previews and the fonts by one factor until the list fills 95 percent of the width or 90 percent of the height of the screen, whichever it reaches first, up to 2.5 times the preview and 1.6 times the font of the settings |
+| `fixed` | keeps the sizes of the settings, and shrinks them only when the list would not fit |
+
+Under `fill_screen`, `preview_size` gives the shape of a preview and the size that the growth starts from.
+In both, the columns fold into two lines when two lines make the previews at least 5 percent larger than one line does.
+The first line takes the larger half of the columns, so the numbers read from left to right and then downward, and a display whose columns continue on the second line has its name above them there too.
 
 The images come after the list shows, one window at a time, and need the permission for Screen Recording.
 Hammerspoon takes them with an old screen capture function of macOS.

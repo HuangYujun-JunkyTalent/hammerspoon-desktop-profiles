@@ -105,7 +105,9 @@ Each application line of the list shows the icon of the application, and each wi
 A setting shows a blurred image of each window in the place of the icon, and the icon stays for a window without an image, such as a minimized one.
 Another setting sets how strong the blur is.
 Two more settings set the size of a preview and the size of the font of the list, as fractions of the screen in front, and the list follows from them.
-The list shrinks until it fits within the screen.
+By default the list fills the screen properly: the previews and the fonts grow or shrink until the list fills most of the width or the height of the screen, within limits on their growth.
+An option keeps the sizes of the settings instead, and shrinks them only until the list fits within the screen.
+The columns fold into two lines when two lines give larger previews.
 The images need the permission for Screen Recording, and they follow one at a time after the list shows.
 An image that takes longer than half a second stops the images until the next reload, because the screen capture function of macOS behind them blocked Hammerspoon for two minutes on this machine on 2026-10-10.
 The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
