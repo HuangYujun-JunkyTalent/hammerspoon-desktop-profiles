@@ -4,6 +4,7 @@
 
 import { ExtensionContext as WorkerExtensionContext, extensionBridge } from 'asyar-sdk/worker';
 import type {
+  DynamicCommandRegistration,
   Extension,
   ExtensionContext,
   ICommandService,
@@ -30,6 +31,7 @@ class DesktopProfilesExtension implements Extension {
   private log?: ILogService;
   private stateWatch?: WatcherHandle;
   private registeredItems = '';
+  private refreshes: Promise<void> = Promise.resolve();
 
   async initialize(context: ExtensionContext): Promise<void> {
     this.commands = context.getService<ICommandService>('commands');
@@ -39,12 +41,15 @@ class DesktopProfilesExtension implements Extension {
     this.log = context.getService<ILogService>('log');
   }
 
+  /**
+   * Shows the items at once without the state, because the reads wait for the consent of the user
+   * to the permissions, and a read without consent rejects only after ten seconds.
+   */
   async activate(): Promise<void> {
-    await this.registerProfileItems();
-    this.stateWatch = await this.fileWatcher?.watch([STATE_FILE_PATTERN]);
-    this.stateWatch?.onChange(() => {
-      void this.registerProfileItems();
-    });
+    const summaryWithoutState = readProfileSummary(null);
+    const itemsWithoutState = describeProfileCommands(summaryWithoutState, settings.profileCount);
+    await this.registerItems(itemsWithoutState);
+    void this.refreshProfileItems();
   }
 
   async deactivate(): Promise<void> {
@@ -61,25 +66,53 @@ class DesktopProfilesExtension implements Extension {
     return (await this.files?.read(statePath, { maxBytes: STATE_FILE_MAX_BYTES })) ?? null;
   }
 
+  /** Starts the watch of the state file, unless it runs, and tries again at the next refresh. */
+  private async watchStateFile(): Promise<void> {
+    if (this.stateWatch) {
+      return;
+    }
+    try {
+      this.stateWatch = await this.fileWatcher?.watch([STATE_FILE_PATTERN]);
+      this.stateWatch?.onChange(() => {
+        void this.refreshProfileItems();
+      });
+    } catch (error) {
+      this.log?.warn(`the state file of the desktop manager cannot be watched: ${String(error)}`);
+    }
+  }
+
+  /** Reads the state and redraws the items, one refresh after the other. */
+  private refreshProfileItems(): Promise<void> {
+    this.refreshes = this.refreshes.then(async () => {
+      await this.watchStateFile();
+      let stateText: string | null = null;
+      try {
+        stateText = await this.readStateText();
+      } catch (error) {
+        this.log?.warn(`the state file of the desktop manager cannot be read: ${String(error)}`);
+      }
+      const summary = readProfileSummary(stateText);
+      await this.registerItems(describeProfileCommands(summary, settings.profileCount));
+    });
+    return this.refreshes;
+  }
+
   /**
    * Registers the items again when the active profile or a name changed.
    * Hammerspoon writes the state file after every change of a window, and most writes change
    * neither.
    */
-  private async registerProfileItems(): Promise<void> {
-    let stateText: string | null = null;
-    try {
-      stateText = await this.readStateText();
-    } catch (error) {
-      this.log?.warn(`the state file of the desktop manager could not be read: ${String(error)}`);
-    }
-    const items = describeProfileCommands(readProfileSummary(stateText), settings.profileCount);
+  private async registerItems(items: DynamicCommandRegistration[]): Promise<void> {
     const itemsText = JSON.stringify(items);
     if (itemsText === this.registeredItems) {
       return;
     }
-    await this.commands?.replaceDynamicCommands(items);
-    this.registeredItems = itemsText;
+    try {
+      await this.commands?.replaceDynamicCommands(items);
+      this.registeredItems = itemsText;
+    } catch (error) {
+      this.log?.error(`the profiles could not be registered: ${String(error)}`);
+    }
   }
 
   async executeCommand(commandId: string): Promise<unknown> {
@@ -89,6 +122,8 @@ class DesktopProfilesExtension implements Extension {
       return undefined;
     }
     await this.opener?.openUrl(url);
+    // Running a command is where Asyar asks for the consent that the watch and the reads need.
+    void this.refreshProfileItems();
     return undefined;
   }
 
