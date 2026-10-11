@@ -2,7 +2,7 @@ local deep_copy = require("desktop_manager.core.deep_copy")
 
 local app_numbers = {}
 
----The number of an application in a profile, which a shortcut such as Command-3 reaches.
+---The number of an application in a profile, which a shortcut such as Control-Option-3 reaches.
 ---@class AppNumber
 ---@field number integer
 ---@field bundle_id string

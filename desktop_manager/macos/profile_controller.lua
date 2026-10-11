@@ -287,6 +287,21 @@ function ProfileController:find_window(window_id)
     return hs.window.get(window_id)
 end
 
+---@param windows table[] hs.window objects
+---@return WindowObservation[] observations of the windows that have an id
+---@return table<integer, boolean> observed_ids
+local function observe_windows(windows)
+    local observations, observed_ids = {}, {}
+    for _, window in ipairs(windows) do
+        local observation = track_windows.observe(window)
+        if observation.window_id then
+            table.insert(observations, observation)
+            observed_ids[observation.window_id] = true
+        end
+    end
+    return observations, observed_ids
+end
+
 ---Records every window that the tool sees, under the current monitor configuration.
 ---A recorded window that the tool does not see but that sits on a desktop keeps its previous record
 ---with its current desktop, because Hammerspoon sees the windows of a desktop once it was visited.
@@ -303,14 +318,7 @@ function ProfileController:capture_active_arrangement()
     )
     self:rename_reopened_windows(known_windows)
     local previous = profile_state.find_arrangement(self.state, number, configuration.key)
-    local observations, observed_ids = {}, {}
-    for _, window in ipairs(known_windows) do
-        local observation = track_windows.observe(window)
-        if observation.window_id then
-            table.insert(observations, observation)
-            observed_ids[observation.window_id] = true
-        end
-    end
+    local observations, observed_ids = observe_windows(known_windows)
     for _, record in ipairs(previous and previous.windows or {}) do
         if record.window_id and not observed_ids[record.window_id] then
             local space_id = read_desktops.find_window_space_id(record.window_id)
@@ -347,15 +355,50 @@ function ProfileController:capture_active_arrangement()
     self:write_state()
 end
 
+---Gives profile 0 its default numbers from the windows open now, because it records no windows.
+---A default number of profile 0 therefore stays while its application has a window open.
+function ProfileController:update_numbers_of_profile_0()
+    local configuration = self:read_monitor_configuration()
+    local observations = observe_windows(self:list_known_windows({}))
+    local open_windows = arrangement_capture.capture(
+        configuration,
+        read_desktops.read_desktop_layout(),
+        observations,
+        nil
+    )
+    local number = profile_state.NO_PROFILE_NUMBER
+    self.state = profile_state.with_app_numbers(
+        self.state,
+        number,
+        app_numbers.update_defaults(
+            profile_state.profile_or_default(self.state, number).app_numbers,
+            open_windows,
+            configuration,
+            self.settings.app_number_count
+        )
+    )
+    self:write_state()
+end
+
+---Updates the record and the numbers of the active profile, or the numbers of profile 0 while no
+---profile is active.
+function ProfileController:capture_numbering_profile()
+    if self.state.active_profile_number then
+        self:capture_active_arrangement()
+    else
+        self:update_numbers_of_profile_0()
+    end
+end
+
 function ProfileController:schedule_save()
-    if self.is_busy or self.are_saves_suspended or not self.state.active_profile_number then
+    if self.is_busy or self.are_saves_suspended then
         return
     end
     retained_timers.stop(self.save_timer)
     self.save_timer = retained_timers.after(self.settings.timing.save_delay_seconds, function()
         self.save_timer = nil
         if not self.is_busy and not self.are_saves_suspended then
-            self:capture_active_arrangement()
+            self:capture_numbering_profile()
         end
     end)
 end
@@ -645,7 +688,7 @@ function ProfileController:deactivate_profile()
     end
     self:capture_active_arrangement()
     self.state = profile_state.with_active_profile_number(self.state, nil)
-    self:write_state()
+    self:update_numbers_of_profile_0()
     self:refresh_menu()
     hs.alert.show("No desktop profile")
 end
@@ -705,16 +748,13 @@ function ProfileController:set_monitor_matching(matching)
     hs.alert.show("Same monitor configuration by " .. monitor_matching.label_of(matching):lower())
 end
 
----Gives the number to the application in the active profile, as the user chose.
+---Gives the number to the application in the active profile, or in profile 0 while no profile is
+---active, as the user chose.
 ---@param app_number integer
 ---@param bundle_id string
 ---@param app_name string
 function ProfileController:choose_app_number(app_number, bundle_id, app_name)
-    local number = self.state.active_profile_number
-    if not number then
-        notify("No profile is active, so no application can get a number")
-        return
-    end
+    local number = profile_state.find_numbering_profile_number(self.state)
     local profile = profile_state.profile_or_default(self.state, number)
     self.state = profile_state.with_app_numbers(
         self.state,
@@ -725,20 +765,37 @@ function ProfileController:choose_app_number(app_number, bundle_id, app_name)
     hs.alert.show(string.format("%s is number %d in %s", app_name, app_number, profile.name))
 end
 
----Returns the number to the defaults of the active profile, which the next update gives again.
+---Returns the number to the defaults of the active profile, or of profile 0 while no profile is
+---active, and gives the defaults again.
 ---@param app_number integer
 function ProfileController:release_app_number(app_number)
-    local number = self.state.active_profile_number
-    if not number then
-        return
-    end
+    local number = profile_state.find_numbering_profile_number(self.state)
     local profile = profile_state.profile_or_default(self.state, number)
     self.state = profile_state.with_app_numbers(
         self.state,
         number,
         app_numbers.release(profile.app_numbers, app_number)
     )
-    self:capture_active_arrangement()
+    self:capture_numbering_profile()
+end
+
+---Drops every number of the active profile, or of profile 0 while no profile is active, also the
+---numbers that the user chose, and gives the default numbers again.
+---Nothing happens while the list shows, so that a slip during a press keeps the chosen numbers.
+function ProfileController:reset_app_numbers()
+    if self.switch_session then
+        return
+    end
+    local number = profile_state.find_numbering_profile_number(self.state)
+    self.state = profile_state.with_app_numbers(self.state, number, {})
+    if self.is_busy then
+        -- The update at the end of the switch gives the defaults.
+        self:write_state()
+    else
+        self:capture_numbering_profile()
+    end
+    local name = profile_state.profile_or_default(self.state, number).name
+    hs.alert.show(name .. " has the default application numbers")
 end
 
 ---@param app_number integer
@@ -808,8 +865,8 @@ local SWITCH_VIEW_BUILDERS = {
 
 ---Opens the list of numbered applications with the window of the number selected, or moves the
 ---selection while the list shows.
----A number that the active profile gives to no application passes its keys through to the
----application in front while the list is closed.
+---A number that the active profile, or profile 0 while no profile is active, gives to no
+---application passes its keys through to the application in front while the list is closed.
 ---@param app_number integer
 ---@param hotkey table the hs.hotkey of the number
 function ProfileController:press_app_number(app_number, hotkey)
@@ -825,9 +882,10 @@ function ProfileController:press_app_number(app_number, hotkey)
         end
         return
     end
-    local number = self.state.active_profile_number
-    local entries = number and profile_state.profile_or_default(self.state, number).app_numbers
-        or {}
+    local entries = profile_state.profile_or_default(
+        self.state,
+        profile_state.find_numbering_profile_number(self.state)
+    ).app_numbers
     if not app_numbers.find_by_number(entries, app_number) then
         hotkey:disable()
         hs.eventtap.keyStroke(self.settings.app_hotkey_modifiers, tostring(app_number), 0)
@@ -1030,6 +1088,12 @@ function ProfileController:bind_app_hotkeys()
         end)
         table.insert(self.hotkeys, hotkey)
     end
+    table.insert(
+        self.hotkeys,
+        hs.hotkey.bind(self.settings.app_hotkey_modifiers, "0", function()
+            self:reset_app_numbers()
+        end)
+    )
 end
 
 ---@param params table<string, string>
@@ -1155,18 +1219,19 @@ function ProfileController:print_diagnostics()
     end
     add("focused desktop: %s", tostring(layout.focused_space_id))
     add("active profile: %s", tostring(self.state.active_profile_number))
-    if self.state.active_profile_number then
-        local profile =
-            profile_state.profile_or_default(self.state, self.state.active_profile_number)
-        for _, entry in ipairs(profile.app_numbers) do
-            add(
-                "  app number %d: %s %s%s",
-                entry.number,
-                entry.app_name,
-                entry.bundle_id,
-                entry.is_chosen_by_user and " (chosen)" or ""
-            )
-        end
+    local numbering_profile = profile_state.profile_or_default(
+        self.state,
+        profile_state.find_numbering_profile_number(self.state)
+    )
+    add("application numbers of %s:", numbering_profile.name)
+    for _, entry in ipairs(numbering_profile.app_numbers) do
+        add(
+            "  app number %d: %s %s%s",
+            entry.number,
+            entry.app_name,
+            entry.bundle_id,
+            entry.is_chosen_by_user and " (chosen)" or ""
+        )
     end
     local records_by_profile = {}
     for number = 1, self.settings.profile_count do
@@ -1416,6 +1481,9 @@ function profile_controller.start(settings)
         controller:run_url_command(params)
     end)
     controller:start_watchers()
+    if not controller.state.active_profile_number then
+        controller:schedule_save()
+    end
     if not hs.accessibilityState() then
         notify("Hammerspoon needs the Accessibility permission to move windows")
     end

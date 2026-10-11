@@ -89,11 +89,38 @@ return {
         expect.equal(profile_state.find_arrangement(state, 3, "built-in + 1 external"), nil)
     end,
 
-    profile_numbers_must_be_positive_integers = function()
+    profile_numbers_must_be_whole_numbers_of_0_or_more = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
         expect.raises(function()
-            profile_state.profile_or_default(state, 0)
-        end, "positive integer, and 0 was given")
+            profile_state.profile_or_default(state, -1)
+        end, "0 or more, and %-1 was given")
+    end,
+
+    profile_0_holds_app_numbers_and_neither_records_windows_nor_activates = function()
+        local state = profile_state.new_state(monitor_matching.BY_COUNT)
+        state = profile_state.with_app_numbers(state, profile_state.NO_PROFILE_NUMBER, {
+            {
+                number = 2,
+                bundle_id = "com.apple.Safari",
+                app_name = "Safari",
+                is_chosen_by_user = true,
+            },
+        })
+        expect.equal(profile_state.profile_or_default(state, 0).app_numbers[1].number, 2)
+        expect.equal(profile_state.profile_or_default(state, 0).name, "Profile 0")
+        expect.raises(function()
+            profile_state.with_arrangement(state, 0, ARRANGEMENT)
+        end, "profile 0 records no windows")
+        expect.raises(function()
+            profile_state.with_active_profile_number(state, 0)
+        end, "cannot be activated")
+    end,
+
+    the_numbering_profile_is_the_active_profile_or_profile_0 = function()
+        local state = profile_state.new_state(monitor_matching.BY_COUNT)
+        expect.equal(profile_state.find_numbering_profile_number(state), 0)
+        state = profile_state.with_active_profile_number(state, 4)
+        expect.equal(profile_state.find_numbering_profile_number(state), 4)
     end,
 
     decode_turns_whole_floats_into_integers = function()
@@ -146,6 +173,22 @@ return {
         })
         local decoded = profile_state.decode(state)
         expect.equal(decoded, state)
+    end,
+
+    decode_keeps_the_numbers_of_profile_0_and_drops_its_arrangements = function()
+        local state =
+            profile_state.with_app_numbers(profile_state.new_state(monitor_matching.BY_COUNT), 0, {
+                {
+                    number = 1,
+                    bundle_id = "com.microsoft.Word",
+                    app_name = "Microsoft Word",
+                    is_chosen_by_user = false,
+                },
+            })
+        state.profiles["0"].arrangements["built-in"] = ARRANGEMENT
+        local decoded = profile_state.decode(state)
+        expect.equal(decoded.profiles["0"].app_numbers, state.profiles["0"].app_numbers)
+        expect.equal(decoded.profiles["0"].arrangements, {})
     end,
 
     decode_rejects_another_format_version = function()

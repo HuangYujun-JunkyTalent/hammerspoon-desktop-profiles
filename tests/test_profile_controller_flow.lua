@@ -774,6 +774,7 @@ return {
         local function read_title_element(line_limit)
             local world = start_world({
                 list_sizing = list_sizing.FIXED,
+                list_font_size = 0.016,
                 title_overflow = title_overflow.WRAP,
                 title_line_count = line_limit,
             })
@@ -926,6 +927,110 @@ return {
         expect.equal(entries[1].bundle_id, "com.microsoft.Word")
         expect.equal(entries[1].is_chosen_by_user, false)
         expect.equal(entries[1].number, 1)
+    end,
+
+    profile_0_numbers_the_open_windows_while_no_profile_is_active = function()
+        local world, controller = start_world()
+        world.advance(SETTLE_SECONDS)
+        local entries = profile_state.profile_or_default(controller.state, 0).app_numbers
+        expect.equal(entries[1].bundle_id, "com.microsoft.Word")
+        expect.equal(entries[2].bundle_id, "com.apple.Safari")
+        expect.equal(
+            profile_state.find_arrangement(controller.state, 0, MONITOR_CONFIGURATION_KEY),
+            nil
+        )
+        local menu_items = {}
+        for _, item in ipairs(world.menu_builder()) do
+            if item.title == "Application numbers" then
+                menu_items = item.menu
+            end
+        end
+        expect.equal(menu_items[1].title, "1  Microsoft Word")
+        world.app_hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, 41)
+        expect.equal(controller.state.active_profile_number, nil)
+    end,
+
+    deactivating_a_profile_gives_profile_0_its_numbers_at_once = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        controller.state = profile_state.with_app_numbers(controller.state, 0, {})
+        world.hotkeys["0"]()
+        local entries = profile_state.profile_or_default(controller.state, 0).app_numbers
+        expect.equal(#entries, 2)
+    end,
+
+    a_number_chosen_while_no_profile_is_active_goes_to_profile_0 = function()
+        local world, controller = start_world()
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "5", app = "Safari" }
+        )
+        expect.equal(world.alerts[#world.alerts], "Safari is number 5 in Profile 0")
+        expect.equal(world.notifications, {})
+        world.app_hotkeys["5"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, 41)
+        expect.equal(profile_state.profile_or_default(controller.state, 1).app_numbers, {})
+    end,
+
+    control_option_0_returns_every_number_of_the_active_profile_to_the_default = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local defaults = profile_state.profile_or_default(controller.state, 1).app_numbers
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "7", app = "Safari" }
+        )
+        world.app_hotkeys["0"]()
+        expect.equal(profile_state.profile_or_default(controller.state, 1).app_numbers, defaults)
+        expect.equal(world.alerts[#world.alerts], "Profile 1 has the default application numbers")
+    end,
+
+    control_option_0_returns_every_number_of_profile_0_to_the_default = function()
+        local world, controller = start_world()
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "7", app = "Microsoft Word" }
+        )
+        world.app_hotkeys["0"]()
+        expect.equal(profile_state.profile_or_default(controller.state, 0).app_numbers, {
+            {
+                number = 1,
+                bundle_id = "com.microsoft.Word",
+                app_name = "Microsoft Word",
+                is_chosen_by_user = false,
+            },
+            {
+                number = 2,
+                bundle_id = "com.apple.Safari",
+                app_name = "Safari",
+                is_chosen_by_user = false,
+            },
+        })
+        expect.equal(world.alerts[#world.alerts], "Profile 0 has the default application numbers")
+    end,
+
+    control_option_0_does_nothing_while_the_list_shows = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "7", app = "Safari" }
+        )
+        local chosen = profile_state.profile_or_default(controller.state, 1).app_numbers
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["7"]()
+        world.app_hotkeys["0"]()
+        expect.equal(profile_state.profile_or_default(controller.state, 1).app_numbers, chosen)
+        expect.equal(world.overlay.is_visible, true)
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, 41)
     end,
 
     numbering_an_application_that_is_not_running_is_reported = function()

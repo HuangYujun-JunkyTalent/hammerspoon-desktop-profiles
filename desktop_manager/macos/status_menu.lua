@@ -16,8 +16,9 @@ local MENU_BAR_SYMBOL = "◧"
 ---@field choose_app_number fun(app_number: integer, bundle_id: string, app_name: string)
 ---@field release_app_number fun(app_number: integer)
 
----The numbers of the active profile, each with a submenu that gives it to the application that was
----in front when the menu opened, or returns it to the default.
+---The numbers of the active profile, or of profile 0 while no profile is active, each with a
+---submenu that gives it to the application that was in front when the menu opened, or returns it to
+---the default.
 ---@param profile Profile
 ---@param app_number_count integer
 ---@param actions StatusMenuActions
@@ -92,13 +93,12 @@ local function build_items(state, settings, actions)
         })
     end
     table.insert(items, { title = "Same monitor configuration by", menu = matching_items })
-    if state.active_profile_number then
-        local profile = profile_state.profile_or_default(state, state.active_profile_number)
-        table.insert(items, {
-            title = "Application numbers",
-            menu = build_app_number_items(profile, settings.app_number_count, actions),
-        })
-    end
+    local numbering_profile =
+        profile_state.profile_or_default(state, profile_state.find_numbering_profile_number(state))
+    table.insert(items, {
+        title = "Application numbers",
+        menu = build_app_number_items(numbering_profile, settings.app_number_count, actions),
+    })
     table.insert(items, { title = "-" })
     table.insert(items, { title = "Save arrangement now", fn = actions.save_arrangement })
     table.insert(

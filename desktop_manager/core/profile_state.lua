@@ -8,7 +8,7 @@ local profile_state = {}
 ---@field number integer
 ---@field name string
 ---@field arrangements table<string, Arrangement> keyed by monitor configuration key
----@field app_numbers AppNumber[] the applications that shortcuts such as Command-3 reach
+---@field app_numbers AppNumber[] the applications that shortcuts such as Control-Option-3 reach
 
 ---The state that the tool keeps between runs of Hammerspoon.
 ---Profiles are keyed by their number written as a string, because JSON objects have string keys.
@@ -20,12 +20,17 @@ local profile_state = {}
 
 profile_state.FORMAT_VERSION = 1
 
+---Profile 0 holds the application numbers that the shortcuts reach while no profile is active.
+---It records no windows, because a window that a profile records goes out of sight when another
+---profile is activated.
+profile_state.NO_PROFILE_NUMBER = 0
+
 ---@param number any
 local function check_profile_number(number)
-    if math.type(number) ~= "integer" or number < 1 then
+    if math.type(number) ~= "integer" or number < 0 then
         error(
             string.format(
-                "a profile number is a positive integer, and %s was given",
+                "a profile number is a whole number of 0 or more, and %s was given",
                 tostring(number)
             ),
             3
@@ -90,9 +95,19 @@ function profile_state.with_active_profile_number(state, number)
     if number ~= nil then
         check_profile_number(number)
     end
+    if number == profile_state.NO_PROFILE_NUMBER then
+        error("profile 0 holds the numbers of no active profile, and cannot be activated", 2)
+    end
     local updated = deep_copy.copy(state)
     updated.active_profile_number = number
     return updated
+end
+
+---@param state State
+---@return integer the profile whose application numbers the shortcuts reach: the active profile,
+---or profile 0 while no profile is active
+function profile_state.find_numbering_profile_number(state)
+    return state.active_profile_number or profile_state.NO_PROFILE_NUMBER
 end
 
 ---@param state State
@@ -194,6 +209,9 @@ end
 ---@param arrangement Arrangement
 ---@return State
 function profile_state.with_arrangement(state, number, arrangement)
+    if number == profile_state.NO_PROFILE_NUMBER then
+        error("profile 0 records no windows", 2)
+    end
     local profile = profile_state.profile_or_default(state, number)
     profile.arrangements[arrangement.monitor_configuration_key] = deep_copy.copy(arrangement)
     return profile_state.with_profile(state, profile)
@@ -299,7 +317,7 @@ end
 ---@return Profile|nil
 local function decode_profile(raw)
     local number = type(raw) == "table" and to_integer(raw.number)
-    if not number or number < 1 then
+    if not number or number < 0 then
         return nil
     end
     local profile = new_profile(number)
@@ -307,6 +325,9 @@ local function decode_profile(raw)
         profile.name = raw.name
     end
     profile.app_numbers = decode_app_numbers(raw.app_numbers)
+    if number == profile_state.NO_PROFILE_NUMBER then
+        return profile
+    end
     local raw_arrangements = type(raw.arrangements) == "table" and raw.arrangements or {}
     for key, raw_arrangement in pairs(raw_arrangements) do
         local arrangement = decode_arrangement(raw_arrangement)
