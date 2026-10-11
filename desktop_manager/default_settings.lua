@@ -22,7 +22,9 @@ local default_settings = {}
 ---@field state_file_path string
 ---@field profile_count integer
 ---@field hotkey_modifiers string[]
----@field app_hotkey_modifiers string[] the modifiers that, with a number, reach an application
+---@field app_hotkey_modifiers string[] the modifiers that, with a number, reach an application.
+---Control-Option takes no shortcut of macOS or of the running applications, while Command takes
+---the tabs and views of many applications and Command-Shift takes the screenshots of macOS.
 ---@field app_number_count integer
 ---@field url_event_name string
 ---@field initial_monitor_matching string
@@ -38,7 +40,7 @@ function default_settings.create(state_file_path)
         state_file_path = state_file_path,
         profile_count = 9,
         hotkey_modifiers = { "cmd", "alt", "shift" },
-        app_hotkey_modifiers = { "cmd" },
+        app_hotkey_modifiers = { "ctrl", "alt" },
         app_number_count = 9,
         url_event_name = "desktop-manager",
         initial_monitor_matching = monitor_matching.BY_COUNT,

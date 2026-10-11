@@ -93,7 +93,7 @@ Each script opens a URL `hammerspoon://...` that the tool binds.
 ## Numbers within a profile bring applications to the front
 
 Each profile gives the numbers from 1 to 9 to applications.
-Command with a number brings the application of that number to the front.
+Control-Option with a number brings the application of that number to the front.
 The first press shows the window of the application that had the focus last.
 Each further press, while the application is in front, shows its next window.
 The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
@@ -106,9 +106,11 @@ A default number stays with its application while the profile records a window o
 The user can give any number to any running application, in the menu bar item or with a launcher script, and the number then stays until the user changes it.
 A number that the user returns to the default goes back to the default rule.
 
-Command with a free number, or with any number while no profile is active, reaches the application in front unchanged.
-A number given to an application takes Command with that number from every other application.
-The modifiers are a setting, and their default is Command.
+Control-Option with a free number, or with any number while no profile is active, reaches the application in front unchanged.
+A number given to an application takes Control-Option with that number from every other application.
+The modifiers are a setting, and their default is Control-Option.
+On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
+Command with a number selects tabs, views and groups in many applications, and Command-Shift with 3, 4 and 5 takes screenshots in macOS.
 
 ## Development practices that the project follows
 

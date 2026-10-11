@@ -583,12 +583,12 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.app_hotkeys["7"]()
-        expect.equal(world.key_strokes, { "cmd+7", "cmd+7" })
+        expect.equal(world.key_strokes, { "ctrl+alt+7", "ctrl+alt+7" })
         expect.equal(world.hotkey_events, {
-            "disable cmd 7",
-            "enable cmd 7",
-            "disable cmd 7",
-            "enable cmd 7",
+            "disable ctrl+alt 7",
+            "enable ctrl+alt 7",
+            "disable ctrl+alt 7",
+            "enable ctrl+alt 7",
         })
     end,
 

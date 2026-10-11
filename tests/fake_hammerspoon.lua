@@ -591,10 +591,10 @@ function fake_hammerspoon.install(spec)
                     table.insert(world.hotkey_events, "enable " .. modifier_key .. " " .. key)
                     return hotkey
                 end
-                if modifier_key == "cmd" then
-                    world.app_hotkeys[key] = callback
-                else
+                if modifier_key == "cmd+alt+shift" then
                     world.hotkeys[key] = callback
+                else
+                    world.app_hotkeys[key] = callback
                 end
                 return hotkey
             end,
