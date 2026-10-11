@@ -102,6 +102,7 @@ A press released at once brings the selected window to the front without the lis
 Each application line of the list shows the icon of the application, and each window line shows the icon beside the title.
 A setting shows a blurred image of each window in the place of the icon, and the icon stays for a window without an image, such as a minimized one.
 Another setting sets how strong the blur is.
+Two more settings set the size of a preview and the size of the font of the list, and the lines of the list follow from them.
 The images need the permission for Screen Recording, and they follow one at a time after the list shows.
 An image that takes longer than half a second stops the images until the next reload, because the screen capture function of macOS behind them blocked Hammerspoon for two minutes on this machine on 2026-10-10.
 The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.

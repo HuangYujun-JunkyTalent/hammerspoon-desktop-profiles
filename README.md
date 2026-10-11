@@ -98,8 +98,11 @@ The setting `preview_method` in `desktop_manager/default_settings.lua` chooses w
 | `blurred_snapshots`, the default | a blurred image of the window, or the icon for a window without an image, such as a minimized one |
 | `app_icons` | the icon of the application |
 
-The setting `preview_blur` sets how blurred a preview is: 1 keeps full detail, 2 half of it, the default, and 4 a quarter.
+The setting `preview_blur` sets how blurred a preview is: 1 keeps full detail, the default, 2 half of it, and 4 a quarter.
 A preview keeps the proportions of its window.
+The setting `preview_size` sets the width and height of a preview in points, 56 by 35 by default.
+The setting `list_font_size` sets the size of the titles in points, 14 by default, and the names of applications are 2 points larger.
+The heights of the lines and the width of the list follow from the two sizes.
 
 The images come after the list shows, one window at a time, and need the permission for Screen Recording.
 Hammerspoon takes them with an old screen capture function of macOS.

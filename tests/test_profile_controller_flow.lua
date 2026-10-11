@@ -595,7 +595,10 @@ return {
     end,
 
     the_setting_for_snapshots_shows_blurred_previews_and_icons_without_them = function()
-        local world = start_world({ preview_method = preview_method.BLURRED_SNAPSHOTS })
+        local world = start_world({
+            preview_method = preview_method.BLURRED_SNAPSHOTS,
+            preview_blur = 2,
+        })
         local news = world.create_window("com.apple.Safari", "News")
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -625,6 +628,31 @@ return {
         world.app_hotkeys["1"]()
         world.advance(1)
         expect.equal(world.rendered_sizes[41], { w = 28, h = 14 })
+    end,
+
+    the_settings_of_size_set_the_previews_and_the_fonts_of_the_list = function()
+        local world = start_world({
+            preview_method = preview_method.BLURRED_SNAPSHOTS,
+            preview_blur = 1,
+            preview_size = { w = 80, h = 50 },
+            list_font_size = 18,
+        })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.advance(1)
+        expect.equal(world.rendered_sizes[41], { w = 160, h = 80 })
+        local preview_frames, text_sizes = {}, {}
+        for _, element in ipairs(world.overlay.elements) do
+            if element.type == "image" and element.image.source:match("^blurred") then
+                table.insert(preview_frames, { w = element.frame.w, h = element.frame.h })
+            elseif element.type == "text" then
+                table.insert(text_sizes, element.textSize)
+            end
+        end
+        expect.equal(preview_frames[1], { w = 80, h = 50 })
+        expect.equal(text_sizes, { 20, 18, 20, 18 })
     end,
 
     a_slow_snapshot_stops_the_snapshots_until_a_reload = function()

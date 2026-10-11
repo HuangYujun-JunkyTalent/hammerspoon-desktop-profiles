@@ -34,6 +34,8 @@ local default_settings = {}
 ---@field missing_window_policy string a value of missing_window_policy
 ---@field preview_method string a value of preview_method
 ---@field preview_blur number 1 or more: a preview keeps 1 / preview_blur of the detail of its size
+---@field preview_size table the w and h of a preview in the list, in points
+---@field list_font_size number the size of the titles in the list, in points
 ---@field builtin_screen_name_patterns string[]
 ---@field timing Timing
 
@@ -51,7 +53,9 @@ function default_settings.create(state_file_path)
         concealment_method = concealment_method.MINIMIZE_WINDOWS,
         missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW,
         preview_method = preview_method.BLURRED_SNAPSHOTS,
-        preview_blur = 2,
+        preview_blur = 1,
+        preview_size = { w = 56, h = 35 },
+        list_font_size = 14,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         timing = {
             poll_interval_seconds = 0.05,

@@ -9,39 +9,76 @@ switch_overlay.MAX_TITLE_LENGTH = 60
 ---@field app_icons table<string, table> the hs.image of each bundle id
 ---@field previews table<integer, table> the hs.image of each window id
 
-local WIDTH = 620
+---The sizes of the list in points, which follow from the size of a preview and the size of the
+---font.
+---@class SwitchLayout
+---@field preview_size table the w and h of a preview
+---@field font_size number the size of the titles of windows
+---@field application_font_size number
+---@field icon_size number
+---@field text_height number
+---@field application_line_height number
+---@field window_line_height number
+---@field preview_inset number
+---@field window_text_inset number
+---@field application_text_inset number
+---@field width number
+
 local PADDING = 16
-local APPLICATION_LINE_HEIGHT = 30
-local WINDOW_LINE_HEIGHT = 42
-local ICON_SIZE = 22
-local PREVIEW_SIZE = { w = 56, h = 35 }
-local PREVIEW_INSET = PADDING + 14
-local WINDOW_TEXT_INSET = PREVIEW_INSET + PREVIEW_SIZE.w + 14
-local APPLICATION_TEXT_INSET = PADDING + ICON_SIZE + 10
-local TEXT_HEIGHT = 22
+local GAP = 14
+local LINE_HEIGHT_PER_POINT = 1.4
+local CHARACTER_WIDTH_PER_POINT = 0.55
 local BACKGROUND_COLOR = { white = 0.12, alpha = 0.92 }
 local SELECTION_COLOR = { red = 0.2, green = 0.45, blue = 0.95, alpha = 0.95 }
 local TEXT_COLOR = { white = 1, alpha = 1 }
 local DIMMED_TEXT_COLOR = { white = 0.75, alpha = 1 }
 
+---@param preview_size table the w and h of a preview in points
+---@param font_size number the size of the titles in points, the names of applications 2 larger
+---@return SwitchLayout
+function switch_overlay.create_layout(preview_size, font_size)
+    local application_font_size = font_size + 2
+    local icon_size = math.floor(application_font_size * LINE_HEIGHT_PER_POINT + 0.5)
+    local text_height = math.ceil(application_font_size * LINE_HEIGHT_PER_POINT)
+    local preview_inset = PADDING + GAP
+    local window_text_inset = preview_inset + preview_size.w + GAP
+    local title_width =
+        math.floor(switch_overlay.MAX_TITLE_LENGTH * font_size * CHARACTER_WIDTH_PER_POINT + 0.5)
+    return {
+        preview_size = { w = preview_size.w, h = preview_size.h },
+        font_size = font_size,
+        application_font_size = application_font_size,
+        icon_size = icon_size,
+        text_height = text_height,
+        application_line_height = math.max(icon_size, text_height) + 8,
+        window_line_height = math.max(preview_size.h, text_height) + 7,
+        preview_inset = preview_inset,
+        window_text_inset = window_text_inset,
+        application_text_inset = PADDING + icon_size + 10,
+        width = window_text_inset + title_width + PADDING,
+    }
+end
+
 ---@param line SwitchLine
----@return integer
-local function height_of(line)
-    return line.is_application and APPLICATION_LINE_HEIGHT or WINDOW_LINE_HEIGHT
+---@param layout SwitchLayout
+---@return number
+local function height_of(line, layout)
+    return line.is_application and layout.application_line_height or layout.window_line_height
 end
 
 ---@param lines SwitchLine[]
+---@param layout SwitchLayout
 ---@return Rect
-local function centered_frame(lines)
+local function centered_frame(lines, layout)
     local screen = hs.screen.mainScreen():frame()
     local height = 2 * PADDING
     for _, line in ipairs(lines) do
-        height = height + height_of(line)
+        height = height + height_of(line, layout)
     end
     return {
-        x = screen.x + (screen.w - WIDTH) / 2,
+        x = screen.x + (screen.w - layout.width) / 2,
         y = screen.y + (screen.h - height) / 2,
-        w = WIDTH,
+        w = layout.width,
         h = height,
     }
 end
@@ -51,49 +88,58 @@ end
 ---@param line SwitchLine
 ---@param top number
 ---@param images SwitchImages
+---@param layout SwitchLayout
 ---@return table|nil the image element of the line
-local function build_image_element(line, top, images)
+local function build_image_element(line, top, images, layout)
     local icon = images.app_icons[line.bundle_id]
     local preview = line.window_id and images.previews[line.window_id]
     local image = preview or icon
     if not image then
         return nil
     end
-    local size = preview and PREVIEW_SIZE or { w = ICON_SIZE, h = ICON_SIZE }
-    local left = line.is_application and PADDING or PREVIEW_INSET + (PREVIEW_SIZE.w - size.w) / 2
+    local size = preview and layout.preview_size or { w = layout.icon_size, h = layout.icon_size }
+    local left = line.is_application and PADDING
+        or layout.preview_inset + (layout.preview_size.w - size.w) / 2
     return {
         type = "image",
         image = image,
         imageScaling = "scaleToFit",
-        frame = { x = left, y = top + (height_of(line) - size.h) / 2, w = size.w, h = size.h },
+        frame = {
+            x = left,
+            y = top + (height_of(line, layout) - size.h) / 2,
+            w = size.w,
+            h = size.h,
+        },
     }
 end
 
 ---@param line SwitchLine
 ---@param top number
+---@param layout SwitchLayout
 ---@return table the text element of the line
-local function build_text_element(line, top)
-    local inset = line.is_application and APPLICATION_TEXT_INSET or WINDOW_TEXT_INSET
+local function build_text_element(line, top, layout)
+    local inset = line.is_application and layout.application_text_inset or layout.window_text_inset
     local is_bright = line.is_application or line.is_selected
     return {
         type = "text",
         text = line.is_application and line.text or (line.text:gsub("^%s+", "")),
         textFont = line.is_application and "Helvetica-Bold" or "Helvetica",
-        textSize = line.is_application and 16 or 14,
+        textSize = line.is_application and layout.application_font_size or layout.font_size,
         textColor = is_bright and TEXT_COLOR or DIMMED_TEXT_COLOR,
         frame = {
             x = inset,
-            y = top + (height_of(line) - TEXT_HEIGHT) / 2,
-            w = WIDTH - inset - PADDING,
-            h = TEXT_HEIGHT,
+            y = top + (height_of(line, layout) - layout.text_height) / 2,
+            w = layout.width - inset - PADDING,
+            h = layout.text_height,
         },
     }
 end
 
 ---@param lines SwitchLine[]
 ---@param images SwitchImages
+---@param layout SwitchLayout
 ---@return table[] the elements of an hs.canvas
-local function build_elements(lines, images)
+local function build_elements(lines, images, layout)
     local elements = {
         {
             type = "rectangle",
@@ -104,32 +150,34 @@ local function build_elements(lines, images)
     }
     local top = PADDING
     for _, line in ipairs(lines) do
+        local height = height_of(line, layout)
         if line.is_selected then
             table.insert(elements, {
                 type = "rectangle",
                 action = "fill",
                 fillColor = SELECTION_COLOR,
                 roundedRectRadii = { xRadius = 6, yRadius = 6 },
-                frame = { x = PADDING / 2, y = top, w = WIDTH - PADDING, h = height_of(line) },
+                frame = { x = PADDING / 2, y = top, w = layout.width - PADDING, h = height },
             })
         end
-        local image_element = build_image_element(line, top, images)
+        local image_element = build_image_element(line, top, images, layout)
         if image_element then
             table.insert(elements, image_element)
         end
-        table.insert(elements, build_text_element(line, top))
-        top = top + height_of(line)
+        table.insert(elements, build_text_element(line, top, layout))
+        top = top + height
     end
     return elements
 end
 
 ---@param lines SwitchLine[]
 ---@param images SwitchImages
+---@param layout SwitchLayout
 ---@return table overlay an hs.canvas
-function switch_overlay.show(lines, images)
-    local overlay = hs.canvas.new(centered_frame(lines))
+function switch_overlay.show(lines, images, layout)
+    local overlay = hs.canvas.new(centered_frame(lines, layout))
     overlay:level(hs.canvas.windowLevels.overlay)
-    overlay:replaceElements(build_elements(lines, images))
+    overlay:replaceElements(build_elements(lines, images, layout))
     overlay:show()
     return overlay
 end
@@ -137,8 +185,9 @@ end
 ---@param overlay table an hs.canvas
 ---@param lines SwitchLine[]
 ---@param images SwitchImages
-function switch_overlay.update(overlay, lines, images)
-    overlay:replaceElements(build_elements(lines, images))
+---@param layout SwitchLayout
+function switch_overlay.update(overlay, lines, images, layout)
+    overlay:replaceElements(build_elements(lines, images, layout))
 end
 
 ---@param overlay table an hs.canvas

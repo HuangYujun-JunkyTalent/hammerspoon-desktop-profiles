@@ -50,6 +50,7 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---of sight
 ---@field switch_session SwitchSession|nil the list of applications while it shows
 ---@field are_snapshots_stopped boolean whether a slow snapshot stopped the snapshots until a reload
+---@field switch_layout SwitchLayout the sizes of the list, from the settings
 
 ---The list of numbered applications that a press of their modifiers with a number opens.
 ---@class SwitchSession
@@ -785,7 +786,12 @@ function ProfileController:press_app_number(app_number, hotkey)
     if session then
         session.selection = switch_list.press(session.applications, session.selection, app_number)
         if session.overlay then
-            switch_overlay.update(session.overlay, describe_switch_lines(session), session.images)
+            switch_overlay.update(
+                session.overlay,
+                describe_switch_lines(session),
+                session.images,
+                self.switch_layout
+            )
         end
         return
     end
@@ -831,7 +837,8 @@ function ProfileController:open_switch_list(entries, app_number)
         self:go_to_switch_selection()
         return
     end
-    session.overlay = switch_overlay.show(describe_switch_lines(session), session.images)
+    session.overlay =
+        switch_overlay.show(describe_switch_lines(session), session.images, self.switch_layout)
     local event_types = hs.eventtap.event.types
     session.event_tap = hs.eventtap
         .new({ event_types.flagsChanged, event_types.keyDown }, function(event)
@@ -866,8 +873,11 @@ function ProfileController:load_switch_previews(session)
         if not window_id or self.switch_session ~= session or self.are_snapshots_stopped then
             return
         end
-        local image, seconds =
-            window_previews.take_blurred_snapshot(window_id, self.settings.preview_blur)
+        local image, seconds = window_previews.take_blurred_snapshot(
+            window_id,
+            self.settings.preview_blur,
+            self.settings.preview_size
+        )
         if seconds > self.settings.timing.snapshot_time_limit_seconds then
             self.are_snapshots_stopped = true
             self.log.w(
@@ -880,7 +890,12 @@ function ProfileController:load_switch_previews(session)
         end
         if image and session.overlay then
             session.images.previews[window_id] = image
-            switch_overlay.update(session.overlay, describe_switch_lines(session), session.images)
+            switch_overlay.update(
+                session.overlay,
+                describe_switch_lines(session),
+                session.images,
+                self.switch_layout
+            )
         end
         retained_timers.defer(take_next_snapshot)
     end
@@ -1211,6 +1226,25 @@ end
 ---@param settings Settings
 ---@return ProfileController
 function profile_controller.start(settings)
+    local preview_size = settings.preview_size
+    if
+        type(preview_size) ~= "table"
+        or type(preview_size.w) ~= "number"
+        or type(preview_size.h) ~= "number"
+        or preview_size.w <= 0
+        or preview_size.h <= 0
+    then
+        error("the setting preview_size must be a table of a positive w and a positive h", 2)
+    end
+    if type(settings.list_font_size) ~= "number" or settings.list_font_size <= 0 then
+        error(
+            string.format(
+                "the setting list_font_size is %s, and it must be a positive number",
+                tostring(settings.list_font_size)
+            ),
+            2
+        )
+    end
     if type(settings.preview_blur) ~= "number" or settings.preview_blur < 1 then
         error(
             string.format(
@@ -1256,6 +1290,10 @@ function profile_controller.start(settings)
         are_saves_suspended = false,
         window_ids_out_of_sight = {},
         are_snapshots_stopped = false,
+        switch_layout = switch_overlay.create_layout(
+            settings.preview_size,
+            settings.list_font_size
+        ),
     }, ProfileController)
     local state, warning =
         state_file.read(settings.state_file_path, settings.initial_monitor_matching)
