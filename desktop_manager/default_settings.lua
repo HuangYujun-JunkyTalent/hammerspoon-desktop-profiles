@@ -49,7 +49,7 @@ function default_settings.create(state_file_path)
         initial_monitor_matching = monitor_matching.BY_COUNT,
         concealment_method = concealment_method.MINIMIZE_WINDOWS,
         missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW,
-        preview_method = preview_method.APP_ICONS,
+        preview_method = preview_method.BLURRED_SNAPSHOTS,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         timing = {
             poll_interval_seconds = 0.05,

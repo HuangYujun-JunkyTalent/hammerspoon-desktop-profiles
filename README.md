@@ -95,13 +95,14 @@ The setting `preview_method` in `desktop_manager/default_settings.lua` chooses w
 
 | Value of `preview_method` | A window line shows |
 |---|---|
-| `app_icons`, the default | the icon of the application |
-| `blurred_snapshots` | a blurred image of the window, or the icon for a window without an image, such as a minimized one |
+| `blurred_snapshots`, the default | a blurred image of the window, or the icon for a window without an image, such as a minimized one |
+| `app_icons` | the icon of the application |
 
 The images come after the list shows, one window at a time, and need the permission for Screen Recording.
-Hammerspoon takes them with an old screen capture function of macOS, which blocked Hammerspoon for two minutes on 2026-10-10 on macOS 27.0.1, with every shortcut unresponsive.
+Hammerspoon takes them with an old screen capture function of macOS.
+On 2026-10-10, on macOS 27.0.1, that function blocked Hammerspoon for two minutes with every shortcut unresponsive, before Hammerspoon had the permission, and took less than 0.3 seconds once it had it.
 An image that takes longer than half a second therefore stops the images until the next reload, and the console says why.
-Before you choose `blurred_snapshots`, time one image:
+On a machine where Hammerspoon lacks the permission, choose `app_icons`, or time one image first:
 
 1. In System Settings, Privacy & Security, Screen & System Audio Recording, turn on Hammerspoon.
 2. In a terminal, run the command below, which may itself block Hammerspoon for minutes when the function blocks.
@@ -110,7 +111,7 @@ Before you choose `blurred_snapshots`, time one image:
 hs -c 'local started = hs.timer.secondsSinceEpoch(); local image = hs.window.snapshotForID(hs.window.focusedWindow():id()); return tostring(image ~= nil) .. " after " .. (hs.timer.secondsSinceEpoch() - started) .. " seconds"'
 ```
 
-The setting is worth choosing when the command prints `true` after less than half a second.
+The images work when the command prints `true` after less than half a second.
 
 The tool gives the default numbers to the applications that the profile records in sight.
 The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
