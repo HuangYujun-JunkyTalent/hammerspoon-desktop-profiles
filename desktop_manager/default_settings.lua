@@ -67,8 +67,8 @@ function default_settings.create(state_file_path)
         list_font_size = 0.016,
         list_layout = list_layout.COLUMNS,
         list_sizing = list_sizing.FILL_SCREEN,
-        title_overflow = title_overflow.TRUNCATE,
-        title_line_count = 3,
+        title_overflow = title_overflow.WRAP,
+        title_line_count = 2,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         timing = {
             poll_interval_seconds = 0.05,

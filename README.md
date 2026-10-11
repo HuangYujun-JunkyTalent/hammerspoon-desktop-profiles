@@ -121,16 +121,16 @@ The setting `list_sizing` chooses how the list uses the screen.
 | `fixed` | keeps the sizes of the settings, and shrinks them only when the list would not fit |
 
 Under `fill_screen`, `preview_size` gives the shape of a preview and the size that the growth starts from.
+In both, the columns fold into two lines when two lines make the previews at least 5 percent larger than one line does.
+The first line takes the larger half of the columns, so the numbers read from left to right and then downward, and a display whose columns continue on the second line has its name above them there too.
 
 The setting `title_overflow` chooses what happens to a title longer than its space.
 
 | Value of `title_overflow` | A long title |
 |---|---|
-| `truncate`, the default | is shortened to one line and ends in an ellipsis |
-| `wrap` | flows over the lines it needs, up to `title_line_count`, 3 by default, and its cell or line grows to them |
+| `wrap`, the default | flows over the lines it needs, up to `title_line_count`, 2 by default, and its cell or line grows to them |
+| `truncate` | is shortened to one line and ends in an ellipsis |
 | `scroll` | scrolls from right to left after a pause of one second, when its window is selected, and is shortened otherwise |
-In both, the columns fold into two lines when two lines make the previews at least 5 percent larger than one line does.
-The first line takes the larger half of the columns, so the numbers read from left to right and then downward, and a display whose columns continue on the second line has its name above them there too.
 
 The images come after the list shows, one window at a time, and need the permission for Screen Recording.
 Hammerspoon takes them with an old screen capture function of macOS.
