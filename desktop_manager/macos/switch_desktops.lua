@@ -10,6 +10,15 @@ local HIGHEST_SHORTCUT_NUMBER = 9
 local SHORTCUT_SETTING_HINT = 'Turn on "Switch to Desktop %d" in System Settings,'
     .. " Keyboard, Keyboard Shortcuts, Mission Control."
 
+local log = nil
+
+---@return table an hs.logger, made at the first switch, because the tests load this module without
+---Hammerspoon
+local function get_log()
+    log = log or hs.logger.new("desktop_sw", "info")
+    return log
+end
+
 ---Shows a desktop by pressing the macOS shortcut "Switch to Desktop N", Control-N.
 ---`on_done` receives nil once the desktop is active, or a message that says why it is not.
 ---@param space_id integer
@@ -31,7 +40,9 @@ function switch_desktops.switch_to_space(space_id, timing, on_done)
         )
         return
     end
+    local requested_at = hs.timer.secondsSinceEpoch()
     keyboard_modifiers.wait_for_release(timing, function()
+        local pressed_at = hs.timer.secondsSinceEpoch()
         hs.eventtap.keyStroke({ "ctrl" }, tostring(shortcut_number), KEY_PRESS_MICROSECONDS)
         poll_until.wait(
             function()
@@ -40,6 +51,13 @@ function switch_desktops.switch_to_space(space_id, timing, on_done)
             timing.desktop_switch_timeout_seconds,
             timing.poll_interval_seconds,
             function(is_active)
+                get_log().f(
+                    "desktop %d: %.2f seconds for the release of the modifiers,"
+                        .. " %.2f seconds until macOS reported it",
+                    shortcut_number,
+                    pressed_at - requested_at,
+                    hs.timer.secondsSinceEpoch() - pressed_at
+                )
                 if not is_active then
                     on_done(
                         string.format(

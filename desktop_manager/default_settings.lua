@@ -51,7 +51,7 @@ function default_settings.create(state_file_path)
             poll_interval_seconds = 0.05,
             modifier_release_timeout_seconds = 3,
             desktop_switch_timeout_seconds = 2,
-            desktop_settle_seconds = 0.3,
+            desktop_settle_seconds = 0.1,
             minimize_timeout_seconds = 2,
             window_settle_seconds = 0.3,
             mission_control_timeout_seconds = 3,
