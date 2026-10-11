@@ -84,4 +84,67 @@ return {
         expect.equal(lines[6].text, "      no window, a new one opens")
         expect.equal(lines[4].text, "      untitled window")
     end,
+
+    application_columns_hold_every_window_and_mark_the_selection = function()
+        local groups =
+            switch_list.describe_application_columns(APPLICATIONS, { number = 1, window_index = 2 })
+        expect.equal(#groups, 1)
+        expect.equal(groups[1].display_name, nil)
+        local firefox, word = groups[1].columns[1], groups[1].columns[2]
+        expect.equal(firefox.number, 1)
+        expect.equal(#firefox.cells, 3)
+        expect.equal(firefox.cells[2], { window_id = 20, title = "News", is_selected = true })
+        expect.equal(firefox.cells[3].title, "untitled window")
+        expect.equal(word.cells, {})
+        expect.equal(word.is_selected, false)
+    end,
+
+    display_columns_group_the_windows_by_display = function()
+        local applications = {
+            {
+                number = 1,
+                bundle_id = "org.mozilla.firefox",
+                app_name = "Firefox",
+                windows = {
+                    { window_id = 10, title = "Inbox", screen_uuid = "LG" },
+                    { window_id = 20, title = "News", screen_uuid = "BUILTIN" },
+                    { window_id = 30, title = "Lost", screen_uuid = nil },
+                },
+                first_window_index = 1,
+            },
+            {
+                number = 2,
+                bundle_id = "com.microsoft.VSCode",
+                app_name = "Code",
+                windows = { { window_id = 40, title = "Draft", screen_uuid = "LG" } },
+                first_window_index = 1,
+            },
+            {
+                number = 3,
+                bundle_id = "com.microsoft.Word",
+                app_name = "Microsoft Word",
+                windows = {},
+                first_window_index = 0,
+            },
+        }
+        local groups = switch_list.describe_display_columns(
+            applications,
+            { number = 3, window_index = 0 },
+            {
+                { screen_uuid = "BUILTIN", name = "Built-in Retina Display" },
+                { screen_uuid = "LG", name = "LG TV SSCR2" },
+            }
+        )
+        expect.equal(#groups, 3)
+        expect.equal(groups[1].display_name, "Built-in Retina Display")
+        expect.equal(#groups[1].columns, 1)
+        expect.equal(groups[1].columns[1].cells[1].window_id, 20)
+        expect.equal(groups[2].display_name, "LG TV SSCR2")
+        expect.equal(groups[2].columns[1].number, 1)
+        expect.equal(groups[2].columns[2].number, 2)
+        expect.equal(groups[3].display_name, nil)
+        expect.equal(groups[3].columns[1].cells[1].window_id, 30)
+        expect.equal(groups[3].columns[2].number, 3)
+        expect.equal(groups[3].columns[2].is_selected, true)
+    end,
 }

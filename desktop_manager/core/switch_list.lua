@@ -5,6 +5,7 @@ local switch_list = {}
 ---@class SwitchWindow
 ---@field window_id integer
 ---@field title string
+---@field screen_uuid string|nil the display of the window, when its desktop is known
 
 ---An application of the list, with its windows in the order of the presses.
 ---@class SwitchApplication
@@ -26,7 +27,32 @@ local switch_list = {}
 ---@field bundle_id string the application of the line, whose icon the line shows
 ---@field window_id integer|nil the window of the line, whose preview the line shows
 
+---A window of a column, with the title that the overlay shortens to the width of the column.
+---@class SwitchCell
+---@field window_id integer
+---@field title string
+---@field is_selected boolean
+
+---An application of the columns, with the windows that the column holds.
+---@class SwitchColumn
+---@field number integer
+---@field app_name string
+---@field bundle_id string
+---@field is_selected boolean whether the application itself is selected, because it has no window
+---@field cells SwitchCell[]
+
+---The columns of one display, or of no display for the windows elsewhere and the applications
+---without windows.
+---@class SwitchColumnGroup
+---@field display_name string|nil
+---@field columns SwitchColumn[]
+
+---@class SwitchDisplay
+---@field screen_uuid string
+---@field name string
+
 local ELLIPSIS = "…"
+local UNTITLED = "untitled window"
 local WINDOW_INDENT = "      "
 
 ---@param applications SwitchApplication[]
@@ -73,7 +99,7 @@ end
 ---@param title string
 ---@param max_length integer the most characters that a title keeps, the ellipsis included
 ---@return string
-local function shorten(title, max_length)
+function switch_list.shorten(title, max_length)
     local is_valid, length = pcall(utf8.len, title)
     if not is_valid or not length then
         return title:sub(1, max_length)
@@ -108,9 +134,9 @@ function switch_list.describe_lines(applications, selection, max_title_length)
             })
         end
         for index, window in ipairs(application.windows) do
-            local title = window.title ~= "" and window.title or "untitled window"
+            local title = window.title ~= "" and window.title or UNTITLED
             table.insert(lines, {
-                text = WINDOW_INDENT .. shorten(title, max_title_length),
+                text = WINDOW_INDENT .. switch_list.shorten(title, max_title_length),
                 is_application = false,
                 is_selected = is_selected_application and selection.window_index == index,
                 bundle_id = application.bundle_id,
@@ -119,6 +145,92 @@ function switch_list.describe_lines(applications, selection, max_title_length)
         end
     end
     return lines
+end
+
+---@param application SwitchApplication
+---@param selection SwitchSelection|nil
+---@param is_in_column fun(window: SwitchWindow): boolean
+---@return SwitchColumn
+local function build_column(application, selection, is_in_column)
+    local is_selected_application = selection ~= nil and selection.number == application.number
+    local cells = {}
+    for index, window in ipairs(application.windows) do
+        if is_in_column(window) then
+            table.insert(cells, {
+                window_id = window.window_id,
+                title = window.title ~= "" and window.title or UNTITLED,
+                is_selected = is_selected_application and selection.window_index == index,
+            })
+        end
+    end
+    return {
+        number = application.number,
+        app_name = application.app_name,
+        bundle_id = application.bundle_id,
+        is_selected = is_selected_application and selection.window_index == 0,
+        cells = cells,
+    }
+end
+
+---@param window SwitchWindow
+---@return boolean
+local function is_any_window(window)
+    return window ~= nil
+end
+
+---One column per application, with all its windows.
+---@param applications SwitchApplication[]
+---@param selection SwitchSelection|nil
+---@return SwitchColumnGroup[]
+function switch_list.describe_application_columns(applications, selection)
+    local columns = {}
+    for _, application in ipairs(applications) do
+        table.insert(columns, build_column(application, selection, is_any_window))
+    end
+    return { { display_name = nil, columns = columns } }
+end
+
+---One group of columns per display that holds a window of the list, in the order of the displays.
+---A last group without a display holds the windows whose display is unknown, and the applications
+---without windows.
+---@param applications SwitchApplication[]
+---@param selection SwitchSelection|nil
+---@param displays SwitchDisplay[] in the order in which the displays stand from left to right
+---@return SwitchColumnGroup[]
+function switch_list.describe_display_columns(applications, selection, displays)
+    local is_known_display = {}
+    for _, display in ipairs(displays) do
+        is_known_display[display.screen_uuid] = true
+    end
+    local groups = {}
+    for _, display in ipairs(displays) do
+        local columns = {}
+        for _, application in ipairs(applications) do
+            local column = build_column(application, selection, function(window)
+                return window.screen_uuid == display.screen_uuid
+            end)
+            if #column.cells > 0 then
+                column.is_selected = false
+                table.insert(columns, column)
+            end
+        end
+        if #columns > 0 then
+            table.insert(groups, { display_name = display.name, columns = columns })
+        end
+    end
+    local other_columns = {}
+    for _, application in ipairs(applications) do
+        local column = build_column(application, selection, function(window)
+            return not is_known_display[window.screen_uuid]
+        end)
+        if #column.cells > 0 or #application.windows == 0 then
+            table.insert(other_columns, column)
+        end
+    end
+    if #other_columns > 0 then
+        table.insert(groups, { display_name = nil, columns = other_columns })
+    end
+    return groups
 end
 
 return switch_list
