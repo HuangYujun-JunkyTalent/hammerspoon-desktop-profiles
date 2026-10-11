@@ -99,13 +99,17 @@ Each further press of the same number, while Control and Option stay held, selec
 A press of another number selects a window of that application.
 Releasing Control or Option brings the selected window to the front, and Escape closes the list without a switch.
 A press released at once brings the selected window to the front without the list.
+Each application line of the list shows the icon of the application, and each window line shows the icon beside the title.
+A setting shows a blurred image of each window in the place of the icon, and the icon stays for a window without an image, such as a minimized one.
+The images need the permission for Screen Recording, and they follow one at a time after the list shows.
+An image that takes longer than half a second stops the images until the next reload, because the screen capture function of macOS behind them blocked Hammerspoon for two minutes on this machine on 2026-10-10.
 The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
 A window on another desktop is reached by showing that desktop.
 An application without windows gets a new window, from the same sources that replace a closed window at a switch.
 
 The tool gives the default numbers to the applications that the profile records in sight.
 The order follows the screens of the monitor configuration, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
-A default number stays with its application while the profile records a window of it in sight.
+A default number stays with its application while the profile records a window of it, in sight or out of sight.
 The user can give any number to any running application, in the menu bar item or with a launcher script, and the number then stays until the user changes it.
 A number that the user returns to the default goes back to the default rule.
 

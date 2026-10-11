@@ -86,13 +86,35 @@ A press of Control-Option with a number shows a list in the middle of the screen
 - Releasing Control or Option brings the selected window to the front.
   Escape closes the list without a switch.
 - A press released at once brings the selected window to the front without showing the list.
+- Each application line shows the icon of the application, and each window line shows the icon beside the title, or a blurred preview of the window under the setting below.
 - The windows are all the windows of the application, also those that the active profile did not record, such as the minimized windows of another profile.
 - A window on another desktop is reached by showing that desktop first.
 - An application without windows shows "no window, a new one opens", and gets a new window from the same sources that replace a closed window at a switch.
 
+The setting `preview_method` in `desktop_manager/default_settings.lua` chooses what a window line shows beside the title.
+
+| Value of `preview_method` | A window line shows |
+|---|---|
+| `app_icons`, the default | the icon of the application |
+| `blurred_snapshots` | a blurred image of the window, or the icon for a window without an image, such as a minimized one |
+
+The images come after the list shows, one window at a time, and need the permission for Screen Recording.
+Hammerspoon takes them with an old screen capture function of macOS, which blocked Hammerspoon for two minutes on 2026-10-10 on macOS 27.0.1, with every shortcut unresponsive.
+An image that takes longer than half a second therefore stops the images until the next reload, and the console says why.
+Before you choose `blurred_snapshots`, time one image:
+
+1. In System Settings, Privacy & Security, Screen & System Audio Recording, turn on Hammerspoon.
+2. In a terminal, run the command below, which may itself block Hammerspoon for minutes when the function blocks.
+
+```sh
+hs -c 'local started = hs.timer.secondsSinceEpoch(); local image = hs.window.snapshotForID(hs.window.focusedWindow():id()); return tostring(image ~= nil) .. " after " .. (hs.timer.secondsSinceEpoch() - started) .. " seconds"'
+```
+
+The setting is worth choosing when the command prints `true` after less than half a second.
+
 The tool gives the default numbers to the applications that the profile records in sight.
 The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
-A default number stays with its application while the profile records a window of it in sight, so the numbers stay put.
+A default number stays with its application while the profile records a window of it, in sight or out of sight, so the numbers stay put.
 The menu bar item lists the numbers of the active profile under Application numbers.
 Each number there has two choices: give the number to the application that was in front when the menu opened, or return the number to the default.
 A number given by hand stays until you change it.
