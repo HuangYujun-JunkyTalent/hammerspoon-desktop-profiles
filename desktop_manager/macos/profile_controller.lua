@@ -5,6 +5,7 @@ local concealment_method = require("desktop_manager.core.concealment_method")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local list_layout = require("desktop_manager.core.list_layout")
+local list_sizing = require("desktop_manager.core.list_sizing")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local missing_windows = require("desktop_manager.core.missing_windows")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
@@ -895,6 +896,7 @@ function ProfileController:open_switch_list(entries, app_number)
     session.overlay = switch_overlay.show(self:describe_switch_view(session), session.images, {
         preview_size = self.settings.preview_size,
         font_size = self.settings.list_font_size,
+        sizing = self.settings.list_sizing,
     })
     local event_types = hs.eventtap.event.types
     session.event_tap = hs.eventtap
@@ -1308,6 +1310,15 @@ function profile_controller.start(settings)
                 "the setting list_font_size is %s, and it must be a fraction of the height of the"
                     .. " screen, above 0 and at most 0.1",
                 tostring(settings.list_font_size)
+            ),
+            2
+        )
+    end
+    if not list_sizing.is_valid(settings.list_sizing) then
+        error(
+            string.format(
+                "the setting list_sizing is %q, which names no sizing",
+                tostring(settings.list_sizing)
             ),
             2
         )

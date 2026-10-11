@@ -1,3 +1,4 @@
+local list_sizing = require("desktop_manager.core.list_sizing")
 local switch_list = require("desktop_manager.core.switch_list")
 
 ---Draws the list of numbered applications and their windows in the middle of the screen in front,
@@ -21,6 +22,7 @@ switch_overlay.MAX_TITLE_LENGTH = 60
 ---@class SwitchRelativeSizes
 ---@field preview_size table the w and h of a preview, as fractions of the width and height
 ---@field font_size number the size of the titles, as a fraction of the height
+---@field sizing string a value of list_sizing
 
 ---The sizes of the list in points, which the fit to the screen chose.
 ---@class SwitchSizes
@@ -30,15 +32,17 @@ switch_overlay.MAX_TITLE_LENGTH = 60
 ---@field icon_size number
 ---@field text_height number
 
----A list on the screen: its canvas, and its sizes in points.
+---A list on the screen: its canvas, its sizes in points and the number of lines of its columns.
 ---@class SwitchOverlay
 ---@field canvas table an hs.canvas
 ---@field sizes SwitchSizes
+---@field line_count integer
 
 local PADDING = 16
 local GAP = 14
 local COLUMN_GAP = 10
 local GROUP_GAP = 28
+local LINE_GAP = 18
 local CELL_PADDING = 8
 local LINE_HEIGHT_PER_POINT = 1.4
 local CHARACTER_WIDTH_PER_POINT = 0.55
@@ -46,6 +50,10 @@ local HEADER_CHARACTERS = 12
 local MAX_WIDTH_SHARE = 0.95
 local MAX_HEIGHT_SHARE = 0.9
 local FIT_ROUNDS = 10
+local MAX_FILL_SCALE = 2.5
+local MAX_FONT_SCALE = 1.6
+local MAX_LINE_COUNT = 2
+local REQUIRED_GAIN_OF_ANOTHER_LINE = 1.05
 local NO_WINDOW_NOTE = "no window, a new one opens"
 local BACKGROUND_COLOR = { white = 0.12, alpha = 0.92 }
 local SELECTION_COLOR = { red = 0.2, green = 0.45, blue = 0.95, alpha = 0.95 }
@@ -327,98 +335,191 @@ local function draw_column_cells(elements, column, origin, images, sizes, metric
     end
 end
 
----Draws the columns: a column per application with its windows stacked downward, and the name of a
----display above its group of columns.
+---A run of columns of one group on one line of the list.
+---@class ColumnSegment
+---@field display_name string|nil
+---@field columns SwitchColumn[]
+
+---Folds the columns into lines, the first lines taking the larger share, so the numbers read from
+---left to right and then downward.
+---A group of a display that continues on the next line starts a new segment there.
+---@param groups SwitchColumnGroup[]
+---@param line_count integer
+---@return ColumnSegment[][] the segments of each line
+local function fold_columns(groups, line_count)
+    local entries = {}
+    for _, group in ipairs(groups) do
+        for _, column in ipairs(group.columns) do
+            table.insert(entries, { group = group, column = column })
+        end
+    end
+    local per_line = math.max(1, math.ceil(#entries / line_count))
+    local lines = {}
+    for index, entry in ipairs(entries) do
+        local line_index = math.floor((index - 1) / per_line) + 1
+        lines[line_index] = lines[line_index] or {}
+        local segments = lines[line_index]
+        local last = segments[#segments]
+        if last and last.group == entry.group then
+            table.insert(last.columns, entry.column)
+        else
+            table.insert(segments, {
+                group = entry.group,
+                display_name = entry.group.display_name,
+                columns = { entry.column },
+            })
+        end
+    end
+    return lines
+end
+
+---Draws the columns: a column per application with its windows stacked downward, the name of a
+---display above its columns, and the columns folded into the given number of lines.
 ---@param groups SwitchColumnGroup[]
 ---@param images SwitchImages
 ---@param sizes SwitchSizes
+---@param line_count integer
 ---@return table[] elements
 ---@return table size the w and h of the list
-local function draw_columns(groups, images, sizes)
+local function draw_columns(groups, images, sizes, line_count)
     local metrics = measure_columns(sizes)
-    local has_display_names, most_cells = false, 1
+    local has_display_names = false
     for _, group in ipairs(groups) do
         has_display_names = has_display_names or group.display_name ~= nil
-        for _, column in ipairs(group.columns) do
-            most_cells = math.max(most_cells, #column.cells)
-        end
     end
-    local columns_top = PADDING + (has_display_names and metrics.title_height + 6 or 0)
+    local label_height = has_display_names and metrics.title_height + 6 or 0
     local elements = { build_background() }
-    local left = PADDING
-    for group_index, group in ipairs(groups) do
-        if group.display_name then
-            local group_width = #group.columns * (metrics.column_width + COLUMN_GAP) - COLUMN_GAP
-            table.insert(
-                elements,
-                build_text(
-                    group.display_name,
-                    { x = left, y = PADDING, w = group_width, h = metrics.title_height },
-                    { font_size = sizes.font_size, is_bold = false, is_bright = false }
+    local top, width = PADDING, 0
+    local lines = fold_columns(groups, line_count)
+    for line_index, segments in ipairs(lines) do
+        local most_cells = 1
+        for _, segment in ipairs(segments) do
+            for _, column in ipairs(segment.columns) do
+                most_cells = math.max(most_cells, #column.cells)
+            end
+        end
+        local columns_top = top + label_height
+        local left = PADDING
+        for segment_index, segment in ipairs(segments) do
+            if segment.display_name then
+                local segment_width = #segment.columns * (metrics.column_width + COLUMN_GAP)
+                    - COLUMN_GAP
+                table.insert(
+                    elements,
+                    build_text(
+                        segment.display_name,
+                        { x = left, y = top, w = segment_width, h = metrics.title_height },
+                        { font_size = sizes.font_size, is_bold = false, is_bright = false }
+                    )
                 )
-            )
+            end
+            for _, column in ipairs(segment.columns) do
+                local origin = { x = left, y = columns_top }
+                draw_column_header(elements, column, origin, images, sizes, metrics)
+                draw_column_cells(
+                    elements,
+                    column,
+                    { x = left, y = columns_top + metrics.header_height },
+                    images,
+                    sizes,
+                    metrics
+                )
+                left = left + metrics.column_width + COLUMN_GAP
+            end
+            left = left - COLUMN_GAP + (segment_index < #segments and GROUP_GAP or 0)
         end
-        for _, column in ipairs(group.columns) do
-            draw_column_header(
-                elements,
-                column,
-                { x = left, y = columns_top },
-                images,
-                sizes,
-                metrics
-            )
-            draw_column_cells(
-                elements,
-                column,
-                { x = left, y = columns_top + metrics.header_height },
-                images,
-                sizes,
-                metrics
-            )
-            left = left + metrics.column_width + COLUMN_GAP
+        width = math.max(width, left + PADDING)
+        top = columns_top + metrics.header_height + most_cells * metrics.cell_height
+        if line_index < #lines then
+            top = top + LINE_GAP
         end
-        left = left - COLUMN_GAP + (group_index < #groups and GROUP_GAP or 0)
     end
-    local height = columns_top + metrics.header_height + most_cells * metrics.cell_height + PADDING
-    return elements, { w = left + PADDING, h = height }
+    return elements, { w = width, h = top + PADDING }
 end
 
 ---@param view SwitchView
 ---@param images SwitchImages
 ---@param sizes SwitchSizes
+---@param line_count integer the lines of the columns, which the rows do not use
 ---@return table[] elements
 ---@return table size the w and h of the list
-local function draw(view, images, sizes)
+local function draw(view, images, sizes, line_count)
     if view.lines then
         return draw_rows(view.lines, images, sizes)
     end
-    return draw_columns(view.groups, images, sizes)
+    return draw_columns(view.groups, images, sizes, line_count)
 end
 
----Turns the relative sizes into points on the screen, and shrinks the previews and the fonts by one
----factor until the list fits within the screen.
+---@param relative_sizes SwitchRelativeSizes
+---@param screen table the frame of the screen in front
+---@param scale number
+---@return SwitchSizes the sizes of the settings in points, times the scale
+local function scale_sizes(relative_sizes, screen, scale)
+    return create_sizes({
+        w = relative_sizes.preview_size.w * screen.w * scale,
+        h = relative_sizes.preview_size.h * screen.h * scale,
+    }, relative_sizes.font_size * screen.h * math.min(scale, MAX_FONT_SCALE))
+end
+
+---The largest scale up to the limit at which the list fits within the screen.
+---Each round shrinks the scale by the share by which the list is too large, and the paddings,
+---which do not scale, need a few rounds.
+---@param view SwitchView
+---@param images SwitchImages
+---@param relative_sizes SwitchRelativeSizes
+---@param screen table
+---@param max_scale number
+---@param line_count integer
+---@return number scale
+---@return SwitchSizes sizes
+local function find_largest_scale(view, images, relative_sizes, screen, max_scale, line_count)
+    local scale = max_scale
+    local sizes = scale_sizes(relative_sizes, screen, scale)
+    for _ = 1, FIT_ROUNDS do
+        local _, size = draw(view, images, sizes, line_count)
+        local share =
+            math.max(size.w / (MAX_WIDTH_SHARE * screen.w), size.h / (MAX_HEIGHT_SHARE * screen.h))
+        if share <= 1 then
+            return scale, sizes
+        end
+        scale = scale / share
+        sizes = scale_sizes(relative_sizes, screen, scale)
+    end
+    return scale, sizes
+end
+
+---@param view SwitchView
+---@return integer the number of columns of the view, or 0 for the rows
+local function count_columns(view)
+    local count = 0
+    for _, group in ipairs(view.groups or {}) do
+        count = count + #group.columns
+    end
+    return count
+end
+
+---Chooses the sizes and the number of lines that give the largest previews within the screen.
+---Under fill_screen the previews may grow up to MAX_FILL_SCALE times the setting, and under fixed
+---they keep the setting at most.
+---A second line wins only when it makes the previews larger by REQUIRED_GAIN_OF_ANOTHER_LINE.
 ---@param view SwitchView
 ---@param images SwitchImages
 ---@param relative_sizes SwitchRelativeSizes
 ---@param screen table the frame of the screen in front
----@return SwitchSizes
+---@return SwitchSizes sizes
+---@return integer line_count
 local function fit_sizes(view, images, relative_sizes, screen)
-    local scale = 1
-    local sizes
-    for _ = 1, FIT_ROUNDS do
-        sizes = create_sizes({
-            w = relative_sizes.preview_size.w * screen.w * scale,
-            h = relative_sizes.preview_size.h * screen.h * scale,
-        }, relative_sizes.font_size * screen.h * scale)
-        local _, size = draw(view, images, sizes)
-        local share =
-            math.max(size.w / (MAX_WIDTH_SHARE * screen.w), size.h / (MAX_HEIGHT_SHARE * screen.h))
-        if share <= 1 then
-            return sizes
+    local max_scale = relative_sizes.sizing == list_sizing.FILL_SCREEN and MAX_FILL_SCALE or 1
+    local most_lines = math.min(MAX_LINE_COUNT, math.max(1, count_columns(view)))
+    local best_scale, best_sizes, best_line_count = nil, nil, 1
+    for line_count = 1, most_lines do
+        local scale, sizes =
+            find_largest_scale(view, images, relative_sizes, screen, max_scale, line_count)
+        if not best_scale or scale > best_scale * REQUIRED_GAIN_OF_ANOTHER_LINE then
+            best_scale, best_sizes, best_line_count = scale, sizes, line_count
         end
-        scale = scale / share
     end
-    return sizes
+    return best_sizes, best_line_count
 end
 
 ---@param size table the w and h of the list
@@ -438,20 +539,21 @@ end
 ---@param relative_sizes SwitchRelativeSizes
 ---@return SwitchOverlay
 function switch_overlay.show(view, images, relative_sizes)
-    local sizes = fit_sizes(view, images, relative_sizes, hs.screen.mainScreen():frame())
-    local elements, size = draw(view, images, sizes)
+    local sizes, line_count =
+        fit_sizes(view, images, relative_sizes, hs.screen.mainScreen():frame())
+    local elements, size = draw(view, images, sizes, line_count)
     local canvas = hs.canvas.new(center_on_screen(size))
     canvas:level(hs.canvas.windowLevels.overlay)
     canvas:replaceElements(elements)
     canvas:show()
-    return { canvas = canvas, sizes = sizes }
+    return { canvas = canvas, sizes = sizes, line_count = line_count }
 end
 
 ---@param overlay SwitchOverlay
 ---@param view SwitchView
 ---@param images SwitchImages
 function switch_overlay.update(overlay, view, images)
-    local elements, size = draw(view, images, overlay.sizes)
+    local elements, size = draw(view, images, overlay.sizes, overlay.line_count)
     overlay.canvas:frame(center_on_screen(size))
     overlay.canvas:replaceElements(elements)
 end

@@ -1,5 +1,6 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
 local list_layout = require("desktop_manager.core.list_layout")
+local list_sizing = require("desktop_manager.core.list_sizing")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
@@ -40,6 +41,7 @@ local default_settings = {}
 ---@field list_font_size number the size of the titles, as a fraction of the height of the screen
 ---in front
 ---@field list_layout string a value of list_layout
+---@field list_sizing string a value of list_sizing
 ---@field builtin_screen_name_patterns string[]
 ---@field timing Timing
 
@@ -61,6 +63,7 @@ function default_settings.create(state_file_path)
         preview_size = { w = 0.1, h = 0.1 },
         list_font_size = 0.016,
         list_layout = list_layout.COLUMNS,
+        list_sizing = list_sizing.FILL_SCREEN,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         timing = {
             poll_interval_seconds = 0.05,

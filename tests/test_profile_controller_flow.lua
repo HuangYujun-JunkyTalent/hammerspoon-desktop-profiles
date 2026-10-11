@@ -1,6 +1,7 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
 local default_settings = require("desktop_manager.default_settings")
 local list_layout = require("desktop_manager.core.list_layout")
+local list_sizing = require("desktop_manager.core.list_sizing")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
 local expect = require("tests.expect")
@@ -600,6 +601,7 @@ return {
             preview_method = preview_method.BLURRED_SNAPSHOTS,
             preview_blur = 2,
             list_layout = list_layout.ROWS,
+            list_sizing = list_sizing.FIXED,
             preview_size = { w = 0.04, h = 0.04 },
         })
         local news = world.create_window("com.apple.Safari", "News")
@@ -624,6 +626,7 @@ return {
         local world = start_world({
             preview_method = preview_method.BLURRED_SNAPSHOTS,
             preview_blur = 4,
+            list_sizing = list_sizing.FIXED,
             preview_size = { w = 0.04, h = 0.04 },
         })
         world.hotkeys["1"]()
@@ -641,6 +644,7 @@ return {
             preview_size = { w = 0.05, h = 0.05 },
             list_font_size = 0.02,
             list_layout = list_layout.ROWS,
+            list_sizing = list_sizing.FIXED,
         })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -707,6 +711,60 @@ return {
         local frame = world.overlay.current_frame
         expect.equal(frame.h <= 0.9 * 875 + 0.5, true)
         expect.equal(frame.y >= 25, true)
+    end,
+
+    filling_the_screen_grows_a_short_list_and_fixed_sizes_keep_the_settings = function()
+        local function read_first_preview_width(setting_changes)
+            local world = start_world(setting_changes)
+            world.hotkeys["1"]()
+            world.advance(SETTLE_SECONDS)
+            world.held_modifiers = { ctrl = true, alt = true }
+            world.app_hotkeys["1"]()
+            world.advance(1)
+            for _, element in ipairs(world.overlay.elements) do
+                if element.type == "image" and element.image.source:match("^blurred") then
+                    return element.frame.w, world.overlay.current_frame
+                end
+            end
+            error("the list shows no image as large as a preview")
+        end
+        local filled_width, filled_frame = read_first_preview_width({})
+        expect.equal(filled_width > 144, true)
+        expect.equal(filled_width <= 2.5 * 144, true)
+        expect.equal(filled_frame.w <= 0.95 * 1440 + 0.5, true)
+        expect.equal(filled_frame.h <= 0.9 * 875 + 0.5, true)
+        local fixed_width = read_first_preview_width({ list_sizing = list_sizing.FIXED })
+        expect.equal(fixed_width, 144)
+    end,
+
+    many_columns_fold_into_two_lines = function()
+        local world = start_world()
+        for index = 1, 7 do
+            local bundle_id = "com.example.App" .. index
+            world.applications[bundle_id] = {
+                name = "App " .. index,
+                is_running = true,
+                is_hidden = false,
+                launch_titles = {},
+            }
+            world.create_window(bundle_id, "Window " .. index)
+        end
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        local header_tops = {}
+        for _, element in ipairs(world.overlay.elements) do
+            if element.type == "text" and element.textFont == "Helvetica-Bold" then
+                header_tops[element.frame.y] = (header_tops[element.frame.y] or 0) + 1
+            end
+        end
+        local counts = {}
+        for _, count in pairs(header_tops) do
+            table.insert(counts, count)
+        end
+        table.sort(counts)
+        expect.equal(counts, { 4, 5 })
     end,
 
     a_slow_snapshot_stops_the_snapshots_until_a_reload = function()
