@@ -28,6 +28,12 @@ A window that another profile recorded and the profile entered did not goes out 
 A window that no profile recorded stays as it is, and the profile records it at its next capture.
 The tool minimizes a window to take it out of sight.
 A setting makes the tool hide an application instead when all its windows go out of sight.
+Activating a profile adds the desktops that the profile recorded and a screen lacks.
+The tool removes no desktop, because removing a desktop moves the windows on it and changes what the other profiles recorded.
+
+macOS gives a window that its application reopens a new window id.
+The tool treats an unrecorded window as the reopened copy of a closed recorded window, when both belong to the same application and have the same document or the same title.
+The records of every profile then name the new window.
 
 When a saved window belongs to an application that is not running, activating the profile launches the application.
 The tool then places each window of the application as it appears, matched by application and title.
@@ -52,12 +58,13 @@ The issues https://github.com/Hammerspoon/hammerspoon/issues/3903 and https://gi
 
 The tool switches desktops with the macOS shortcuts Control-1 to Control-9, which the user turns on in System Settings.
 macOS 27.0.1 unminimizes a window onto the desktop it was minimized on, also when another desktop shows, as the log of the tool showed on 2026-10-10.
-The tool therefore restores a minimized window where it is, with no switch of desktops.
-Moving a window to another desktop of the same screen fails for the same reason, and the tool reports each window that stays.
+The tool therefore restores a minimized window where it is, and switches a desktop only to move a window to another screen.
+A window on another desktop of its screen stays there, because Hammerspoon and unminimizing both fail to move it.
+The console of Hammerspoon notes each such window.
 A window moves to another screen when the tool sets its frame there.
 The tool leaves out a simulated drag of the title bar, because a drag at a fixed point can pull a tab out of a browser window.
-The tool adds and removes desktops through the accessibility tree of Mission Control, which macOS 27 keeps under the process `WindowManager`.
-When adding or removing a desktop fails, the tool notifies the user.
+The tool adds desktops through the accessibility tree of Mission Control, which macOS 27 keeps under the process `WindowManager`.
+When adding a desktop fails, the tool notifies the user.
 One module holds these operations, so that it can be replaced once Hammerspoon works on macOS 27 again.
 
 ## Shortcuts

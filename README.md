@@ -24,12 +24,24 @@ Activating a profile does the least work that brings back what the profile recor
 | is where the profile recorded it, at the same frame | does nothing |
 | is on its recorded desktop at another frame | sets the recorded frame |
 | is minimized, and the profile recorded it in sight | unminimizes it where it is |
+| is in sight on another desktop of its recorded screen | leaves it there, because macOS 27.0.1 gives no way to move it, and notes it in the console |
+| is on another screen than the recorded one | shows the recorded desktop on that screen when another desktop shows, and moves the window there |
 | is in sight, and the profile recorded it out of sight | minimizes it |
 | is in sight, and another profile recorded it while this profile did not | minimizes it |
 | was recorded by no profile, such as a window opened while no profile was active | leaves it, and the profile records it at its next update |
 
 A recorded window whose application is not running makes the tool launch the application and place the new window.
 A recorded window that was closed while its application kept running is skipped.
+
+Activating a profile adds the desktops that the profile recorded and a screen lacks.
+The tool removes no desktop, because removing a desktop moves the windows on it and changes what the other profiles recorded.
+A switch shows another desktop only to move a window to another screen, and to bring the desktop that the profile had in front back to the front.
+
+macOS gives a window that its application reopens a new window id, such as a window of Visual Studio Code after the application restarts.
+Before each update of a record and each switch, the tool treats an unrecorded window as the reopened copy of a closed recorded window, when both belong to the same application and have the same document or the same title.
+The records of every profile then name the new window.
+The place of the window plays no part, because macOS opens a new window at the place of the last closed one.
+A reopened window whose title changed, such as a browser window on another tab, stays a new window, and the active profile records it at its next update.
 
 The tool minimizes a window to take it out of sight.
 The setting `concealment_method` in `desktop_manager/default_settings.lua` makes the tool hide an application instead, when all the windows of the application go out of sight.
@@ -104,13 +116,13 @@ The issues https://github.com/Hammerspoon/hammerspoon/issues/3903 and https://gi
 
 - macOS 27.0.1 unminimizes a window onto the desktop it was minimized on, also when another desktop shows, as the log of the tool showed on 2026-10-10.
   A switch therefore brings minimized windows back without switching desktops.
-  For the same reason, the tool cannot move a window to another desktop of the same screen, and it notifies you of each window that stays.
+  For the same reason, a window on another desktop of its screen stays there, and the console notes it.
   A window moves to another screen when the tool sets its frame there.
 - A desktop switch presses Control-N.
   Mission Control numbers the desktops of all screens in one sequence, so desktops after the ninth cannot be reached.
-- Adding and removing desktops presses the buttons of Mission Control through accessibility, under the process WindowManager.
-  This route has not run on macOS 27.0.1 yet.
-  When the buttons are not found, the tool notifies you, and you add or remove the desktops in Mission Control.
+- Adding a desktop presses the add button of Mission Control through accessibility, under the process WindowManager, which worked on 2026-10-10.
+  Mission Control opens for a moment during the addition.
+  When the button is not found, the tool notifies you, and you add the desktop in Mission Control.
 - Hammerspoon sees the windows of a desktop once you have visited it after Hammerspoon started.
   A switch leaves the windows of unvisited desktops as they are, and a record keeps their last known place.
 - The window filter of Hammerspoon drops a window whose subrole changes while its application is hidden, as the window of Calendar does.
