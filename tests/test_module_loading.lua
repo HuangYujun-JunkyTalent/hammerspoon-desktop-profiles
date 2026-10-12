@@ -1,10 +1,10 @@
 local expect = require("tests.expect")
 
----@return string[] the module names of every Lua file under desktop_manager
+---@return string[] the module names of every Lua file under desktop_manager and window_tiling
 local function list_module_names()
-    local listing = io.popen('find desktop_manager -name "*.lua"')
+    local listing = io.popen('find desktop_manager window_tiling -name "*.lua"')
     if not listing then
-        error("the folder desktop_manager cannot be listed")
+        error("the folders desktop_manager and window_tiling cannot be listed")
     end
     local names = {}
     for path in listing:lines() do

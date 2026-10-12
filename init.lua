@@ -10,9 +10,12 @@ require("hs.ipc")
 
 local default_settings = require("desktop_manager.default_settings")
 local profile_controller = require("desktop_manager.macos.profile_controller")
+local tiling_controller = require("window_tiling.macos.tiling_controller")
+local tiling_settings = require("window_tiling.default_settings")
 
--- The global keeps the hotkeys and watchers from being garbage-collected,
--- and lets the command-line tool reach the controller, as in
+-- The globals keep the hotkeys and watchers of the two tools from being garbage-collected,
+-- and let the command-line tool reach the controllers, as in
 -- `hs -c "desktop_manager:print_diagnostics()"`.
 desktop_manager =
     profile_controller.start(default_settings.create(hs.configdir .. "/desktop-manager-state.json"))
+window_tiler = tiling_controller.start(tiling_settings.create())

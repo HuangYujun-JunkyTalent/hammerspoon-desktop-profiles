@@ -1,6 +1,6 @@
----A fake of the parts of Hammerspoon that the tool calls, for tests of the controller flow.
+---A fake of the parts of Hammerspoon that the tools call, for tests of the controller flows.
 ---The fake models screens, desktops, windows and applications.
----It checks the logic of the tool, and says nothing about what macOS 27 really does.
+---It checks the logic of the tools, and says nothing about what macOS 27 really does.
 ---A minimized window keeps its desktop, as `hs.spaces.windowSpaces` showed on macOS 27.0.1, and an
 ---unminimize puts the window back on that desktop, as macOS 27.0.1 does.
 local fake_hammerspoon = {}
@@ -51,6 +51,7 @@ function fake_hammerspoon.install(spec)
         notifications = {},
         hotkeys = {},
         app_hotkeys = {},
+        hotkey_by_shortcut = {},
         hotkey_events = {},
         event_taps = {},
         snapshot_count = 0,
@@ -87,6 +88,7 @@ function fake_hammerspoon.install(spec)
     end
 
     local screen_objects = {}
+    local screen_object_by_id = {}
     for _, screen in ipairs(world.screens) do
         local object = {}
         function object:getUUID()
@@ -112,6 +114,7 @@ function fake_hammerspoon.install(spec)
             }
         end
         table.insert(screen_objects, object)
+        screen_object_by_id[screen.id] = object
     end
 
     local new_timer
@@ -237,6 +240,9 @@ function fake_hammerspoon.install(spec)
         function object:frame()
             local frame = window.frame
             return { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
+        end
+        function object:screen()
+            return screen_object_by_id[find_screen_at(window.frame).id]
         end
         function object:setFrame(rect)
             record_operation("setFrame", window)
@@ -732,6 +738,7 @@ function fake_hammerspoon.install(spec)
                     table.insert(world.hotkey_events, "enable " .. modifier_key .. " " .. key)
                     return hotkey
                 end
+                world.hotkey_by_shortcut[modifier_key .. " " .. key] = callback
                 if modifier_key == "cmd+alt+shift" then
                     world.hotkeys[key] = callback
                 else
