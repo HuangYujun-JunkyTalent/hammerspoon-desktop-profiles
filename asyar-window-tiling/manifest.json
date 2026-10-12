@@ -1,0 +1,55 @@
+{
+  "id": "com.huangyujun.window-tiling",
+  "name": "Window Tiling",
+  "version": "1.0.0",
+  "description": "Fill the screen with the focused window, or put it on a half of the screen, through the window tiling of Hammerspoon.",
+  "author": "Yujun Huang",
+  "icon": "◧",
+  "type": "extension",
+  "asyarSdk": "^4.14.1",
+  "platforms": ["macos"],
+  "permissions": ["shell:open-url"],
+  "permissionArgs": {
+    "shell:open-url": ["hammerspoon"]
+  },
+  "commands": [
+    {
+      "id": "tile-fill",
+      "name": "Fill Window",
+      "description": "Fill the screen with the focused window, as Control-Option-Return does.",
+      "icon": "⬛",
+      "mode": "background"
+    },
+    {
+      "id": "tile-left-half",
+      "name": "Left Half",
+      "description": "Put the focused window on the left half of the screen, as Control-Option-Left does.",
+      "icon": "◧",
+      "mode": "background"
+    },
+    {
+      "id": "tile-right-half",
+      "name": "Right Half",
+      "description": "Put the focused window on the right half of the screen, as Control-Option-Right does.",
+      "icon": "◨",
+      "mode": "background"
+    },
+    {
+      "id": "tile-top-half",
+      "name": "Top Half",
+      "description": "Put the focused window on the top half of the screen, as Control-Option-Up does.",
+      "icon": "⬒",
+      "mode": "background"
+    },
+    {
+      "id": "tile-bottom-half",
+      "name": "Bottom Half",
+      "description": "Put the focused window on the bottom half of the screen, as Control-Option-Down does.",
+      "icon": "⬓",
+      "mode": "background"
+    }
+  ],
+  "background": {
+    "main": "dist/worker.js"
+  }
+}

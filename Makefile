@@ -5,6 +5,7 @@ HAMMERSPOON_LOADER := $(HOME)/.hammerspoon/init.lua
 
 .PHONY: check syntax lint format format-check test launcher-scripts check-launcher-scripts install-loader
 .PHONY: asyar-extension-settings check-asyar-extension-settings check-asyar-extension link-asyar-extension
+.PHONY: check-asyar-window-tiling link-asyar-window-tiling
 
 check: syntax lint format-check test check-launcher-scripts check-asyar-extension-settings
 
@@ -57,6 +58,12 @@ check-asyar-extension: check-asyar-extension-settings
 
 link-asyar-extension:
 	cd asyar-extension && npx asyar link
+
+check-asyar-window-tiling:
+	cd asyar-window-tiling && npm run typecheck && npm test && npx asyar validate && npm run build
+
+link-asyar-window-tiling:
+	cd asyar-window-tiling && npx asyar link
 
 install-loader:
 	@if [ -e "$(HAMMERSPOON_LOADER)" ]; then \
