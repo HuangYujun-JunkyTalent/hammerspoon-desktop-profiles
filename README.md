@@ -1,6 +1,8 @@
-# Save the desktops and windows of macOS as profiles, and switch between them with one key
+# Save the desktops and windows of macOS as profiles, bring applications to the front by number, and tile windows
 
-This tool runs inside [Hammerspoon](https://www.hammerspoon.org) and adds two kinds of shortcuts to macOS.
+This repository holds two tools that run inside [Hammerspoon](https://www.hammerspoon.org).
+
+The desktop manager adds two kinds of shortcuts to macOS.
 
 - Command-Option-Shift with a number from 1 to 9 activates a profile.
   A profile records the desktops of each screen and the windows on each desktop, and activating it brings them back.
@@ -11,13 +13,15 @@ Profile 2 holds a teaching setup: slides on the external monitor and a terminal 
 Command-Option-Shift-2 minimizes the editor, the browser and Mail, and brings back the slides and the terminal at the places that profile 2 recorded.
 Command-Option-Shift-2 again deactivates profile 2, and macOS manages the windows as usual.
 
-There's an Asyar extension to activate, deactivate profiles, and reset the application numbers.
-Extra scripts are provided if you want to quickly call the actions from another launcher.
+The window tiling puts the focused window on the whole screen or on one half of it, with Control-Option and Return or an arrow, as [Rectangle](https://rectangleapp.com) does.
 
-The tool runs on macOS 27.0.1 with Hammerspoon 1.1.1, the versions it was developed on.
-`requirements.md` states what the tool must do.
+Each tool has an extension for the launcher [Asyar](https://asyar.org).
+The scripts in `launcher-scripts/` run the actions of the desktop manager from Asyar or Raycast.
 
-## Install the tool in seven steps
+The tools run on macOS 27.0.1 with Hammerspoon 1.1.1, the versions they were developed on.
+`requirements.md` states what the tools must do.
+
+## Install the tools in seven steps
 
 1. Install Hammerspoon from its website, or with `brew install --cask hammerspoon`, and start it.
 2. Clone this repository into a folder of your choice, and run `make install-loader` in that folder.
@@ -26,15 +30,15 @@ The tool runs on macOS 27.0.1 with Hammerspoon 1.1.1, the versions it was develo
 3. Click the hammer icon in the menu bar and choose Reload Config.
 4. In System Settings, Privacy & Security, Accessibility, turn on Hammerspoon.
 5. In System Settings, Keyboard, Keyboard Shortcuts, Mission Control, turn on "Switch to Desktop 1" and the next ones up to the number of desktops you use.
-   The tool switches desktops with these shortcuts, Control-1 to Control-9.
+   The desktop manager switches desktops with these shortcuts, Control-1 to Control-9.
 6. In System Settings, Desktop & Dock, Mission Control, keep "Displays have separate Spaces" on, and turn "Automatically rearrange Spaces based on most recent use" off.
-   The tool finds a desktop by its position, and a rearrangement moves the positions.
+   The desktop manager finds a desktop by its position, and a rearrangement moves the positions.
 7. Shorten the animations, if you like.
    In System Settings, Desktop & Dock, set "Minimize windows using" to Scale Effect.
    In System Settings, Accessibility, Display, turn on "Reduce motion".
 
 The menu bar then shows `◧`, and `◧ 2` while profile 2 is active.
-The previews in the list of windows also need the permission for Screen Recording, as [the section on the limits of macOS](#hammerspoon-and-macos-2701-limit-what-the-tool-can-do) explains.
+The previews in the list of windows also need the permission for Screen Recording, as [the section on the limits of macOS](#hammerspoon-and-macos-2701-limit-what-the-desktop-manager-can-do) explains.
 
 ## Command-Option-Shift with a number activates, switches and deactivates profiles
 
@@ -44,24 +48,24 @@ The previews in the list of windows also need the permission for Screen Recordin
 | Command-Option-Shift-N while profile N is active | deactivates profile N |
 | Command-Option-Shift-0 | deactivates the active profile |
 
-A switch starts once you release the modifier keys, because the Control-number that the tool presses to switch desktops would otherwise combine with them.
+A switch starts once you release the modifier keys, because the Control-number that the desktop manager presses to switch desktops would otherwise combine with them.
 While no profile is active, macOS manages the windows as usual.
 
 A profile keeps one record per monitor configuration.
-The record holds the number of desktops of each screen, the desktop in front, and every window that the tool sees while the profile is active.
+The record holds the number of desktops of each screen, the desktop in front, and every window that the desktop manager sees while the profile is active.
 Each window is recorded as in sight, on a desktop at its frame, or as out of sight.
 A window is out of sight when it is minimized or its application is hidden.
 The record names a window by its application, its window id and its title.
 Windows do not belong to profiles, and two profiles may record the same window.
 
-The tool updates the record of the active profile at four times:
+The desktop manager updates the record of the active profile at four times:
 
 - two seconds after a window opens, closes, moves, minimizes or changes its title;
 - once a minute;
 - at the end of a switch;
 - before a switch to another profile.
 
-When the monitors change to a configuration that the active profile recorded, the tool restores that record.
+When the monitors change to a configuration that the active profile recorded, the desktop manager restores that record.
 When the monitors change to a configuration that is new to the profile, macOS arranges the windows, and the profile starts recording the new configuration.
 A choice in the menu bar item sets when two monitor configurations count as the same.
 
@@ -107,7 +111,7 @@ The list holds every window of the application, also the windows that the active
 Bringing a window on another desktop to the front shows that desktop first.
 An application without windows shows "no window, a new one opens", and gets a new window from the same sources that replace a closed window at a switch.
 
-The tool gives the default numbers to the applications that the profile records in sight.
+The desktop manager gives the default numbers to the applications that the profile records in sight.
 The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
 A default number stays with its application while the profile records a window of it, in sight or out of sight.
 Profile 0 numbers the applications with a window in sight in the same order, and a default number stays while its application has a window open.
@@ -124,7 +128,7 @@ A number given to an application takes Control-Option with that number from ever
 On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
 Command with a number would clash, because it selects tabs, views and groups in many applications, and Command-Shift with 3, 4 and 5 takes screenshots in macOS.
 
-## Settings live in `desktop_manager/default_settings.lua`
+## Settings of the desktop manager live in `desktop_manager/default_settings.lua`
 
 To change a setting, edit the file and choose Reload Config.
 The file writes each choice through its module, such as `list_layout.ROWS` for `rows`.
@@ -147,7 +151,7 @@ The file writes each choice through its module, such as `list_layout.ROWS` for `
 | `title_line_count` | 2 | the most lines of a title under `wrap` |
 | `timing` | | the waits and time limits of a switch, in seconds |
 
-Control alone does not work as `app_hotkey_modifiers`, because the tool presses Control with a number to switch desktops.
+Control alone does not work as `app_hotkey_modifiers`, because the desktop manager presses Control with a number to switch desktops.
 
 On a screen of 1440 by 875 points, a preview of 0.1 by 0.1 is 144 by 88 points, and a font size of 0.01 is about 9 points.
 The names of applications are 2 points larger than the titles.
@@ -228,7 +232,7 @@ Asyar reads the folder without its subfolders, and shows a notification each tim
 In Raycast, add the same folder in Settings, Script Commands, Add Script Directory.
 A script title is fixed, so the titles name the profiles by number.
 
-### A URL reaches every action
+### A URL reaches every action of the desktop manager
 
 | Action | Shortcut or menu | URL `hammerspoon://desktop-manager?...` |
 |---|---|---|
@@ -250,7 +254,7 @@ In a terminal, `open -g "hammerspoon://desktop-manager?action=activate&profile=2
 
 Activating a profile does the least work that brings back what the profile recorded.
 
-| The open window | The tool |
+| The open window | The desktop manager |
 |---|---|
 | is where the profile recorded it, at the same frame | does nothing |
 | is on its recorded desktop at another frame | sets the recorded frame |
@@ -262,19 +266,19 @@ Activating a profile does the least work that brings back what the profile recor
 | was recorded by no profile, such as a window opened while no profile was active | leaves it, and the profile records it at its next update |
 
 Activating a profile adds the desktops that the profile recorded and a screen lacks.
-The tool removes no desktop, because removing a desktop moves the windows on it and changes what the other profiles recorded.
+The desktop manager removes no desktop, because removing a desktop moves the windows on it and changes what the other profiles recorded.
 A switch shows another desktop for three reasons alone: to move a window to another screen, to open a new window on its recorded desktop, and to bring the desktop that the profile had in front back to the front.
 
 macOS gives a window that its application reopens a new window id, such as a window of Visual Studio Code after the application restarts.
 When a recorded window in sight no longer exists, `missing_window_policy` chooses what replaces it.
 
-| Value of `missing_window_policy` | The tool |
+| Value of `missing_window_policy` | The desktop manager |
 |---|---|
 | `match_title_or_open_new_window`, the default | takes an open window of the same application with the same title, and opens a new window when no title matches |
 | `open_new_window` | opens a new window of the same application |
 
-Under the default, the tool also treats an unrecorded window as the reopened copy of a closed recorded window of the same application with the same title.
-Position and size play no part, because the tool sets them on the window it takes, and because macOS opens a new window at the place of the last closed one.
+Under the default, the desktop manager also treats an unrecorded window as the reopened copy of a closed recorded window of the same application with the same title.
+Position and size play no part, because the desktop manager sets them on the window it takes, and because macOS opens a new window at the place of the last closed one.
 A reopened window whose title changed, such as a browser window on another tab, counts as a new window.
 
 The new window comes from the first of three sources that gives one:
@@ -283,33 +287,33 @@ The new window comes from the first of three sources that gives one:
 2. The menu item "New Window" of the application, or "New Finder Window" of the Finder.
 3. A reopen of the application, as a click on its icon in the Dock sends, which shows the main window of an application such as Calendar.
 
-The tool leaves out Command-N, because Calendar, Mail, Notes and Slack create an event, a message or a note with it.
-A window opens on the desktop that shows, so the tool shows the recorded desktop first, and then sets the recorded frame.
+The desktop manager leaves out Command-N, because Calendar, Mail, Notes and Slack create an event, a message or a note with it.
+A window opens on the desktop that shows, so the desktop manager shows the recorded desktop first, and then sets the recorded frame.
 The records of every profile then name the new window.
 An application that opens no new window within ten seconds is reported in a notification.
 
-The tool saves the profiles, their records and their application numbers in `~/.hammerspoon/desktop-manager-state.json`.
-A file that the tool cannot read is moved aside to a name that ends in `.unreadable-` and the time, and the tool starts a new state.
+The desktop manager saves the profiles, their records and their application numbers in `~/.hammerspoon/desktop-manager-state.json`.
+A file that the desktop manager cannot read is moved aside to a name that ends in `.unreadable-` and the time, and the desktop manager starts a new state.
 
-## Hammerspoon and macOS 27.0.1 limit what the tool can do
+## Hammerspoon and macOS 27.0.1 limit what the desktop manager can do
 
 The functions of Hammerspoon 1.1.1 that move a window to another desktop, or that switch, add or remove desktops, fail on macOS 27.0.1.
 The issues [#3903](https://github.com/Hammerspoon/hammerspoon/issues/3903) and [#3897](https://github.com/Hammerspoon/hammerspoon/issues/3897) of Hammerspoon report the failures.
-The tool works around them as follows.
+The desktop manager works around them as follows.
 
-- macOS 27.0.1 unminimizes a window onto the desktop it was minimized on, also when another desktop shows, as the log of the tool showed on 2026-10-10.
+- macOS 27.0.1 unminimizes a window onto the desktop it was minimized on, also when another desktop shows, as the log of the desktop manager showed on 2026-10-10.
   A switch therefore brings minimized windows back without switching desktops.
   For the same reason, a window on another desktop of its screen stays there, and the console notes it.
-  A window moves to another screen when the tool sets its frame there.
+  A window moves to another screen when the desktop manager sets its frame there.
 - A desktop switch presses Control with the number of the desktop.
   Mission Control numbers the desktops of all screens in one sequence, so desktops after the ninth cannot be reached.
 - Adding a desktop presses the add button of Mission Control through accessibility, under the process WindowManager, which worked on 2026-10-10.
   Mission Control opens for a moment during the addition.
-  When the button is not found, the tool notifies you, and you add the desktop in Mission Control.
+  When the button is not found, the desktop manager notifies you, and you add the desktop in Mission Control.
 - Hammerspoon sees the windows of a desktop once you have visited it after Hammerspoon started.
   A switch leaves the windows of unvisited desktops as they are, and a record keeps their last known place.
 - The window filter of Hammerspoon drops a window whose subrole changes while its application is hidden, as the window of Calendar does.
-  The tool looks such windows up among all windows of macOS.
+  The desktop manager looks such windows up among all windows of macOS.
 
 The previews in the list come after the list shows, one window at a time, and need the permission for Screen Recording.
 Hammerspoon takes them with an old screen capture function of macOS.
@@ -326,36 +330,91 @@ hs -c 'local started = hs.timer.secondsSinceEpoch(); local image = hs.window.sna
 
 The previews work when the command prints `true` after less than half a second.
 
-## Diagnostics in the Hammerspoon console show what the tool reads
+## Diagnostics in the Hammerspoon console show what the desktop manager reads
 
-`hs -c "desktop_manager:print_diagnostics()"` prints what the tool reads of the screens, desktops and windows, and which profiles recorded each window, and changes nothing.
+`hs -c "desktop_manager:print_diagnostics()"` prints what the desktop manager reads of the screens, desktops and windows, and which profiles recorded each window, and changes nothing.
 "Print diagnostics to the console" in the menu bar item prints the same into the Hammerspoon console.
 Each switch writes its plan and its duration to the console.
 Each desktop switch also writes how long it waited for the release of the modifiers and how long macOS took to report the new desktop.
 The rest of a switch is the animation of macOS, which "Reduce motion" in step 7 of the installation shortens.
 
-## The code splits into a tested core and a macOS layer
+## Control-Option with Return or an arrow tiles the focused window
+
+The window tiling sets the frame of the focused window to a part of its screen, with the default shortcuts of Rectangle.
+
+| Keys | The focused window takes |
+|---|---|
+| Control-Option-Return | the whole screen |
+| Control-Option-Left | the left half of the screen |
+| Control-Option-Right | the right half |
+| Control-Option-Up | the top half |
+| Control-Option-Down | the bottom half |
+
+The screen is the one that holds the largest part of the window, without the menu bar and the Dock.
+The window takes its new frame at once, without an animation.
+Hammerspoon receives the shortcuts before the application in front, so the shortcuts work in every application, also before the application has built its Window menu.
+An application loses its own shortcuts on these keys, as under Rectangle.
+On 2026-10-11, the enabled shortcuts of macOS used Control-Option only with Space, which selects the next input source.
+VoiceOver uses Control-Option with the arrows while it is on.
+
+The desktop manager uses Control-Option with the numbers, and the window tiling uses Control-Option with Return and the arrows, so the two tools take different keys.
+
+### Settings of the window tiling live in `window_tiling/default_settings.lua`
+
+To change a setting, edit the file and choose Reload Config.
+
+| Setting | Default | What it sets |
+|---|---|---|
+| `hotkey_modifiers` | Control-Option | the modifiers of the tiling shortcuts |
+| `key_by_position` | Return, Left, Right, Up, Down | the key of each position, by the names of `hs.keycodes.map`, and a position without a key gets no shortcut |
+| `url_event_name` | `window-tiling` | the host of the URLs, as below |
+
+### The Asyar extension in `asyar-window-tiling/` shows each position as an item
+
+The extension adds five items to the search of Asyar: Fill Window, Left Half, Right Half, Top Half and Bottom Half.
+Enter on an item tiles the window that has the focus when Hammerspoon receives the URL of the item.
+The manifest, `asyar-window-tiling/manifest.json`, gives the extension one permission, `shell:open-url` for the URLs that start with `hammerspoon://`.
+
+Setting up the extension takes two steps, with Node and npm installed.
+
+1. Run `npm install` in `asyar-window-tiling/`.
+2. Run `make link-asyar-window-tiling` in the folder of this repository.
+
+Quit Asyar and start it again, so that it loads the extension.
+
+### A URL tiles the focused window from outside Hammerspoon
+
+The URL `hammerspoon://window-tiling?position=<position>` takes one of the positions `fill`, `left-half`, `right-half`, `top-half` and `bottom-half`.
+In a terminal, `open -g "hammerspoon://window-tiling?position=left-half"` puts the focused window on the left half of its screen.
+A URL with another position shows a notification and moves no window.
+
+## The code of each tool splits into a tested core and a macOS layer
 
 | Folder or file | Content |
 |---|---|
-| `init.lua` | the file that Hammerspoon loads, which starts the controller |
-| `desktop_manager/core/` | the decisions: monitor configurations, window matching, profile records, plans for concealing, restoring and opening missing windows, application numbers, URL commands |
-| `desktop_manager/macos/` | the calls to Hammerspoon: reading screens, desktops and windows, switching desktops, opening new windows, switching to the application of a number, Mission Control, the menu bar item and the controller |
-| `tests/` | unit tests of the core, and tests of whole switches against `tests/fake_hammerspoon.lua` |
-| `tools/` | the generators of the launcher scripts and of the settings of the Asyar extension |
+| `init.lua` | the file that Hammerspoon loads, which starts the two tools |
+| `desktop_manager/core/` | the decisions of the desktop manager: monitor configurations, window matching, profile records, plans for concealing, restoring and opening missing windows, application numbers, URL commands |
+| `desktop_manager/macos/` | the calls of the desktop manager to Hammerspoon: reading screens, desktops and windows, switching desktops, opening new windows, switching to the application of a number, Mission Control, the menu bar item and the controller |
+| `window_tiling/core/` | the positions of the window tiling and the frame of each position on a screen |
+| `window_tiling/macos/` | the controller of the window tiling, which binds its shortcuts and its URLs and sets the frame of the focused window |
+| `tests/` | unit tests of the cores, tests of whole switches and of the tiling controller against `tests/fake_hammerspoon.lua` |
+| `tools/` | the generators of the launcher scripts and of the settings of the Asyar extension of the desktop manager |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |
-| `asyar-extension/` | the Asyar extension, in TypeScript, with its manifest, its worker and the unit tests of its items |
+| `asyar-extension/` | the Asyar extension of the desktop manager, in TypeScript, with its manifest, its worker and the unit tests of its items |
+| `asyar-window-tiling/` | the Asyar extension of the window tiling, in TypeScript, with its manifest, its worker and the unit tests of its URLs |
 
-The modules of `desktop_manager/core/` call no Hammerspoon function, so `lua` 5.4 runs their tests outside Hammerspoon.
+The two tools share no module.
+The modules of `desktop_manager/core/` and `window_tiling/core/` call no Hammerspoon function, so `lua` 5.4 runs their tests outside Hammerspoon.
 The fake of Hammerspoon unminimizes a window onto its own desktop, as macOS 27.0.1 does, and a test can make it unminimize onto the desktop that shows.
-The tests check the logic of the tool, and say nothing about the behaviour of macOS.
+The tests check the logic of the tools, and say nothing about the behaviour of macOS.
 
 `make check` checks the syntax with `luac -p`, lints with `luacheck`, checks the formatting with `stylua --check`, runs the tests, and compares the generated files with their generators.
 `make format` formats the code with `stylua`.
-The tools come from Homebrew: `lua@5.4`, `luacheck`, `stylua` and `lua-language-server`.
+The programs of these commands come from Homebrew: `lua@5.4`, `luacheck`, `stylua` and `lua-language-server`.
 
-`make check-asyar-extension` checks the types of the extension, runs its unit tests, runs `asyar validate` of the SDK of Asyar, and builds it.
-Run `make link-asyar-extension` again after a change to the extension, or `npm run build` in `asyar-extension/`, because Asyar loads the built files through the link.
+`make check-asyar-extension` checks the types of the extension of the desktop manager, runs its unit tests, runs `asyar validate` of the SDK of Asyar, and builds it.
+`make check-asyar-window-tiling` does the same for the extension of the window tiling.
+After a change to an extension, run its `make link-...` target again, or `npm run build` in its folder, because Asyar loads the built files through the link.
 
 Two generators take the numbers of profiles and of applications from `desktop_manager/default_settings.lua`.
 `make launcher-scripts` runs `tools/write_launcher_scripts.lua`, which writes the scripts.
@@ -367,6 +426,6 @@ The code follows the [LuaRocks style guide](https://github.com/luarocks/lua-styl
 - Indentation is four spaces, as in the Lua extensions that Hammerspoon 1.1.1 ships, where the guide uses three.
 - Types are written as annotations of lua-language-server, such as `---@param`, where the guide uses LDoc, because the language server checks them.
 - Misuse of a function raises `error` with a message that states the fact and the value, where the guide uses `assert`.
-- `init.lua` sets one global, `desktop_manager`, because Hammerspoon stops the hotkeys and watchers that Lua garbage-collects, and because the command-line tool `hs` reaches the controller through it.
+- `init.lua` sets one global per tool, `desktop_manager` and `window_tiler`, because Hammerspoon stops the hotkeys and watchers that Lua garbage-collects, and because the command-line tool `hs` reaches the controllers through them.
 
 Lines are at most 100 characters long, as `stylua.toml` and `.luacheckrc` set.

@@ -139,6 +139,15 @@ The modifiers are a setting, and their default is Control-Option.
 On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
 Command with a number selects tabs, views and groups in many applications, and Command-Shift with 3, 4 and 5 takes screenshots in macOS.
 
+## Window tiling is a second tool beside the desktop manager
+
+The window tiling sets the frame of the focused window to the whole screen or to one half of it, as Rectangle does.
+Control-Option-Return fills the screen, and Control-Option with Left, Right, Up or Down takes the left, right, top or bottom half.
+The modifiers and the keys are settings.
+The tiling works without the Window menu of the application, because the shortcut Globe-Control-F of the item Window, Fill of macOS failed on a window just opened or focused, as the user found on 2026-10-11.
+An Asyar extension of its own shows one item per position, and each item opens a URL `hammerspoon://window-tiling?...` that the tool binds.
+The window tiling shares no module with the desktop manager, and has its own folders, settings, tests and Asyar extension.
+
 ## Development practices that the project follows
 
 The code is Lua 5.4, the version that Hammerspoon 1.1.1 embeds.
