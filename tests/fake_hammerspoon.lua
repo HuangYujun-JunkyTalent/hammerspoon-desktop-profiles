@@ -11,6 +11,7 @@ local fake_hammerspoon = {}
 ---@field title string
 ---@field space_id integer
 ---@field frame Rect
+---@field is_standard boolean|nil false for a panel such as the search window of a launcher
 
 ---@class FakeApplicationSpec
 ---@field bundle_id string
@@ -203,6 +204,7 @@ function fake_hammerspoon.install(spec)
             space_id = window_spec.space_id,
             frame = window_spec.frame,
             is_minimized = false,
+            is_standard = window_spec.is_standard,
         }
         local object = {}
         function object:id()
@@ -214,7 +216,7 @@ function fake_hammerspoon.install(spec)
             return object
         end
         function object:isStandard()
-            return true
+            return window.is_standard ~= false
         end
         function object:title()
             return window.title
@@ -648,6 +650,22 @@ function fake_hammerspoon.install(spec)
                         return { source = "blurred " .. window_id }
                     end,
                 }
+            end,
+            ---The windows in sight, front to back: the focused window first, then the others in the
+            ---order in which they opened.
+            orderedWindows = function()
+                local objects = {}
+                local focused = world.focused_window_id and world.windows[world.focused_window_id]
+                if focused and not focused.is_minimized then
+                    table.insert(objects, focused.object)
+                end
+                for _, window_id in ipairs(world.window_order) do
+                    local window = world.windows[window_id]
+                    if window ~= focused and not window.is_minimized then
+                        table.insert(objects, window.object)
+                    end
+                end
+                return objects
             end,
             focusedWindow = function()
                 local window = world.focused_window_id and world.windows[world.focused_window_id]

@@ -13,12 +13,31 @@ local function notify(message)
     hs.notify.new({ title = "Window tiling", informativeText = message }):send()
 end
 
----Sets the frame without animation, as Rectangle does by default.
+---The window that a tiling acts on: the focused window when it is a standard window, and otherwise
+---the frontmost standard window.
+---A launcher such as Asyar keeps the focus in its search panel, which is no standard window, while
+---it opens the URL of a tiling.
+---@return table|nil window an hs.window
+local function find_window_to_tile()
+    local focused = hs.window.focusedWindow()
+    if focused and focused:isStandard() then
+        return focused
+    end
+    for _, window in ipairs(hs.window.orderedWindows()) do
+        if window:isStandard() then
+            return window
+        end
+    end
+    return nil
+end
+
+---Sets the frame without animation, as Rectangle does by default, and gives the window the focus,
+---which a launcher took.
 ---@param position string a value of tiling_position
-local function tile_focused_window(position)
-    local window = hs.window.focusedWindow()
+local function tile_front_window(position)
+    local window = find_window_to_tile()
     if not window then
-        notify("No window has the focus, so no window was tiled.")
+        notify("No standard window is in sight, so no window was tiled.")
         return
     end
     local screen = window:screen()
@@ -27,6 +46,7 @@ local function tile_focused_window(position)
         return
     end
     window:setFrame(tiling_position.compute_frame(position, screen:frame()), 0)
+    window:focus()
 end
 
 ---@param params table<string, string>
@@ -36,7 +56,7 @@ local function run_url_command(params)
         notify(error_message)
         return
     end
-    tile_focused_window(position)
+    tile_front_window(position)
 end
 
 function TilingController:bind_hotkeys()
@@ -46,7 +66,7 @@ function TilingController:bind_hotkeys()
             table.insert(
                 self.hotkeys,
                 hs.hotkey.bind(self.settings.hotkey_modifiers, key, function()
-                    tile_focused_window(position)
+                    tile_front_window(position)
                 end)
             )
         end

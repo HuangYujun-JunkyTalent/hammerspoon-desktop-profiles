@@ -22,6 +22,7 @@ local function start_with_focused_window(window_frame)
         },
         applications = {
             { bundle_id = "com.microsoft.VSCode", name = "Code", is_running = true },
+            { bundle_id = "org.asyar.app", name = "Asyar", is_running = true },
         },
         windows = {
             {
@@ -65,10 +66,35 @@ return {
         expect.equal(#world.notifications, 1)
     end,
 
-    without_a_focused_window_a_shortcut_notifies = function()
+    without_a_focused_window_the_frontmost_standard_window_is_tiled_and_focused = function()
         local world = start_with_focused_window({ x = 300, y = 200, w = 600, h = 400 })
         world.focused_window_id = nil
         world.hotkey_by_shortcut["ctrl+alt up"]()
-        expect.equal(world.notifications, { "No window has the focus, so no window was tiled." })
+        expect.equal(world.windows[EDITOR_WINDOW_ID].frame, { x = 0, y = 25, w = 1440, h = 438 })
+        expect.equal(world.focused_window_id, EDITOR_WINDOW_ID)
+    end,
+
+    a_url_from_a_launcher_panel_tiles_the_window_behind_the_panel = function()
+        local world = start_with_focused_window({ x = 300, y = 200, w = 600, h = 400 })
+        local panel_frame = { x = 420, y = 200, w = 600, h = 400 }
+        local panel = world.create_window("org.asyar.app", "asyar")
+        panel.is_standard = false
+        panel.object:setFrame(panel_frame)
+        panel.object:focus()
+        world.url_handlers[URL_EVENT_NAME](URL_EVENT_NAME, { position = "fill" })
+        expect.equal(world.windows[EDITOR_WINDOW_ID].frame, BUILTIN_FRAME)
+        expect.equal(panel.frame, panel_frame)
+        expect.equal(world.focused_window_id, EDITOR_WINDOW_ID)
+    end,
+
+    without_a_standard_window_in_sight_a_shortcut_notifies = function()
+        local world = start_with_focused_window({ x = 300, y = 200, w = 600, h = 400 })
+        world.minimize_window(EDITOR_WINDOW_ID)
+        world.focused_window_id = nil
+        world.hotkey_by_shortcut["ctrl+alt up"]()
+        expect.equal(
+            world.notifications,
+            { "No standard window is in sight, so no window was tiled." }
+        )
     end,
 }

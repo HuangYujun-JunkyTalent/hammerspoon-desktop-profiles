@@ -145,7 +145,9 @@ The window tiling sets the frame of the focused window to the whole screen or to
 Control-Option-Return fills the screen, and Control-Option with Left, Right, Up or Down takes the left, right, top or bottom half.
 The modifiers and the keys are settings.
 The tiling works without the Window menu of the application, because the shortcut Globe-Control-F of the item Window, Fill of macOS failed on a window just opened or focused, as the user found on 2026-10-11.
-An Asyar extension of its own shows one item per position, and each item opens a URL `hammerspoon://window-tiling?...` that the tool binds.
+An Asyar extension of its own shows the item Fill Window, which opens a URL `hammerspoon://window-tiling?...` that the tool binds.
+Asyar has its own window management for the halves, so the extension leaves them out, as the user decided on 2026-10-11.
+A tiling started from Asyar acts on the window behind the search window of Asyar, and gives it the focus back.
 The window tiling shares no module with the desktop manager, and has its own folders, settings, tests and Asyar extension.
 
 ## Development practices that the project follows

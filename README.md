@@ -350,6 +350,8 @@ The window tiling sets the frame of the focused window to a part of its screen, 
 | Control-Option-Up | the top half |
 | Control-Option-Down | the bottom half |
 
+The tiling acts on the focused window when it is a standard window.
+When the focus is in a panel, such as the search window of Asyar, the tiling acts on the frontmost standard window, and gives it the focus.
 The screen is the one that holds the largest part of the window, without the menu bar and the Dock.
 The window takes its new frame at once, without an animation.
 Hammerspoon receives the shortcuts before the application in front, so the shortcuts work in every application, also before the application has built its Window menu.
@@ -369,10 +371,10 @@ To change a setting, edit the file and choose Reload Config.
 | `key_by_position` | Return, Left, Right, Up, Down | the key of each position, by the names of `hs.keycodes.map`, and a position without a key gets no shortcut |
 | `url_event_name` | `window-tiling` | the host of the URLs, as below |
 
-### The Asyar extension in `asyar-window-tiling/` shows each position as an item
+### The Asyar extension in `asyar-window-tiling/` adds the item Fill Window
 
-The extension adds five items to the search of Asyar: Fill Window, Left Half, Right Half, Top Half and Bottom Half.
-Enter on an item tiles the window that has the focus when Hammerspoon receives the URL of the item.
+The extension adds one item to the search of Asyar, Fill Window, which fills the screen with the window behind the search window of Asyar.
+The extension leaves the halves to the window management that Asyar has built in.
 The manifest, `asyar-window-tiling/manifest.json`, gives the extension one permission, `shell:open-url` for the URLs that start with `hammerspoon://`.
 
 Setting up the extension takes two steps, with Node and npm installed.
@@ -401,7 +403,7 @@ A URL with another position shows a notification and moves no window.
 | `tools/` | the generators of the launcher scripts and of the settings of the Asyar extension of the desktop manager |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |
 | `asyar-extension/` | the Asyar extension of the desktop manager, in TypeScript, with its manifest, its worker and the unit tests of its items |
-| `asyar-window-tiling/` | the Asyar extension of the window tiling, in TypeScript, with its manifest, its worker and the unit tests of its URLs |
+| `asyar-window-tiling/` | the Asyar extension of the window tiling, in TypeScript, with its manifest, its worker and the unit tests of its URL |
 
 The two tools share no module.
 The modules of `desktop_manager/core/` and `window_tiling/core/` call no Hammerspoon function, so `lua` 5.4 runs their tests outside Hammerspoon.
