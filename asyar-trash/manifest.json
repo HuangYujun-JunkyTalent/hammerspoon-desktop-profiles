@@ -11,8 +11,8 @@
   "permissions": ["shell:spawn", "notifications:send"],
   "commands": [
     {
-      "id": "open-trash",
-      "name": "Open Trash",
+      "id": "trash",
+      "name": "Trash",
       "description": "Open the Trash in a window of the Finder.",
       "icon": "🗑️",
       "mode": "background"

@@ -1,144 +1,37 @@
 import { describe, expect, it } from 'vitest';
 import manifest from '../manifest.json';
 import {
-  type AppleScriptResult,
-  CANCELLED_REPLY,
-  CONFIRMATION_SCRIPT,
-  CONFIRMED_REPLY,
-  COUNT_TRASH_ITEMS_SCRIPT,
+  EMPTY_TRASH_AFTER_CONFIRMATION_SCRIPT,
   EMPTY_TRASH_CONFIRMATION,
-  EMPTY_TRASH_SCRIPT,
   OPEN_TRASH_SCRIPT,
   OSASCRIPT_PATH,
-  TrashOutcome,
+  TRASH_IS_EMPTY_NOTICE,
+  buildFailureNotification,
   buildOsascriptSpawn,
-  buildResultNotification,
-  emptyTrashAfterConfirmation,
-  findTrashCommand,
-  openTrash,
+  findTrashCommandScript,
   quoteAppleScriptString,
 } from './trash-commands';
-
-const SUCCESS = (stdout: string): AppleScriptResult => ({ exitCode: 0, stdout, stderr: '' });
-
-/** A runner that answers each script with a fixed result and records the scripts in order. */
-function recordScripts(answers: Map<readonly string[], AppleScriptResult>) {
-  const scriptsRun: (readonly string[])[] = [];
-  const runAppleScript = async (scriptLines: readonly string[]): Promise<AppleScriptResult> => {
-    scriptsRun.push(scriptLines);
-    const answer = answers.get(scriptLines);
-    if (!answer) {
-      throw new Error(`no answer for the script ${scriptLines.join(' / ')}`);
-    }
-    return answer;
-  };
-  return { scriptsRun, runAppleScript };
-}
 
 /** The lines of a script without its quoted strings, so that a button label matches no command. */
 function codeOf(scriptLines: readonly string[]): string[] {
   return scriptLines.map((line) => line.replace(/"(?:[^"\\]|\\.)*"/g, '""'));
 }
 
-describe('emptyTrashAfterConfirmation', () => {
-  it('empties the Trash after the confirmation prints the reply that empties', async () => {
-    const { scriptsRun, runAppleScript } = recordScripts(
-      new Map([
-        [COUNT_TRASH_ITEMS_SCRIPT, SUCCESS('3')],
-        [CONFIRMATION_SCRIPT, SUCCESS(CONFIRMED_REPLY)],
-        [EMPTY_TRASH_SCRIPT, SUCCESS('')],
-      ]),
-    );
-    expect(await emptyTrashAfterConfirmation(runAppleScript)).toEqual({
-      outcome: TrashOutcome.Emptied,
-    });
-    expect(scriptsRun).toEqual([COUNT_TRASH_ITEMS_SCRIPT, CONFIRMATION_SCRIPT, EMPTY_TRASH_SCRIPT]);
-  });
+/** The index of the one line of `code` that equals `line` after its indent, or a failed test. */
+function indexOfLine(code: readonly string[], line: string): number {
+  const indexes = code.flatMap((codeLine, index) => (codeLine.trim() === line ? [index] : []));
+  expect(indexes, `the script holds the line "${line}" once`).toHaveLength(1);
+  return indexes[0];
+}
 
-  it('erases nothing after Cancel or Escape', async () => {
-    const { scriptsRun, runAppleScript } = recordScripts(
-      new Map([
-        [COUNT_TRASH_ITEMS_SCRIPT, SUCCESS('3')],
-        [CONFIRMATION_SCRIPT, SUCCESS(CANCELLED_REPLY)],
-      ]),
-    );
-    expect(await emptyTrashAfterConfirmation(runAppleScript)).toEqual({
-      outcome: TrashOutcome.Cancelled,
-    });
-    expect(scriptsRun).not.toContain(EMPTY_TRASH_SCRIPT);
-  });
+/** The depth of the indent of a line, in tabs. */
+function depthOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
 
-  it('erases nothing when the confirmation prints another reply', async () => {
-    for (const reply of ['', 'Empty Trash', `${CONFIRMED_REPLY} later`]) {
-      const { scriptsRun, runAppleScript } = recordScripts(
-        new Map([
-          [COUNT_TRASH_ITEMS_SCRIPT, SUCCESS('1')],
-          [CONFIRMATION_SCRIPT, SUCCESS(reply)],
-        ]),
-      );
-      expect((await emptyTrashAfterConfirmation(runAppleScript)).outcome).toBe(
-        TrashOutcome.Cancelled,
-      );
-      expect(scriptsRun).not.toContain(EMPTY_TRASH_SCRIPT);
-    }
-  });
-
-  it('erases nothing when the confirmation fails', async () => {
-    const { scriptsRun, runAppleScript } = recordScripts(
-      new Map([
-        [COUNT_TRASH_ITEMS_SCRIPT, SUCCESS('2')],
-        [
-          CONFIRMATION_SCRIPT,
-          { exitCode: 1, stdout: CONFIRMED_REPLY, stderr: 'execution error: (-1743)' },
-        ],
-      ]),
-    );
-    expect(await emptyTrashAfterConfirmation(runAppleScript)).toEqual({
-      outcome: TrashOutcome.Failed,
-      failure: 'execution error: (-1743)',
-    });
-    expect(scriptsRun).not.toContain(EMPTY_TRASH_SCRIPT);
-  });
-
-  it('erases nothing when osascript does not start', async () => {
-    const { scriptsRun, runAppleScript } = recordScripts(
-      new Map([
-        [
-          COUNT_TRASH_ITEMS_SCRIPT,
-          { stdout: '', stderr: '', spawnError: 'SPAWN_FAILED: the binary is not trusted' },
-        ],
-      ]),
-    );
-    expect(await emptyTrashAfterConfirmation(runAppleScript)).toEqual({
-      outcome: TrashOutcome.Failed,
-      failure: 'SPAWN_FAILED: the binary is not trusted',
-    });
-    expect(scriptsRun).toEqual([COUNT_TRASH_ITEMS_SCRIPT]);
-  });
-
-  it('shows no confirmation and erases nothing when the Trash is empty', async () => {
-    const { scriptsRun, runAppleScript } = recordScripts(
-      new Map([[COUNT_TRASH_ITEMS_SCRIPT, SUCCESS('0\n')]]),
-    );
-    expect(await emptyTrashAfterConfirmation(runAppleScript)).toEqual({
-      outcome: TrashOutcome.TrashWasEmpty,
-    });
-    expect(scriptsRun).toEqual([COUNT_TRASH_ITEMS_SCRIPT]);
-  });
-
-  it('shows no confirmation when the count of the Finder is not a number', async () => {
-    for (const countText of ['', 'missing value', '-1']) {
-      const { scriptsRun, runAppleScript } = recordScripts(
-        new Map([[COUNT_TRASH_ITEMS_SCRIPT, SUCCESS(countText)]]),
-      );
-      expect((await emptyTrashAfterConfirmation(runAppleScript)).outcome).toBe(TrashOutcome.Failed);
-      expect(scriptsRun).toEqual([COUNT_TRASH_ITEMS_SCRIPT]);
-    }
-  });
-});
-
-describe('CONFIRMATION_SCRIPT', () => {
-  const script = CONFIRMATION_SCRIPT.join('\n');
+describe('EMPTY_TRASH_AFTER_CONFIRMATION_SCRIPT', () => {
+  const script = EMPTY_TRASH_AFTER_CONFIRMATION_SCRIPT.join('\n');
+  const code = codeOf(EMPTY_TRASH_AFTER_CONFIRMATION_SCRIPT);
 
   it('reads each text from the strings of the Finder, with the English text as fallback', () => {
     for (const finderString of Object.values(EMPTY_TRASH_CONFIRMATION)) {
@@ -150,60 +43,105 @@ describe('CONFIRMATION_SCRIPT', () => {
     expect(script).toContain('POSIX file "/System/Library/CoreServices/Finder.app"');
   });
 
+  it('counts the items first, and stops with a notification when the Trash is empty', () => {
+    const count = indexOfLine(
+      code,
+      'tell application "" to set itemCount to count of items of trash',
+    );
+    const emptyCheck = indexOfLine(code, 'if itemCount is 0 then');
+    const alert = code.findIndex((line) => line.includes('display alert'));
+    expect(count).toBeLessThan(emptyCheck);
+    expect(emptyCheck).toBeLessThan(alert);
+    expect(EMPTY_TRASH_AFTER_CONFIRMATION_SCRIPT[emptyCheck + 1].trim()).toBe(
+      `display notification ${quoteAppleScriptString(TRASH_IS_EMPTY_NOTICE)} with title "Empty Trash"`,
+    );
+    expect(code[emptyCheck + 2].trim()).toBe('return');
+  });
+
   it('shows the alert in the Finder, with Cancel left of the default Empty Trash', () => {
     expect(script).toContain(
       'display alert messageText message informativeText ' +
         'buttons {cancelLabel, emptyLabel} default button emptyLabel cancel button cancelLabel',
     );
-    expect(script.indexOf('tell application "Finder"')).toBeLessThan(
-      script.indexOf('display alert'),
-    );
+    const alert = code.findIndex((line) => line.includes('display alert'));
+    const finderBlock = code.lastIndexOf('\ttell application ""', alert);
+    expect(finderBlock).toBeGreaterThan(-1);
+    expect(code[finderBlock + 1].trim()).toBe('activate');
   });
 
-  it('prints the reply that empties for its button alone, and Cancel after Escape', () => {
+  it('empties only inside the branch of the button that empties', () => {
+    const branch = indexOfLine(code, 'if button returned of alertReply is emptyLabel then');
+    const branchEnd = code.findIndex(
+      (line, index) =>
+        index > branch &&
+        line.trim() === 'end if' &&
+        depthOf(line) === depthOf(code[branch]),
+    );
+    const empty = indexOfLine(code, 'empty trash');
+    expect(empty).toBeGreaterThan(branch);
+    expect(empty).toBeLessThan(branchEnd);
+    const erasingLines = code.filter((line) => /\b(empty trash|delete)\b/.test(line));
+    expect(erasingLines).toEqual([code[empty]]);
+  });
+
+  it('erases nothing after Cancel or Escape, which raise the error that the script ignores', () => {
+    const alert = code.findIndex((line) => line.includes('display alert'));
+    const empty = indexOfLine(code, 'empty trash');
+    expect(alert).toBeLessThan(empty);
+    expect(script).toContain('cancel button cancelLabel');
     expect(script).toContain(
-      `if button returned of alertReply is emptyLabel then return "${CONFIRMED_REPLY}"`,
+      'if errorNumber is not -128 then display notification errorMessage with title "Empty Trash failed"',
     );
-    expect(script).toMatch(/on error number -128\n\t\treturn "cancelled"/);
-    expect(CONFIRMATION_SCRIPT.at(-1)).toBe(`return "${CANCELLED_REPLY}"`);
+    expect(code.filter((line) => line.includes('on error number -128'))).toEqual([]);
   });
-
-  it('erases nothing itself', () => {
-    expect(codeOf(CONFIRMATION_SCRIPT).join('\n')).not.toMatch(/\b(empty|delete)\b/);
-    expect(codeOf(COUNT_TRASH_ITEMS_SCRIPT).join('\n')).not.toMatch(/\b(empty|delete)\b/);
-    expect(codeOf(OPEN_TRASH_SCRIPT).join('\n')).not.toMatch(/\b(empty|delete)\b/);
-  });
-});
-
-describe('EMPTY_TRASH_SCRIPT', () => {
-  const code = codeOf(EMPTY_TRASH_SCRIPT);
 
   it('turns off the warning of the Finder before the empty, so one confirmation shows', () => {
-    const turnOff = code.indexOf('\tset warns before emptying of trash to false');
-    const empty = code.indexOf('\t\t\tempty trash');
-    expect(turnOff).toBeGreaterThan(-1);
+    const turnOff = indexOfLine(code, 'set warns before emptying of trash to false');
+    const empty = indexOfLine(code, 'empty trash');
     expect(empty).toBeGreaterThan(turnOff);
   });
 
-  it('restores the warning of the user after the empty and after an error', () => {
-    const restores = code.filter(
-      (line) => line.trim() === 'set warns before emptying of trash to warnsBeforeEmptying',
+  it('restores the warning of the user after the empty and after an error of the empty', () => {
+    const restores = code.flatMap((line, index) =>
+      line.trim() === 'set warns before emptying of trash to warnsBeforeEmptying' ? [index] : [],
     );
     expect(restores).toHaveLength(2);
-    expect(code.indexOf('\ton error errorMessage number errorNumber')).toBeLessThan(
-      code.lastIndexOf('\t\terror errorMessage number errorNumber'),
+    const onError = indexOfLine(code, 'on error emptyErrorMessage number emptyErrorNumber');
+    const raiseAgain = indexOfLine(code, 'error emptyErrorMessage number emptyErrorNumber');
+    expect(restores[0]).toBeGreaterThan(onError);
+    expect(restores[0]).toBeLessThan(raiseAgain);
+    expect(restores[1]).toBeGreaterThan(raiseAgain);
+  });
+
+  it('runs every step inside the try that reports a failure as a notification', () => {
+    const outerTry = code.findIndex((line) => line === 'try');
+    const count = indexOfLine(
+      code,
+      'tell application "" to set itemCount to count of items of trash',
     );
+    expect(outerTry).toBeGreaterThan(-1);
+    expect(outerTry).toBeLessThan(count);
+    expect(code.at(-1)).toBe('end try');
+    expect(code.at(-3)).toBe('on error errorMessage number errorNumber');
   });
 });
 
-describe('openTrash', () => {
-  it('opens the Trash in a window of the Finder', async () => {
-    const { scriptsRun, runAppleScript } = recordScripts(
-      new Map([[OPEN_TRASH_SCRIPT, SUCCESS('')]]),
-    );
-    expect(await openTrash(runAppleScript)).toEqual({ outcome: TrashOutcome.Opened });
-    expect(scriptsRun).toEqual([OPEN_TRASH_SCRIPT]);
-    expect(OPEN_TRASH_SCRIPT).toContain('\topen trash');
+describe('OPEN_TRASH_SCRIPT', () => {
+  it('opens the Trash in a window of the Finder, and reports a failure as a notification', () => {
+    expect(OPEN_TRASH_SCRIPT).toEqual([
+      'try',
+      '\ttell application "Finder"',
+      '\t\tactivate',
+      '\t\topen trash',
+      '\tend tell',
+      'on error errorMessage number errorNumber',
+      '\tif errorNumber is not -128 then display notification errorMessage with title "Trash failed"',
+      'end try',
+    ]);
+  });
+
+  it('erases nothing', () => {
+    expect(codeOf(OPEN_TRASH_SCRIPT).join('\n')).not.toMatch(/\b(empty|delete)\b/);
   });
 });
 
@@ -223,40 +161,35 @@ describe('quoteAppleScriptString', () => {
   });
 });
 
-describe('findTrashCommand', () => {
-  it('gives a command for every command of the manifest', () => {
+describe('findTrashCommandScript', () => {
+  it('gives a script for every command of the manifest', () => {
     for (const command of manifest.commands) {
-      expect(findTrashCommand(command.id)).not.toBeNull();
+      expect(findTrashCommandScript(command.id)).not.toBeNull();
     }
-    expect(findTrashCommand('open-trash')).toBe(openTrash);
-    expect(findTrashCommand('empty-trash')).toBe(emptyTrashAfterConfirmation);
+    expect(findTrashCommandScript('trash')).toBe(OPEN_TRASH_SCRIPT);
+    expect(findTrashCommandScript('empty-trash')).toBe(EMPTY_TRASH_AFTER_CONFIRMATION_SCRIPT);
   });
 
   it('gives null for another id', () => {
-    expect(findTrashCommand('tile-fill')).toBeNull();
-    expect(findTrashCommand('toString')).toBeNull();
+    expect(findTrashCommandScript('open-trash')).toBeNull();
+    expect(findTrashCommandScript('toString')).toBeNull();
   });
 });
 
-describe('buildResultNotification', () => {
-  it('tells the user that the Trash is empty', () => {
-    expect(
-      buildResultNotification('Empty Trash', { outcome: TrashOutcome.TrashWasEmpty }),
-    ).toEqual({ title: 'Empty Trash', body: 'The Trash is empty.' });
+describe('the manifest', () => {
+  it('names the command that opens the Trash Trash, with the id trash', () => {
+    expect(manifest.commands.map((command) => [command.id, command.name])).toEqual([
+      ['trash', 'Trash'],
+      ['empty-trash', 'Empty Trash'],
+    ]);
   });
+});
 
+describe('buildFailureNotification', () => {
   it('reports a failure with its reason', () => {
-    expect(
-      buildResultNotification('Open Trash', {
-        outcome: TrashOutcome.Failed,
-        failure: 'execution error: (-1743)',
-      }),
-    ).toEqual({ title: 'Open Trash failed', body: 'execution error: (-1743)' });
-  });
-
-  it('sends nothing after the Finder has shown the result', () => {
-    for (const outcome of [TrashOutcome.Opened, TrashOutcome.Emptied, TrashOutcome.Cancelled]) {
-      expect(buildResultNotification('Empty Trash', { outcome })).toBeNull();
-    }
+    expect(buildFailureNotification('Trash', 'SPAWN_FAILED: not trusted')).toEqual({
+      title: 'Trash failed',
+      body: 'SPAWN_FAILED: not trusted',
+    });
   });
 });

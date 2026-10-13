@@ -1,9 +1,16 @@
 import type { NotificationOptions, SpawnParams } from 'asyar-sdk/contracts';
 
+// Asyar 4.14 drops the output and the end of a spawn of a worker, and delivers them to a view
+// alone, so each command is one AppleScript that decides and reports inside `osascript`, and the
+// worker learns only whether Asyar started the script.
+
 export const OSASCRIPT_PATH = '/usr/bin/osascript';
 
 const FINDER_BUNDLE_PATH = '/System/Library/CoreServices/Finder.app';
 const FINDER_STRINGS_TABLE = 'LocalizableMerged';
+
+/** AppleScript raises this error number when the user chooses the cancel button of an alert. */
+const USER_CANCELLED_ERROR_NUMBER = -128;
 
 /** A string of the Finder, by its key in `LocalizableMerged.strings`, with its English text. */
 export interface FinderString {
@@ -27,34 +34,14 @@ export const EMPTY_TRASH_CONFIRMATION = {
   cancelButton: { key: 'AL1', english: 'Cancel' },
 } as const satisfies Record<string, FinderString>;
 
-export const CONFIRMED_REPLY = 'empty-confirmed';
-export const CANCELLED_REPLY = 'cancelled';
+export const TRASH_IS_EMPTY_NOTICE = 'The Trash is empty.';
 
-export enum TrashOutcome {
-  Opened = 'opened',
-  Emptied = 'emptied',
-  Cancelled = 'cancelled',
-  TrashWasEmpty = 'trash-was-empty',
-  Failed = 'failed',
-}
-
-export interface TrashCommandResult {
-  outcome: TrashOutcome;
-  failure?: string;
-}
-
-/**
- * What one run of `osascript` gave: its exit code when Asyar reports one, its output, and the error
- * of a start that failed.
- */
-export interface AppleScriptResult {
-  exitCode?: number;
-  stdout: string;
-  stderr: string;
+/** Whether Asyar started a script, and the reason when it did not. */
+export interface ScriptStart {
   spawnError?: string;
 }
 
-export type AppleScriptRunner = (scriptLines: readonly string[]) => Promise<AppleScriptResult>;
+export type AppleScriptStarter = (scriptLines: readonly string[]) => Promise<ScriptStart>;
 
 export function quoteAppleScriptString(text: string): string {
   return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
@@ -70,144 +57,99 @@ function readFinderStringLines(variable: string, finderString: FinderString): st
   ];
 }
 
-export const OPEN_TRASH_SCRIPT: readonly string[] = [
+function indent(lines: readonly string[]): string[] {
+  return lines.map((line) => `\t${line}`);
+}
+
+/**
+ * Wraps `bodyLines` so that an error shows as a notification titled `failureTitle`, and a
+ * cancel of the user shows nothing.
+ */
+function reportErrorsAsNotification(
+  failureTitle: string,
+  bodyLines: readonly string[],
+): string[] {
+  return [
+    'try',
+    ...indent(bodyLines),
+    'on error errorMessage number errorNumber',
+    `\tif errorNumber is not ${USER_CANCELLED_ERROR_NUMBER} then ` +
+      `display notification errorMessage with title ${quoteAppleScriptString(failureTitle)}`,
+    'end try',
+  ];
+}
+
+export const OPEN_TRASH_SCRIPT: readonly string[] = reportErrorsAsNotification('Trash failed', [
   'tell application "Finder"',
   '\tactivate',
   '\topen trash',
   'end tell',
-];
-
-export const COUNT_TRASH_ITEMS_SCRIPT: readonly string[] = [
-  'tell application "Finder" to return (count of items of trash) as text',
-];
+]);
 
 /**
- * Shows the confirmation in the Finder, so that the alert carries the icon of the Finder, and
- * prints `CONFIRMED_REPLY` only when the user chooses the button that empties.
- * The timeout keeps the alert open as long as the user needs, where the default of AppleScript is
- * two minutes.
+ * Counts the items in the Trash, shows the confirmation of the Finder when there are any, and
+ * empties the Trash only after the user chooses the button that empties.
+ * The confirmation shows in the Finder, so that the alert carries the icon of the Finder, and its
+ * timeout keeps the alert open as long as the user needs, where the default of AppleScript is two
+ * minutes.
+ * The erase turns the warning of the Finder off for the command alone, because the user has
+ * confirmed already, and restores the setting of the user also when the erase fails.
  */
-export const CONFIRMATION_SCRIPT: readonly string[] = [
+export const EMPTY_TRASH_AFTER_CONFIRMATION_SCRIPT: readonly string[] = [
   `set finderBundle to POSIX file ${quoteAppleScriptString(FINDER_BUNDLE_PATH)} as alias`,
   ...readFinderStringLines('messageText', EMPTY_TRASH_CONFIRMATION.message),
   ...readFinderStringLines('informativeText', EMPTY_TRASH_CONFIRMATION.informativeText),
   ...readFinderStringLines('emptyLabel', EMPTY_TRASH_CONFIRMATION.emptyButton),
   ...readFinderStringLines('cancelLabel', EMPTY_TRASH_CONFIRMATION.cancelButton),
-  'tell application "Finder"',
-  '\tactivate',
-  '\ttry',
-  '\t\twith timeout of 86400 seconds',
-  '\t\t\tset alertReply to display alert messageText message informativeText ' +
-    'buttons {cancelLabel, emptyLabel} default button emptyLabel cancel button cancelLabel',
-  '\t\tend timeout',
-  '\ton error number -128',
-  `\t\treturn ${quoteAppleScriptString(CANCELLED_REPLY)}`,
-  '\tend try',
-  'end tell',
-  'if button returned of alertReply is emptyLabel then ' +
-    `return ${quoteAppleScriptString(CONFIRMED_REPLY)}`,
-  `return ${quoteAppleScriptString(CANCELLED_REPLY)}`,
-];
-
-/**
- * Empties the Trash with the warning of the Finder turned off for the command alone, because the
- * user has confirmed already, and restores the setting of the user also when the command fails.
- */
-export const EMPTY_TRASH_SCRIPT: readonly string[] = [
-  'tell application "Finder"',
-  '\tset warnsBeforeEmptying to warns before emptying of trash',
-  '\tset warns before emptying of trash to false',
-  '\ttry',
-  '\t\twith timeout of 3600 seconds',
-  '\t\t\tempty trash',
-  '\t\tend timeout',
-  '\ton error errorMessage number errorNumber',
-  '\t\tset warns before emptying of trash to warnsBeforeEmptying',
-  '\t\terror errorMessage number errorNumber',
-  '\tend try',
-  '\tset warns before emptying of trash to warnsBeforeEmptying',
-  'end tell',
+  ...reportErrorsAsNotification('Empty Trash failed', [
+    'tell application "Finder" to set itemCount to count of items of trash',
+    'if itemCount is 0 then',
+    `\tdisplay notification ${quoteAppleScriptString(TRASH_IS_EMPTY_NOTICE)} ` +
+      `with title ${quoteAppleScriptString('Empty Trash')}`,
+    '\treturn',
+    'end if',
+    'tell application "Finder"',
+    '\tactivate',
+    '\twith timeout of 86400 seconds',
+    '\t\tset alertReply to display alert messageText message informativeText ' +
+      'buttons {cancelLabel, emptyLabel} default button emptyLabel cancel button cancelLabel',
+    '\tend timeout',
+    'end tell',
+    'if button returned of alertReply is emptyLabel then',
+    '\ttell application "Finder"',
+    '\t\tset warnsBeforeEmptying to warns before emptying of trash',
+    '\t\tset warns before emptying of trash to false',
+    '\t\ttry',
+    '\t\t\twith timeout of 3600 seconds',
+    '\t\t\t\tempty trash',
+    '\t\t\tend timeout',
+    '\t\ton error emptyErrorMessage number emptyErrorNumber',
+    '\t\t\tset warns before emptying of trash to warnsBeforeEmptying',
+    '\t\t\terror emptyErrorMessage number emptyErrorNumber',
+    '\t\tend try',
+    '\t\tset warns before emptying of trash to warnsBeforeEmptying',
+    '\tend tell',
+    'end if',
+  ]),
 ];
 
 export function buildOsascriptSpawn(scriptLines: readonly string[]): SpawnParams {
   return { program: OSASCRIPT_PATH, args: scriptLines.flatMap((line) => ['-e', line]) };
 }
 
-function hasSucceeded(result: AppleScriptResult): boolean {
-  const isExitCodeZeroOrUnreported = result.exitCode === undefined || result.exitCode === 0;
-  return result.spawnError === undefined && isExitCodeZeroOrUnreported;
-}
-
-function describeFailure(result: AppleScriptResult): TrashCommandResult {
-  const reason =
-    result.spawnError ??
-    (result.stderr.trim() || `osascript exited with status ${result.exitCode}`);
-  return { outcome: TrashOutcome.Failed, failure: reason };
-}
-
-export async function openTrash(runAppleScript: AppleScriptRunner): Promise<TrashCommandResult> {
-  const result = await runAppleScript(OPEN_TRASH_SCRIPT);
-  return hasSucceeded(result) ? { outcome: TrashOutcome.Opened } : describeFailure(result);
-}
-
-/**
- * Counts the items in the Trash, shows the confirmation when there are any, and empties the Trash
- * only when the confirmation printed `CONFIRMED_REPLY`.
- */
-export async function emptyTrashAfterConfirmation(
-  runAppleScript: AppleScriptRunner,
-): Promise<TrashCommandResult> {
-  const counting = await runAppleScript(COUNT_TRASH_ITEMS_SCRIPT);
-  if (!hasSucceeded(counting)) {
-    return describeFailure(counting);
-  }
-  const countText = counting.stdout.trim();
-  if (!/^\d+$/.test(countText)) {
-    return {
-      outcome: TrashOutcome.Failed,
-      failure: `the Finder gave "${countText}" as the number of items in the Trash`,
-    };
-  }
-  if (Number(countText) === 0) {
-    return { outcome: TrashOutcome.TrashWasEmpty };
-  }
-
-  const confirmation = await runAppleScript(CONFIRMATION_SCRIPT);
-  if (!hasSucceeded(confirmation)) {
-    return describeFailure(confirmation);
-  }
-  if (confirmation.stdout.trim() !== CONFIRMED_REPLY) {
-    return { outcome: TrashOutcome.Cancelled };
-  }
-
-  const emptying = await runAppleScript(EMPTY_TRASH_SCRIPT);
-  return hasSucceeded(emptying) ? { outcome: TrashOutcome.Emptied } : describeFailure(emptying);
-}
-
-const TRASH_COMMANDS: Readonly<
-  Record<string, (runAppleScript: AppleScriptRunner) => Promise<TrashCommandResult>>
-> = {
-  'open-trash': openTrash,
-  'empty-trash': emptyTrashAfterConfirmation,
+const TRASH_COMMAND_SCRIPTS: Readonly<Record<string, readonly string[]>> = {
+  trash: OPEN_TRASH_SCRIPT,
+  'empty-trash': EMPTY_TRASH_AFTER_CONFIRMATION_SCRIPT,
 };
 
-export function findTrashCommand(
-  commandId: string,
-): ((runAppleScript: AppleScriptRunner) => Promise<TrashCommandResult>) | null {
-  return Object.hasOwn(TRASH_COMMANDS, commandId) ? TRASH_COMMANDS[commandId] : null;
+export function findTrashCommandScript(commandId: string): readonly string[] | null {
+  return Object.hasOwn(TRASH_COMMAND_SCRIPTS, commandId) ? TRASH_COMMAND_SCRIPTS[commandId] : null;
 }
 
-/** The notification for a result that the user does not see in the Finder, or null. */
-export function buildResultNotification(
+/** The notification of a command whose script Asyar did not start or that failed in the worker. */
+export function buildFailureNotification(
   commandName: string,
-  result: TrashCommandResult,
-): NotificationOptions | null {
-  switch (result.outcome) {
-    case TrashOutcome.TrashWasEmpty:
-      return { title: commandName, body: 'The Trash is empty.' };
-    case TrashOutcome.Failed:
-      return { title: `${commandName} failed`, body: result.failure };
-    default:
-      return null;
-  }
+  failure: string,
+): NotificationOptions {
+  return { title: `${commandName} failed`, body: failure };
 }

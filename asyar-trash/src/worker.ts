@@ -1,51 +1,44 @@
-// The worker of the extension: it runs the AppleScript of a command of the manifest through
-// /usr/bin/osascript, and sends a notification for a result that the Finder does not show.
+// The worker of the extension: it starts the AppleScript of a command of the manifest through
+// /usr/bin/osascript, and sends a notification when Asyar does not start it.
 
-import { ExtensionContext as WorkerExtensionContext, extensionBridge } from 'asyar-sdk/worker';
+import {
+  ExtensionContext as WorkerExtensionContext,
+  extensionBridge,
+  messageBroker,
+} from 'asyar-sdk/worker';
 import type {
   Extension,
   ExtensionContext,
   IFeedbackService,
   ILogService,
-  IShellService,
 } from 'asyar-sdk/contracts';
 
 import manifest from '../manifest.json';
 import {
-  type AppleScriptResult,
-  type AppleScriptRunner,
+  type AppleScriptStarter,
+  type ScriptStart,
+  buildFailureNotification,
   buildOsascriptSpawn,
-  buildResultNotification,
-  findTrashCommand,
+  findTrashCommandScript,
 } from './trash-commands';
+import { startProgramInWorker } from './worker-shell';
 
-function runAppleScriptThrough(shell: IShellService): AppleScriptRunner {
-  return (scriptLines) =>
-    new Promise<AppleScriptResult>((resolve) => {
-      const stdout: string[] = [];
-      const stderr: string[] = [];
-      const handle = shell.spawn(buildOsascriptSpawn(scriptLines));
-      handle.onChunk((chunk) => (chunk.stream === 'stdout' ? stdout : stderr).push(chunk.data));
-      handle.onDone((exitCode) =>
-        resolve({ exitCode, stdout: stdout.join('\n'), stderr: stderr.join('\n') }),
-      );
-      handle.onError((error) =>
-        resolve({
-          stdout: stdout.join('\n'),
-          stderr: stderr.join('\n'),
-          spawnError: `${error.code}: ${error.message}`,
-        }),
-      );
-    });
-}
+/** Asyar answers `shell:spawn` after the user has chosen whether to trust the program. */
+const SPAWN_ANSWER_TIMEOUT_MS = 120_000;
+
+const startAppleScriptInWorker: AppleScriptStarter = (scriptLines) =>
+  startProgramInWorker(
+    (payload) =>
+      messageBroker.invoke('shell:spawn', { ...payload }, manifest.id, SPAWN_ANSWER_TIMEOUT_MS),
+    crypto.randomUUID(),
+    buildOsascriptSpawn(scriptLines),
+  );
 
 class TrashExtension implements Extension {
-  private shell?: IShellService;
   private feedback?: IFeedbackService;
   private log?: ILogService;
 
   async initialize(context: ExtensionContext): Promise<void> {
-    this.shell = context.getService<IShellService>('shell');
     this.feedback = context.getService<IFeedbackService>('feedback');
     this.log = context.getService<ILogService>('log');
   }
@@ -55,19 +48,23 @@ class TrashExtension implements Extension {
   async deactivate(): Promise<void> {}
 
   async executeCommand(commandId: string): Promise<unknown> {
-    const command = findTrashCommand(commandId);
+    const scriptLines = findTrashCommandScript(commandId);
     const commandName = manifest.commands.find((declared) => declared.id === commandId)?.name;
-    if (!command || !commandName || !this.shell) {
+    if (!scriptLines || !commandName) {
       this.log?.warn(`the command ${commandId} is unknown to Trash`);
       return undefined;
     }
-    const result = await command(runAppleScriptThrough(this.shell));
-    if (result.failure) {
-      this.log?.error(`${commandName}: ${result.failure}`);
+    // An error that a command throws reaches only the console of the hidden worker, so the worker
+    // turns it into a failure that the log of Asyar and a notification show.
+    let start: ScriptStart;
+    try {
+      start = await startAppleScriptInWorker(scriptLines);
+    } catch (error) {
+      start = { spawnError: String(error) };
     }
-    const notification = buildResultNotification(commandName, result);
-    if (notification) {
-      await this.feedback?.sendBackground(notification);
+    if (start.spawnError) {
+      this.log?.error(`${commandName}: ${start.spawnError}`);
+      await this.feedback?.sendBackground(buildFailureNotification(commandName, start.spawnError));
     }
     return undefined;
   }

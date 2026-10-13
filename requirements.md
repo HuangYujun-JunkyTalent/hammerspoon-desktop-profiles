@@ -191,8 +191,8 @@ The window tiling shares no module with the desktop manager, and has its own fol
 
 ## An Asyar extension opens and empties the Trash
 
-An Asyar extension of its own shows the items Open Trash and Empty Trash.
-Open Trash opens the Trash in the Finder.
+An Asyar extension of its own shows the items Trash and Empty Trash.
+Trash opens the Trash in the Finder.
 Empty Trash shows the same confirmation as Finder, Empty Trash, and erases the items in the Trash only after the user confirms.
 
 ## Development practices that the project follows

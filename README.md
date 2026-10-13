@@ -646,7 +646,7 @@ The extension adds two items to the search of Asyar.
 
 | Item | Enter |
 |---|---|
-| Open Trash | opens the Trash in a window of the Finder |
+| Trash | opens the Trash in a window of the Finder |
 | Empty Trash | shows the confirmation of Finder, Empty Trash, and erases the items in the Trash after you choose Empty Trash |
 
 - The confirmation takes its words from the Finder, in the language of macOS, and shows the icon of the Finder.
@@ -655,12 +655,15 @@ The extension adds two items to the search of Asyar.
 - The Finder adds no second confirmation, because the extension turns off its setting "Show warning before emptying the Trash" for the erase alone and then restores your value.
   When an erase stops halfway, check that setting in Finder, Settings, Advanced.
 
+Each item runs one AppleScript through `/usr/bin/osascript`, which counts, asks, erases and reports by itself, because Asyar gives the output of a program to no background command, as the knowledge item `knowledge-bases/yujun-knowledge-base/macos/asyar-background-workers.md` of the ai-workspace says.
+The notification of an empty Trash and of a failure in a script therefore comes from `osascript`, and macOS shows it under the name Script Editor.
+
 | Permission | Use |
 |---|---|
 | `shell:spawn` | runs `/usr/bin/osascript`, which Asyar asks you to trust on first use |
-| `notifications:send` | tells you of an empty Trash or a failure |
+| `notifications:send` | tells you when Asyar does not start the script |
 
-On first use, macOS also asks whether Asyar may control the Finder.
+On first use, macOS also asks whether Asyar may control the Finder, and may ask whether Script Editor may send notifications.
 
 Setting up the extension takes two steps, with Node and npm installed.
 
