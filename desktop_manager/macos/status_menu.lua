@@ -15,6 +15,10 @@ local MENU_BAR_SYMBOL = "◧"
 ---@field print_diagnostics fun()
 ---@field choose_app_number fun(app_number: integer, bundle_id: string, app_name: string)
 ---@field release_app_number fun(app_number: integer)
+---@field clear_profile fun(number: integer)
+---@field open_app_pool_window fun()
+---@field open_shortcut_window fun()
+---@field open_color_window fun()
 
 ---The numbers of the active profile, or of profile 0 while no profile is active, each with a
 ---submenu that gives it to the application that was in front when the menu opened, or returns it to
@@ -55,6 +59,26 @@ local function build_app_number_items(profile, app_number_count, actions)
     return items
 end
 
+---One item per profile that clears its saved layouts, after a confirmation.
+---@param state State
+---@param settings Settings
+---@param actions StatusMenuActions
+---@return table[] the items of an hs.menubar submenu
+local function build_clear_items(state, settings, actions)
+    local items = {}
+    for number = 1, settings.profile_count do
+        local profile = profile_state.profile_or_default(state, number)
+        table.insert(items, {
+            title = string.format("%d  %s…", number, profile.name),
+            disabled = not profile_state.has_arrangements(state, number),
+            fn = function()
+                actions.clear_profile(number)
+            end,
+        })
+    end
+    return items
+end
+
 ---@param state State
 ---@param settings Settings
 ---@param actions StatusMenuActions
@@ -82,6 +106,13 @@ local function build_items(state, settings, actions)
         disabled = state.active_profile_number == nil,
         fn = actions.rename_active_profile,
     })
+    table.insert(
+        items,
+        { title = "Clear profile", menu = build_clear_items(state, settings, actions) }
+    )
+    table.insert(items, { title = "Managed applications…", fn = actions.open_app_pool_window })
+    table.insert(items, { title = "Keyboard shortcuts…", fn = actions.open_shortcut_window })
+    table.insert(items, { title = "Search colors…", fn = actions.open_color_window })
     local matching_items = {}
     for _, matching in ipairs(monitor_matching.all()) do
         table.insert(matching_items, {

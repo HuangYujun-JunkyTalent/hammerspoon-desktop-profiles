@@ -1,0 +1,69 @@
+---A message at the top of every screen while the desktop manager moves windows, so that the user
+---waits before working with the windows.
+---The message shows on every desktop, because a restore shows other desktops while it runs, and an
+---hs.alert stays on the desktop where it appeared.
+local busy_message = {}
+
+local BACKGROUND_COLOR = { white = 0.12, alpha = 0.92 }
+local TEXT_COLOR = { white = 1, alpha = 1 }
+local TEXT_STYLE = { font = ".AppleSystemUIFont", size = 15 }
+local PADDING = { w = 18, h = 10 }
+local TOP_MARGIN = 12
+
+---@class BusyMessage
+---@field canvases table[] one hs.canvas per screen
+
+---@param text string
+---@param screen_frame table the frame of a screen without the menu bar and the Dock
+---@param text_size table the w and h of the text
+---@return table canvas an hs.canvas
+local function show_on_screen(text, screen_frame, text_size)
+    local w = math.ceil(text_size.w) + 2 * PADDING.w
+    local h = math.ceil(text_size.h) + 2 * PADDING.h
+    local canvas = hs.canvas.new({
+        x = screen_frame.x + (screen_frame.w - w) / 2,
+        y = screen_frame.y + TOP_MARGIN,
+        w = w,
+        h = h,
+    })
+    canvas:level(hs.canvas.windowLevels.overlay)
+    canvas:behaviorAsLabels({ "canJoinAllSpaces", "stationary" })
+    canvas:replaceElements({
+        {
+            type = "rectangle",
+            action = "fill",
+            fillColor = BACKGROUND_COLOR,
+            roundedRectRadii = { xRadius = h / 2, yRadius = h / 2 },
+        },
+        {
+            type = "text",
+            text = text,
+            textFont = TEXT_STYLE.font,
+            textSize = TEXT_STYLE.size,
+            textColor = TEXT_COLOR,
+            frame = { x = PADDING.w, y = PADDING.h, w = w - 2 * PADDING.w, h = h - 2 * PADDING.h },
+        },
+    })
+    canvas:show()
+    return canvas
+end
+
+---@param text string
+---@return BusyMessage
+function busy_message.show(text)
+    local text_size = hs.drawing.getTextDrawingSize(text, TEXT_STYLE)
+    local canvases = {}
+    for _, screen in ipairs(hs.screen.allScreens()) do
+        table.insert(canvases, show_on_screen(text, screen:frame(), text_size))
+    end
+    return { canvases = canvases }
+end
+
+---@param message BusyMessage
+function busy_message.close(message)
+    for _, canvas in ipairs(message.canvases) do
+        canvas:delete()
+    end
+end
+
+return busy_message

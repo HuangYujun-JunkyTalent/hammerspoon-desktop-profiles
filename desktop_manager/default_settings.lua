@@ -1,6 +1,7 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
 local list_layout = require("desktop_manager.core.list_layout")
 local list_sizing = require("desktop_manager.core.list_sizing")
+local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
 local title_overflow = require("desktop_manager.core.title_overflow")
@@ -26,15 +27,14 @@ local default_settings = {}
 ---@class Settings
 ---@field state_file_path string
 ---@field profile_count integer
----@field hotkey_modifiers string[]
----@field app_hotkey_modifiers string[] the modifiers that, with a number, reach an application.
----Control-Option takes no shortcut of macOS or of the running applications, while Command takes
----the tabs and views of many applications and Command-Shift takes the screenshots of macOS.
 ---@field app_number_count integer
 ---@field url_event_name string
 ---@field initial_monitor_matching string
 ---@field concealment_method string a value of concealment_method
+---@field match_windows_by string a value of match_windows_by
 ---@field missing_window_policy string a value of missing_window_policy
+---@field search_highlight_colors table|nil the colors of highlight_colors that replace the
+---defaults, by name, such as `{ selection = { hex = "#2E8B57", alpha = 0.9 } }`
 ---@field preview_method string a value of preview_method
 ---@field preview_blur number 1 or more: a preview keeps 1 / preview_blur of the detail of its size
 ---@field preview_size table the w and h of a preview, as fractions of the width and height of the
@@ -54,17 +54,16 @@ function default_settings.create(state_file_path)
     return {
         state_file_path = state_file_path,
         profile_count = 9,
-        hotkey_modifiers = { "cmd", "alt", "shift" },
-        app_hotkey_modifiers = { "ctrl", "alt" },
         app_number_count = 9,
         url_event_name = "desktop-manager",
         initial_monitor_matching = monitor_matching.BY_COUNT,
         concealment_method = concealment_method.MINIMIZE_WINDOWS,
+        match_windows_by = match_windows_by.TITLE,
         missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW,
         preview_method = preview_method.BLURRED_SNAPSHOTS,
         preview_blur = 1,
         preview_size = { w = 0.1, h = 0.1 },
-        list_font_size = 0.01,
+        list_font_size = 0.012,
         list_layout = list_layout.COLUMNS,
         list_sizing = list_sizing.FILL_SCREEN,
         title_overflow = title_overflow.WRAP,

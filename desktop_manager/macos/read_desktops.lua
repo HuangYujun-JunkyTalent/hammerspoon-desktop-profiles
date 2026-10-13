@@ -55,6 +55,13 @@ function read_desktops.read_desktop_layout()
 end
 
 ---@param window_id integer
+---@return integer[] the desktops that macOS lists for the window, several for a window on all
+---desktops
+function read_desktops.list_window_space_ids(window_id)
+    return hs.spaces.windowSpaces(window_id) or {}
+end
+
+---@param window_id integer
 ---@return integer|nil
 function read_desktops.find_window_space_id(window_id)
     local space_ids = hs.spaces.windowSpaces(window_id)

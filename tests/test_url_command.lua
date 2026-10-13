@@ -9,6 +9,13 @@ return {
         expect.equal(command, { action = "activate", profile_number = 3 })
     end,
 
+    search_windows_needs_no_profile = function()
+        expect.equal(
+            url_command.parse({ action = "search-windows" }, LIMITS),
+            { action = "search-windows" }
+        )
+    end,
+
     reset_app_numbers_needs_no_number = function()
         expect.equal(
             url_command.parse({ action = "reset-app-numbers" }, LIMITS),
@@ -36,6 +43,13 @@ return {
         local command =
             url_command.parse({ action = "rename", profile = "2", name = "  Writing " }, LIMITS)
         expect.equal(command, { action = "rename", profile_number = 2, name = "Writing" })
+    end,
+
+    clear_reads_the_profile_number = function()
+        expect.equal(
+            url_command.parse({ action = "clear", profile = "3" }, LIMITS),
+            { action = "clear", profile_number = 3 }
+        )
     end,
 
     rename_rejects_a_blank_name = function()

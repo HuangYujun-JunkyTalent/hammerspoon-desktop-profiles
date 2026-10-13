@@ -33,6 +33,19 @@ function track_windows.index_by_id(windows)
     return index
 end
 
+---@param windows table[] hs.window objects
+---@return table<integer, boolean> the ids of the windows
+function track_windows.index_ids(windows)
+    local ids = {}
+    for _, window in ipairs(windows) do
+        local window_id = window:id()
+        if window_id then
+            ids[window_id] = true
+        end
+    end
+    return ids
+end
+
 ---@param window table an hs.window
 ---@return string
 function track_windows.describe(window)

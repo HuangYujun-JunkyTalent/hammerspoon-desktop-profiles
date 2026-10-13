@@ -1,3 +1,4 @@
+local app_pool = require("desktop_manager.core.app_pool")
 local expect = require("tests.expect")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 local profile_state = require("desktop_manager.core.profile_state")
@@ -173,6 +174,66 @@ return {
         })
         local decoded = profile_state.decode(state)
         expect.equal(decoded, state)
+    end,
+
+    decode_round_trips_the_app_pool_and_reads_the_list_of_an_older_state = function()
+        local pool = app_pool.with_listed(app_pool.new(), "org.mozilla.firefox", "Firefox", true)
+        local state =
+            profile_state.with_app_pool(profile_state.new_state(monitor_matching.BY_COUNT), pool)
+        expect.equal(profile_state.decode(state), state)
+        local older = profile_state.new_state(monitor_matching.BY_COUNT)
+        older.app_pool = nil
+        older.managed_applications = { { bundle_id = "org.mozilla.firefox", app_name = "Firefox" } }
+        expect.equal(profile_state.decode(older).app_pool.mode, app_pool.MANAGE_LISTED)
+    end,
+
+    decode_round_trips_the_desktop_counts_and_reads_a_state_without_them = function()
+        local state =
+            profile_state.with_desktop_counts(profile_state.new_state(monitor_matching.BY_COUNT), {
+                kept = { ["built-in"] = 3, ["external 1"] = 4 },
+                last_reading = {
+                    displays_key = "BUILTIN-UUID;DELL-UUID",
+                    counts = { ["built-in"] = 5, ["external 1"] = 4 },
+                },
+            })
+        expect.equal(profile_state.decode(state), state)
+        local older = profile_state.new_state(monitor_matching.BY_COUNT)
+        older.desktop_counts = nil
+        expect.equal(profile_state.decode(older).desktop_counts, { kept = {}, last_reading = nil })
+        older.desktop_counts = { kept = { ["built-in"] = 0, [""] = 2.0 }, last_reading = 7 }
+        expect.equal(
+            profile_state.decode(older).desktop_counts,
+            { kept = { [""] = 2 }, last_reading = nil }
+        )
+    end,
+
+    clearing_a_profile_keeps_its_name_and_numbers = function()
+        local state = profile_state.with_arrangement(
+            profile_state.rename_profile(
+                profile_state.new_state(monitor_matching.BY_COUNT),
+                1,
+                "Writing"
+            ),
+            1,
+            ARRANGEMENT
+        )
+        state = profile_state.with_app_numbers(state, 1, {
+            {
+                number = 3,
+                bundle_id = "com.apple.Safari",
+                app_name = "Safari",
+                is_chosen_by_user = true,
+            },
+        })
+        expect.equal(profile_state.has_arrangements(state, 1), true)
+        local cleared = profile_state.clear_arrangements(state, 1)
+        expect.equal(profile_state.has_arrangements(cleared, 1), false)
+        expect.equal(profile_state.profile_or_default(cleared, 1).name, "Writing")
+        expect.equal(
+            profile_state.profile_or_default(cleared, 1).app_numbers,
+            profile_state.profile_or_default(state, 1).app_numbers
+        )
+        expect.equal(profile_state.has_arrangements(state, 1), true)
     end,
 
     decode_keeps_the_numbers_of_profile_0_and_drops_its_arrangements = function()

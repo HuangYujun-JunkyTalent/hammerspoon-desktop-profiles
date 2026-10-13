@@ -12,6 +12,8 @@ local fake_hammerspoon = {}
 ---@field space_id integer
 ---@field frame Rect
 ---@field is_standard boolean|nil false for a panel such as the search window of a launcher
+---@field is_unseen boolean|nil true for a window on a desktop that the user has not visited since
+---Hammerspoon started, which accessibility does not reach until its desktop shows
 
 ---@class FakeApplicationSpec
 ---@field bundle_id string
@@ -33,9 +35,55 @@ local fake_hammerspoon = {}
 
 local USER_SPACE_TYPE = 0
 local ESCAPE_KEY_CODE = 53
+---The key codes of the keys that the lists act on, and the code that the fake gives a typed
+---character, which names no key.
+local KEY_CODES = {
+    escape = ESCAPE_KEY_CODE,
+    ["return"] = 36,
+    padenter = 76,
+    delete = 51,
+    tab = 48,
+    up = 126,
+    down = 125,
+    left = 123,
+    right = 124,
+}
+for index, digit in ipairs({ "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" }) do
+    KEY_CODES[digit] = ({ 18, 19, 20, 21, 23, 22, 26, 28, 25, 29 })[index]
+end
+for index, letter in ipairs({ "a", "s", "d", "f", "h", "g", "z", "x", "c", "v" }) do
+    KEY_CODES[letter] = index - 1
+end
+KEY_CODES.space = 49
+local CHARACTER_KEY_CODE = 1000
+---The output of the fake of `list_server_windows.js`, which the fake of hs.json.decode reads.
+local SERVER_WINDOWS_OUTPUT = "server windows"
+local OSASCRIPT_PATH = "/usr/bin/osascript"
+local FIRST_PID = 500
+local WINDOW_MANAGER_BUNDLE_ID = "com.apple.WindowManager"
 
 ---@param spec FakeWorldSpec
 ---@return table world
+---The shortcuts "Switch to Desktop 1" to "Switch to Desktop N" as Control-1 to Control-9 and
+---Control-0, in the form of `AppleSymbolicHotKeys` of macOS.
+---@param highest_number integer 9, as on the machine of the user, or 10, as the script of the
+---repository turns them on
+---@return table
+local function all_desktop_shortcuts(highest_number)
+    local key_codes = { 18, 19, 20, 21, 23, 22, 26, 28, 25, 29 }
+    local hotkeys = {}
+    for number = 1, highest_number do
+        local key_code = key_codes[number]
+        hotkeys[tostring(117 + number)] = {
+            enabled = true,
+            value = { parameters = { 65535, key_code, 262144 }, type = "standard" },
+        }
+    end
+    return hotkeys
+end
+
+local SYMBOLIC_HOTKEYS_EXPORT = "defaults export com.apple.symbolichotkeys -"
+
 function fake_hammerspoon.install(spec)
     local world = {
         clock = 0,
@@ -48,6 +96,9 @@ function fake_hammerspoon.install(spec)
         window_operations = {},
         held_modifiers = {},
         key_strokes = {},
+        symbolic_hotkeys = all_desktop_shortcuts(9),
+        tasks = {},
+        task_exit_code = 0,
         alerts = {},
         notifications = {},
         hotkeys = {},
@@ -59,6 +110,7 @@ function fake_hammerspoon.install(spec)
         rendered_sizes = {},
         snapshot_seconds = 0.05,
         overlay = nil,
+        canvases = {},
         focused_window_id = nil,
         url_handlers = {},
         filter_callbacks = {},
@@ -66,7 +118,13 @@ function fake_hammerspoon.install(spec)
         screen_watchers = {},
         menu_selections = {},
         saved_json = nil,
+        json_files = {},
+        shortcuts_file_path = "/fake/keyboard-shortcuts.json",
         next_window_id = 1000,
+        next_space_id = 2000,
+        is_mission_control_open = false,
+        mission_control_actions = {},
+        window_list_runs = 0,
     }
 
     local function find_screen_at(frame)
@@ -90,35 +148,127 @@ function fake_hammerspoon.install(spec)
 
     local screen_objects = {}
     local screen_object_by_id = {}
-    for _, screen in ipairs(world.screens) do
-        local object = {}
-        function object:getUUID()
-            return screen.uuid
+    ---Builds the hs.screen objects of the screens of the world again, in the tables that the fake
+    ---hands out, after a screen connects or disconnects.
+    local function rebuild_screen_objects()
+        for index = #screen_objects, 1, -1 do
+            screen_objects[index] = nil
         end
-        function object:name()
-            return screen.name
+        for id in pairs(screen_object_by_id) do
+            screen_object_by_id[id] = nil
         end
-        function object:id()
-            return screen.id
+        for _, screen in ipairs(world.screens) do
+            local object = {}
+            function object:getUUID()
+                return screen.uuid
+            end
+            function object:name()
+                return screen.name
+            end
+            function object:id()
+                return screen.id
+            end
+            function object:frame()
+                local frame = screen.frame
+                return { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
+            end
+            object.fullFrame = object.frame
+            table.insert(screen_objects, object)
+            screen_object_by_id[screen.id] = object
         end
-        function object:frame()
-            local frame = screen.frame
-            return { x = frame.x, y = frame.y, w = frame.w, h = frame.h }
-        end
-        object.fullFrame = object.frame
-        function object:fromUnitRect(unit)
-            return {
-                x = screen.frame.x + unit.x * screen.frame.w,
-                y = screen.frame.y + unit.y * screen.frame.h,
-                w = unit.w * screen.frame.w,
-                h = unit.h * screen.frame.h,
-            }
-        end
-        table.insert(screen_objects, object)
-        screen_object_by_id[screen.id] = object
     end
+    rebuild_screen_objects()
 
     local new_timer
+    local mission_control_element
+
+    ---An accessibility element whose attributes may be functions, read at each call, and whose
+    ---actions are functions.
+    ---@param attributes table<string, any>
+    ---@param actions table<string, fun()>
+    ---@return table
+    local function accessibility_element(attributes, actions)
+        return {
+            attributeValue = function(_, name)
+                local value = attributes[name]
+                if type(value) == "function" then
+                    return value()
+                end
+                return value
+            end,
+            performAction = function(_, name)
+                local action = actions[name]
+                if not action then
+                    return nil, "the element has no action " .. name
+                end
+                action()
+                return true
+            end,
+        }
+    end
+
+    local window_manager_application = {}
+    function window_manager_application:bundleID()
+        return WINDOW_MANAGER_BUNDLE_ID
+    end
+
+    ---@param display table a display of the world
+    ---@param space_id integer
+    ---@return table the thumbnail of a desktop in the list of Mission Control
+    local function desktop_thumbnail(display, space_id)
+        return accessibility_element({ AXIdentifier = "mc.space" }, {
+            AXRemoveDesktop = function()
+                for index = #display.space_ids, 1, -1 do
+                    if display.space_ids[index] == space_id then
+                        table.remove(display.space_ids, index)
+                    end
+                end
+                for _, window in pairs(world.windows) do
+                    if window.space_id == space_id then
+                        window.space_id = display.space_ids[1]
+                    end
+                end
+                table.insert(world.mission_control_actions, "remove " .. space_id)
+            end,
+        })
+    end
+
+    ---The tree of Mission Control under the process WindowManager, as macOS 27 keeps it: a group
+    ---per display, with the button that adds a desktop and the list of the desktops.
+    ---@return table
+    mission_control_element = function()
+        local groups = {}
+        for _, screen in ipairs(world.screens) do
+            local display = find_display(screen.uuid)
+            local add_button = accessibility_element({ AXIdentifier = "mc.spaces.add" }, {
+                AXPress = function()
+                    local space_id = world.next_space_id
+                    world.next_space_id = space_id + 1
+                    table.insert(display.space_ids, space_id)
+                    table.insert(world.mission_control_actions, "add " .. space_id)
+                end,
+            })
+            local spaces_list = accessibility_element({
+                AXIdentifier = "mc.spaces.list",
+                AXChildren = function()
+                    local thumbnails = {}
+                    for _, space_id in ipairs(display.space_ids) do
+                        table.insert(thumbnails, desktop_thumbnail(display, space_id))
+                    end
+                    return thumbnails
+                end,
+            }, {})
+            table.insert(
+                groups,
+                accessibility_element({
+                    AXIdentifier = "mc.display",
+                    AXDisplayID = screen.id,
+                    AXChildren = { add_button, spaces_list },
+                }, {})
+            )
+        end
+        return accessibility_element({ AXChildren = groups }, {})
+    end
 
     local application_objects = {}
     local function application_object(bundle_id)
@@ -132,6 +282,12 @@ function fake_hammerspoon.install(spec)
         end
         function object:name()
             return application.name
+        end
+        function object:pid()
+            return application.pid
+        end
+        function object:kind()
+            return 1
         end
         function object:isHidden()
             return application.is_hidden
@@ -168,7 +324,7 @@ function fake_hammerspoon.install(spec)
             local windows = {}
             for _, window_id in ipairs(world.window_order) do
                 local window = world.windows[window_id]
-                if window.bundle_id == bundle_id then
+                if window.bundle_id == bundle_id and not window.is_unseen then
                     table.insert(windows, window.object)
                 end
             end
@@ -205,6 +361,7 @@ function fake_hammerspoon.install(spec)
             frame = window_spec.frame,
             is_minimized = false,
             is_standard = window_spec.is_standard,
+            is_unseen = window_spec.is_unseen,
         }
         local object = {}
         function object:id()
@@ -261,9 +418,10 @@ function fake_hammerspoon.install(spec)
         return window
     end
 
-    for _, application in ipairs(spec.applications) do
+    for index, application in ipairs(spec.applications) do
         world.applications[application.bundle_id] = {
             name = application.name,
+            pid = FIRST_PID + index,
             is_running = application.is_running,
             is_hidden = false,
             launch_titles = application.launch_titles or {},
@@ -285,6 +443,26 @@ function fake_hammerspoon.install(spec)
     ---@param window_id integer
     function world.unminimize_window(window_id)
         world.windows[window_id].object:unminimize()
+    end
+
+    ---Adds a window on a desktop that the user has not visited since Hammerspoon started, which
+    ---accessibility reaches once its desktop shows.
+    ---@param bundle_id string
+    ---@param title string
+    ---@param space_id integer
+    ---@return table window
+    function world.create_unseen_window(bundle_id, title, space_id)
+        world.next_window_id = world.next_window_id + 1
+        world.applications[bundle_id].is_running = true
+        local screen = world.screens[1]
+        return add_window({
+            id = world.next_window_id,
+            bundle_id = bundle_id,
+            title = title,
+            space_id = space_id,
+            frame = { x = screen.frame.x, y = screen.frame.y, w = 600, h = 400 },
+            is_unseen = true,
+        })
     end
 
     ---@param bundle_id string
@@ -332,15 +510,49 @@ function fake_hammerspoon.install(spec)
         })
     end
 
-    function world.press_escape()
+    ---Presses a key that hs.keycodes.map names, such as "tab", with the modifiers held.
+    ---@param name string
+    ---@param flags table<string, boolean>|nil
+    function world.press_key(name, flags)
         send_to_event_taps({
             getType = function()
                 return 10
             end,
             getKeyCode = function()
-                return ESCAPE_KEY_CODE
+                return KEY_CODES[name]
+            end,
+            getFlags = function()
+                return flags or {}
+            end,
+            getCharacters = function()
+                return ""
             end,
         })
+    end
+
+    function world.press_escape()
+        world.press_key("escape")
+    end
+
+    ---Types the characters one key at a time, without modifiers.
+    ---@param text string
+    function world.type_keys(text)
+        for character in text:gmatch(utf8.charpattern) do
+            send_to_event_taps({
+                getType = function()
+                    return 10
+                end,
+                getKeyCode = function()
+                    return CHARACTER_KEY_CODE
+                end,
+                getFlags = function()
+                    return {}
+                end,
+                getCharacters = function()
+                    return character
+                end,
+            })
+        end
     end
 
     ---The texts of the list on the screen, with the selected line marked by ">".
@@ -351,7 +563,7 @@ function fake_hammerspoon.install(spec)
         end
         local texts, is_next_selected = {}, false
         for _, element in ipairs(world.overlay.elements) do
-            if element.type == "rectangle" and element.frame then
+            if element.type == "rectangle" and element.id == "selection" then
                 is_next_selected = true
             elseif element.type == "text" then
                 table.insert(texts, (is_next_selected and ">" or " ") .. element.text)
@@ -359,6 +571,116 @@ function fake_hammerspoon.install(spec)
             end
         end
         return texts
+    end
+
+    ---The texts of the list on the screen, each after the mark of the rectangle behind it, such as
+    ---"selection" or "match-strong", or after "faded" for a faded text, or after "plain".
+    ---@return string[]|nil
+    function world.read_overlay_marks()
+        if not world.overlay or not world.overlay.is_visible then
+            return nil
+        end
+        local texts, mark = {}, nil
+        for _, element in ipairs(world.overlay.elements) do
+            if element.type == "rectangle" and element.frame and not element.trackMouseByBounds then
+                mark = element.id
+            elseif element.type == "text" then
+                table.insert(texts, (mark or element.id or "plain") .. " " .. element.text)
+                mark = nil
+            end
+        end
+        return texts
+    end
+
+    ---The parts of the panel of the search on the screen: the two texts of the search line, the
+    ---note without windows, and each preview and each application as its mark and its texts.
+    ---The mark is the id of the rectangle behind the item, such as "selection", "hovered" or
+    ---"match-strong", or "faded" for an item with a faded text, or "plain".
+    ---@return table|nil
+    function world.read_search_panel()
+        if not world.overlay or not world.overlay.is_visible then
+            return nil
+        end
+        local panel = { line = {}, windows = {}, applications = {}, note = nil }
+        local texts, mark, is_faded = {}, nil, false
+        for _, element in ipairs(world.overlay.elements) do
+            if element.type == "rectangle" and element.trackMouseByBounds then
+                local kind = element.id:match("^(%a+):")
+                local item = (mark or (is_faded and "faded") or "plain")
+                    .. " "
+                    .. table.concat(texts, " | ")
+                table.insert(kind == "window" and panel.windows or panel.applications, item)
+                texts, mark, is_faded = {}, nil, false
+            elseif
+                element.type == "rectangle"
+                and element.frame
+                and element.id ~= "search-field"
+            then
+                mark = element.id
+            elseif element.type == "text" and #panel.line < 2 then
+                table.insert(panel.line, element.text)
+            elseif element.type == "text" and element.id == "no-window-note" then
+                panel.note = element.text
+            elseif element.type == "text" then
+                table.insert(texts, element.text)
+                is_faded = is_faded or element.id == "faded"
+            end
+        end
+        return panel
+    end
+
+    ---@param id string
+    ---@param attribute string
+    ---@return table the element of the panel on the screen with the id, which tracks the mouse
+    local function find_tracking_element(id, attribute)
+        for _, element in ipairs(world.overlay.elements) do
+            if element.id == id then
+                if not element[attribute] or not element.trackMouseByBounds then
+                    error(
+                        string.format(
+                            "the element %s lacks %s or tracking by bounds",
+                            id,
+                            attribute
+                        )
+                    )
+                end
+                return element
+            end
+        end
+        error("the panel on the screen has no element " .. id)
+    end
+
+    ---Moves the mouse onto the element with the id, as the user does, which leaves the element
+    ---under the mouse before.
+    ---@param id string
+    function world.move_mouse_to(id)
+        find_tracking_element(id, "trackMouseEnterExit")
+        local canvas = world.overlay
+        if world.mouse_element_id and world.mouse_element_id ~= id then
+            canvas.mouse_callback(canvas, "mouseExit", world.mouse_element_id, 0, 0)
+        end
+        world.mouse_element_id = id
+        canvas.mouse_callback(canvas, "mouseEnter", id, 0, 0)
+    end
+
+    ---Clicks the element with the id, after moving the mouse onto it.
+    ---@param id string
+    function world.click(id)
+        world.move_mouse_to(id)
+        find_tracking_element(id, "trackMouseUp")
+        world.overlay.mouse_callback(world.overlay, "mouseUp", id, 0, 0)
+    end
+
+    function world.move_mouse_out_of_panel()
+        local canvas = world.overlay
+        if not (canvas.canvas_mouse_events and canvas.canvas_mouse_events.enter_exit) then
+            error("the panel on the screen reports no exit of the mouse")
+        end
+        if world.mouse_element_id then
+            canvas.mouse_callback(canvas, "mouseExit", world.mouse_element_id, 0, 0)
+            world.mouse_element_id = nil
+        end
+        canvas.mouse_callback(canvas, "mouseExit", "_canvas_", 0, 0)
     end
 
     ---@return string[]|nil the sources of the images of the list on the screen, in order
@@ -404,6 +726,72 @@ function fake_hammerspoon.install(spec)
         end
         table.insert(world.timers, timer)
         return timer
+    end
+
+    ---Sends a message of the page of the webview, as its script posts one.
+    ---@param body table
+    function world.post_to_webview(body)
+        world.webview_message_callback({ name = "appPool", body = body })
+    end
+
+    ---Disconnects a screen as macOS 27 does while displays have separate Spaces: the first desktop
+    ---of the screen goes away and its windows go to the first desktop of the first other screen,
+    ---and the other desktops of the screen move to the end of that screen with their windows.
+    ---@param uuid string
+    function world.disconnect_screen(uuid)
+        local display = find_display(uuid)
+        local remaining = nil
+        for _, candidate in ipairs(world.displays) do
+            if candidate ~= display and remaining == nil then
+                remaining = candidate
+            end
+        end
+        local remaining_screen = nil
+        for _, screen in ipairs(world.screens) do
+            if screen.uuid == remaining.uuid then
+                remaining_screen = screen
+            end
+        end
+        for position, space_id in ipairs(display.space_ids) do
+            if position > 1 then
+                table.insert(remaining.space_ids, space_id)
+            end
+            for _, window in pairs(world.windows) do
+                if window.space_id == space_id then
+                    window.space_id = position == 1 and remaining.space_ids[1] or space_id
+                    local frame = remaining_screen.frame
+                    window.frame = {
+                        x = frame.x,
+                        y = frame.y,
+                        w = math.min(window.frame.w, frame.w),
+                        h = math.min(window.frame.h, frame.h),
+                    }
+                end
+            end
+        end
+        for index = #world.displays, 1, -1 do
+            if world.displays[index] == display then
+                table.remove(world.displays, index)
+            end
+        end
+        for index = #world.screens, 1, -1 do
+            if world.screens[index].uuid == uuid then
+                table.remove(world.screens, index)
+            end
+        end
+        rebuild_screen_objects()
+    end
+
+    ---Connects a screen with the desktops that macOS gives it, the first of them in view.
+    ---@param screen { id: integer, uuid: string, name: string, frame: Rect }
+    ---@param space_ids integer[]
+    function world.connect_screen(screen, space_ids)
+        table.insert(world.screens, screen)
+        table.insert(
+            world.displays,
+            { uuid = screen.uuid, space_ids = space_ids, active_space_id = space_ids[1] }
+        )
+        rebuild_screen_objects()
     end
 
     function world.advance(seconds)
@@ -456,6 +844,11 @@ function fake_hammerspoon.install(spec)
                 count = count + 1
                 if count == number then
                     display.active_space_id = space_id
+                    for _, window in pairs(world.windows) do
+                        if window.space_id == space_id then
+                            window.is_unseen = false
+                        end
+                    end
                 end
             end
         end
@@ -488,7 +881,9 @@ function fake_hammerspoon.install(spec)
     local function list_window_objects()
         local windows = {}
         for _, window_id in ipairs(world.window_order) do
-            table.insert(windows, world.windows[window_id].object)
+            if not world.windows[window_id].is_unseen then
+                table.insert(windows, world.windows[window_id].object)
+            end
         end
         return windows
     end
@@ -502,7 +897,10 @@ function fake_hammerspoon.install(spec)
         for _, window_id in ipairs(world.window_order) do
             local window = world.windows[window_id]
             local application = world.applications[window.bundle_id]
-            if not (application.is_hidden and application.is_dropped_by_filter_while_hidden) then
+            if
+                not window.is_unseen
+                and not (application.is_hidden and application.is_dropped_by_filter_while_hidden)
+            then
                 table.insert(windows, window.object)
             end
         end
@@ -568,8 +966,123 @@ function fake_hammerspoon.install(spec)
                 end
                 return { window.space_id }
             end,
-            toggleMissionControl = function() end,
+            windowsForSpace = function(space_id)
+                local window_ids = {}
+                for _, window_id in ipairs(world.window_order) do
+                    local window = world.windows[window_id]
+                    if window.space_id == space_id and not window.is_minimized then
+                        table.insert(window_ids, window_id)
+                    end
+                end
+                return window_ids
+            end,
+            toggleMissionControl = function()
+                world.is_mission_control_open = not world.is_mission_control_open
+            end,
             watcher = watcher_factory(),
+        },
+        execute = function(command)
+            if command ~= SYMBOLIC_HOTKEYS_EXPORT then
+                error("the fake runs no command but the export of the shortcuts: " .. command)
+            end
+            return SYMBOLIC_HOTKEYS_EXPORT, true
+        end,
+        webview = {
+            usercontent = {
+                new = function(name)
+                    local content = { name = name }
+                    function content:setCallback(callback)
+                        world.webview_message_callback = callback
+                        return content
+                    end
+                    return content
+                end,
+            },
+            new = function(frame)
+                local view = { frame = frame, is_visible = false, page = "" }
+                for _, name in ipairs({
+                    "windowTitle",
+                    "windowStyle",
+                    "allowTextEntry",
+                    "closeOnEscape",
+                    "deleteOnClose",
+                    "bringToFront",
+                }) do
+                    view[name] = function()
+                        return view
+                    end
+                end
+                function view:windowCallback(callback)
+                    view.window_callback = callback
+                    return view
+                end
+                function view:html(text)
+                    view.page = text
+                    return view
+                end
+                function view:evaluateJavaScript(script)
+                    view.scripts = view.scripts or {}
+                    table.insert(view.scripts, script)
+                    return view
+                end
+                function view:show()
+                    view.is_visible = true
+                    world.webview = view
+                    return view
+                end
+                function view:hswindow()
+                    return nil
+                end
+                function view:delete()
+                    view.is_visible = false
+                end
+                return view
+            end,
+        },
+        task = {
+            ---A task of the fake lists the windows of the window server after 0.2 seconds, or
+            ---runs the script that turns on the desktop shortcuts at once.
+            new = function(path, callback, arguments)
+                local task = {}
+                function task:start()
+                    if path == OSASCRIPT_PATH then
+                        world.window_list_runs = world.window_list_runs + 1
+                        new_timer(0.2, function()
+                            callback(0, SERVER_WINDOWS_OUTPUT, "")
+                        end, false)
+                        return task
+                    end
+                    table.insert(world.tasks, { path = path, arguments = arguments })
+                    local script = arguments and arguments[1] or ""
+                    if
+                        world.task_exit_code == 0 and script:match("disable_macos_shortcut%.sh$")
+                    then
+                        world.symbolic_hotkeys[arguments[2]] = {
+                            enabled = false,
+                            value = {
+                                parameters = {
+                                    tonumber(arguments[3]),
+                                    tonumber(arguments[4]),
+                                    tonumber(arguments[5]),
+                                },
+                            },
+                        }
+                    elseif world.task_exit_code == 0 then
+                        world.symbolic_hotkeys = all_desktop_shortcuts(10)
+                    end
+                    callback(world.task_exit_code, "", "")
+                    return task
+                end
+                return task
+            end,
+        },
+        plist = {
+            readString = function(text)
+                if text ~= SYMBOLIC_HOTKEYS_EXPORT then
+                    return nil
+                end
+                return { AppleSymbolicHotKeys = world.symbolic_hotkeys }
+            end,
         },
         eventtap = {
             checkKeyboardModifiers = function()
@@ -578,7 +1091,7 @@ function fake_hammerspoon.install(spec)
             keyStroke = function(modifiers, character)
                 table.insert(world.key_strokes, table.concat(modifiers, "+") .. "+" .. character)
                 if #modifiers == 1 and modifiers[1] == "ctrl" and tonumber(character) then
-                    switch_by_shortcut(tonumber(character))
+                    switch_by_shortcut(character == "0" and 10 or tonumber(character))
                 end
             end,
             event = { types = { keyDown = 10, flagsChanged = 12 } },
@@ -596,17 +1109,44 @@ function fake_hammerspoon.install(spec)
                 return tap
             end,
         },
-        keycodes = { map = { escape = ESCAPE_KEY_CODE } },
+        keycodes = {
+            map = (function()
+                local map = {}
+                for name, code in pairs(KEY_CODES) do
+                    map[name] = code
+                    map[code] = name
+                end
+                return map
+            end)(),
+        },
         image = {
             imageFromAppBundle = function(bundle_id)
                 return { source = "icon " .. bundle_id }
+            end,
+        },
+        drawing = {
+            getTextDrawingSize = function(text, style)
+                return { w = #text * style.size / 2, h = style.size }
             end,
         },
         canvas = {
             windowLevels = { overlay = 102 },
             new = function(frame)
                 local canvas = { current_frame = frame, elements = {}, is_visible = false }
+                table.insert(world.canvases, canvas)
                 function canvas:level()
+                    return canvas
+                end
+                function canvas:behaviorAsLabels()
+                    return canvas
+                end
+                function canvas:mouseCallback(callback)
+                    canvas.mouse_callback = callback
+                    return canvas
+                end
+                function canvas:canvasMouseEvents(down, up, enter_exit, move)
+                    canvas.canvas_mouse_events =
+                        { down = down, up = up, enter_exit = enter_exit, move = move }
                     return canvas
                 end
                 function canvas:frame(new_frame)
@@ -661,7 +1201,7 @@ function fake_hammerspoon.install(spec)
                 end
                 for _, window_id in ipairs(world.window_order) do
                     local window = world.windows[window_id]
-                    if window ~= focused and not window.is_minimized then
+                    if window ~= focused and not window.is_minimized and not window.is_unseen then
                         table.insert(objects, window.object)
                     end
                 end
@@ -673,7 +1213,7 @@ function fake_hammerspoon.install(spec)
             end,
             get = function(window_id)
                 local window = world.windows[window_id]
-                return window and window.object
+                return window and not window.is_unseen and window.object or nil
             end,
             filter = {
                 new = function()
@@ -689,7 +1229,18 @@ function fake_hammerspoon.install(spec)
         },
         application = {
             watcher = application_watcher,
+            applicationForPID = function(pid)
+                for bundle_id, application in pairs(world.applications) do
+                    if application.pid == pid and application.is_running then
+                        return application_object(bundle_id)
+                    end
+                end
+                return nil
+            end,
             applicationsForBundleID = function(bundle_id)
+                if bundle_id == WINDOW_MANAGER_BUNDLE_ID then
+                    return { window_manager_application }
+                end
                 local application = world.applications[bundle_id]
                 if application and application.is_running then
                     return { application_object(bundle_id) }
@@ -734,12 +1285,11 @@ function fake_hammerspoon.install(spec)
             end,
         },
         axuielement = {
-            applicationElement = function()
-                return {
-                    attributeValue = function()
-                        return nil
-                    end,
-                }
+            applicationElement = function(application)
+                if application == window_manager_application and world.is_mission_control_open then
+                    return mission_control_element()
+                end
+                return accessibility_element({}, {})
             end,
         },
         hotkey = {
@@ -756,12 +1306,18 @@ function fake_hammerspoon.install(spec)
                     table.insert(world.hotkey_events, "enable " .. modifier_key .. " " .. key)
                     return hotkey
                 end
-                world.hotkey_by_shortcut[modifier_key .. " " .. key] = callback
-                if modifier_key == "cmd+alt+shift" then
-                    world.hotkeys[key] = callback
-                else
-                    world.app_hotkeys[key] = callback
+                local by_key = modifier_key == "cmd+alt+shift" and world.hotkeys
+                    or world.app_hotkeys
+                function hotkey:delete()
+                    if world.hotkey_by_shortcut[modifier_key .. " " .. key] == callback then
+                        world.hotkey_by_shortcut[modifier_key .. " " .. key] = nil
+                    end
+                    if by_key[key] == callback then
+                        by_key[key] = nil
+                    end
                 end
+                world.hotkey_by_shortcut[modifier_key .. " " .. key] = callback
+                by_key[key] = callback
                 return hotkey
             end,
         },
@@ -804,22 +1360,61 @@ function fake_hammerspoon.install(spec)
             end,
         },
         json = {
-            write = function(data)
-                world.saved_json = data
+            ---Reads the output of the fake of `list_server_windows.js`: every window, in the
+            ---form that the script prints.
+            decode = function(text)
+                if text ~= SERVER_WINDOWS_OUTPUT then
+                    error("the fake decodes no JSON but the list of the windows: " .. text)
+                end
+                local rows = {}
+                for _, window_id in ipairs(world.window_order) do
+                    local window = world.windows[window_id]
+                    table.insert(rows, {
+                        window_id = window_id,
+                        pid = world.applications[window.bundle_id].pid,
+                        title = window.title,
+                        x = window.frame.x,
+                        y = window.frame.y,
+                        w = window.frame.w,
+                        h = window.frame.h,
+                    })
+                end
+                return rows
+            end,
+            ---The state file is `world.saved_json`, and every other file is in
+            ---`world.json_files` under its path.
+            encode = function()
+                return "{}"
+            end,
+            write = function(data, path)
+                if path == world.shortcuts_file_path then
+                    world.json_files[path] = data
+                else
+                    world.saved_json = data
+                end
                 return true
             end,
-            read = function()
+            read = function(path)
+                if path == world.shortcuts_file_path then
+                    return world.json_files[path]
+                end
                 return world.saved_json
             end,
         },
         fs = {
-            attributes = function()
+            attributes = function(path)
+                if path == world.shortcuts_file_path then
+                    return world.json_files[path] and {} or nil
+                end
                 return world.saved_json and {} or nil
             end,
         },
         dialog = {
             textPrompt = function()
                 return "Rename", world.prompt_answer or ""
+            end,
+            blockAlert = function()
+                return world.alert_button or "Cancel"
             end,
         },
     }

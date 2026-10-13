@@ -9,6 +9,8 @@ local url_command = {
     NUMBER_APP = "number-app",
     RELEASE_APP_NUMBER = "release-app-number",
     RESET_APP_NUMBERS = "reset-app-numbers",
+    CLEAR = "clear",
+    SEARCH_WINDOWS = "search-windows",
 }
 
 ---@class Command
@@ -26,12 +28,14 @@ local ACTIONS_WITH_PROFILE = {
     [url_command.ACTIVATE] = true,
     [url_command.TOGGLE] = true,
     [url_command.RENAME] = true,
+    [url_command.CLEAR] = true,
 }
 
 local ACTIONS_WITHOUT_PROFILE = {
     [url_command.CYCLE_MONITOR_MATCHING] = true,
     [url_command.SAVE] = true,
     [url_command.RESET_APP_NUMBERS] = true,
+    [url_command.SEARCH_WINDOWS] = true,
 }
 
 ---`deactivate` without a profile deactivates the active profile, and with a profile deactivates

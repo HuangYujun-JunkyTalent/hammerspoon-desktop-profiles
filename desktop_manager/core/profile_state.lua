@@ -1,4 +1,7 @@
+local app_pool = require("desktop_manager.core.app_pool")
 local deep_copy = require("desktop_manager.core.deep_copy")
+local desktop_counts = require("desktop_manager.core.desktop_counts")
+local highlight_colors = require("desktop_manager.core.highlight_colors")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 
 local profile_state = {}
@@ -17,6 +20,10 @@ local profile_state = {}
 ---@field monitor_matching string
 ---@field active_profile_number integer|nil
 ---@field profiles table<string, Profile>
+---@field app_pool AppPool the applications that every profile manages
+---@field desktop_counts DesktopCounts the number of desktops of each display
+---@field highlight_colors table<string, table> the colors of the search that the window of the
+---colors chose, by the names of highlight_colors, over the setting `search_highlight_colors`
 
 profile_state.FORMAT_VERSION = 1
 
@@ -66,6 +73,9 @@ function profile_state.new_state(matching)
         monitor_matching = matching,
         active_profile_number = nil,
         profiles = {},
+        app_pool = app_pool.new(),
+        desktop_counts = desktop_counts.new(),
+        highlight_colors = {},
     }
 end
 
@@ -140,6 +150,55 @@ function profile_state.rename_profile(state, number, name)
     local profile = profile_state.profile_or_default(state, number)
     profile.name = trimmed
     return profile_state.with_profile(state, profile)
+end
+
+---Removes the records of every monitor configuration of the profile, and keeps its name and its
+---application numbers.
+---@param state State
+---@param number integer
+---@return State
+function profile_state.clear_arrangements(state, number)
+    if number == profile_state.NO_PROFILE_NUMBER then
+        error("profile 0 records no windows", 2)
+    end
+    local profile = profile_state.profile_or_default(state, number)
+    profile.arrangements = {}
+    return profile_state.with_profile(state, profile)
+end
+
+---@param state State
+---@param number integer
+---@return boolean whether the profile recorded some monitor configuration
+function profile_state.has_arrangements(state, number)
+    local profile = state.profiles[key_of(number)]
+    return profile ~= nil and next(profile.arrangements) ~= nil
+end
+
+---@param state State
+---@param pool AppPool
+---@return State
+function profile_state.with_app_pool(state, pool)
+    local updated = deep_copy.copy(state)
+    updated.app_pool = deep_copy.copy(pool)
+    return updated
+end
+
+---@param state State
+---@param colors table<string, table> the colors of the search that the window of the colors chose
+---@return State
+function profile_state.with_highlight_colors(state, colors)
+    local updated = deep_copy.copy(state)
+    updated.highlight_colors = deep_copy.copy(colors)
+    return updated
+end
+
+---@param state State
+---@param counts DesktopCounts
+---@return State
+function profile_state.with_desktop_counts(state, counts)
+    local updated = deep_copy.copy(state)
+    updated.desktop_counts = deep_copy.copy(counts)
+    return updated
 end
 
 ---The windows that some arrangement of some profile records.
@@ -338,6 +397,37 @@ local function decode_profile(raw)
     return profile
 end
 
+---@param raw_counts any
+---@return table<string, integer> the counts of at least 1, by slot key
+local function decode_counts_by_slot(raw_counts)
+    local counts = {}
+    for slot_key, raw_count in pairs(type(raw_counts) == "table" and raw_counts or {}) do
+        local count = to_integer(raw_count)
+        if type(slot_key) == "string" and count and count >= 1 then
+            counts[slot_key] = count
+        end
+    end
+    return counts
+end
+
+---@param raw any
+---@return DesktopCounts
+local function decode_desktop_counts(raw)
+    local counts = desktop_counts.new()
+    if type(raw) ~= "table" then
+        return counts
+    end
+    counts.kept = decode_counts_by_slot(raw.kept)
+    local reading = raw.last_reading
+    if type(reading) == "table" and type(reading.displays_key) == "string" then
+        counts.last_reading = {
+            displays_key = reading.displays_key,
+            counts = decode_counts_by_slot(reading.counts),
+        }
+    end
+    return counts
+end
+
 ---Reads a state decoded from JSON, and drops the parts that do not have the expected shape.
 ---@param raw any
 ---@return State|nil state
@@ -372,6 +462,9 @@ function profile_state.decode(raw)
     if active_number and active_number >= 1 then
         state.active_profile_number = active_number
     end
+    state.app_pool = app_pool.decode(raw.app_pool, raw.managed_applications)
+    state.desktop_counts = decode_desktop_counts(raw.desktop_counts)
+    state.highlight_colors = highlight_colors.decode(raw.highlight_colors)
     return state, nil
 end
 

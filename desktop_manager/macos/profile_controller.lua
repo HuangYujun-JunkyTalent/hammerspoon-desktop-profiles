@@ -1,13 +1,21 @@
 local app_numbers = require("desktop_manager.core.app_numbers")
+local app_pool = require("desktop_manager.core.app_pool")
+local app_pool_window = require("desktop_manager.macos.app_pool_window")
 local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
+local busy_message = require("desktop_manager.macos.busy_message")
+local color_window = require("desktop_manager.macos.color_window")
 local concealment_method = require("desktop_manager.core.concealment_method")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
+local desktop_counts = require("desktop_manager.core.desktop_counts")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
+local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_layout = require("desktop_manager.core.list_layout")
 local list_sizing = require("desktop_manager.core.list_sizing")
+local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local missing_windows = require("desktop_manager.core.missing_windows")
+local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 local new_windows = require("desktop_manager.macos.new_windows")
@@ -20,19 +28,25 @@ local read_screens = require("desktop_manager.macos.read_screens")
 local restore_plan = require("desktop_manager.core.restore_plan")
 local restore_windows = require("desktop_manager.macos.restore_windows")
 local retained_timers = require("desktop_manager.macos.retained_timers")
+local search_windows = require("desktop_manager.macos.search_windows")
+local shortcut_center = require("keyboard_shortcuts.macos.shortcut_center")
+local shortcut_window = require("keyboard_shortcuts.macos.shortcut_window")
 local state_file = require("desktop_manager.macos.state_file")
 local status_menu = require("desktop_manager.macos.status_menu")
 local switch_list = require("desktop_manager.core.switch_list")
+local switch_desktops = require("desktop_manager.macos.switch_desktops")
 local switch_overlay = require("desktop_manager.macos.switch_overlay")
 local title_overflow = require("desktop_manager.core.title_overflow")
 local track_windows = require("desktop_manager.macos.track_windows")
 local url_command = require("desktop_manager.core.url_command")
 local window_matching = require("desktop_manager.core.window_matching")
+local window_inventory = require("desktop_manager.macos.window_inventory")
 local window_previews = require("desktop_manager.macos.window_previews")
 
 local profile_controller = {}
 
 local NOTIFICATION_TITLE = "Desktop Manager"
+local FAILURE_ALERT_SECONDS = 8
 
 ---Owns the state, the hotkeys, the URL event, the menu bar item and the watchers.
 ---`is_busy` is true while a switch or a restore moves windows, and then no arrangement is saved.
@@ -42,9 +56,11 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---@field log table an hs.logger
 ---@field window_filter table an hs.window.filter
 ---@field menubar table an hs.menubar
----@field hotkeys table[]
+---@field shortcuts ShortcutCenter
 ---@field watchers table[]
 ---@field is_busy boolean
+---@field busy_message BusyMessage|nil the message on the screens while a switch or a restore runs
+---@field app_pool_window AppPoolWindow|nil the window that chooses the managed applications
 ---@field are_saves_suspended boolean
 ---@field save_timer table|nil
 ---@field screen_timer table|nil
@@ -52,6 +68,8 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---@field window_ids_out_of_sight table<integer, boolean> the windows that the last switch took out
 ---of sight
 ---@field switch_session SwitchSession|nil the list of applications while it shows
+---@field search_panel SearchPanel|nil the panel of the search of the windows while it shows
+---@field window_inventory WindowInventory the windows that accessibility does not reach
 ---@field are_snapshots_stopped boolean whether a slow snapshot stopped the snapshots until a reload
 
 ---The list of numbered applications that a press of their modifiers with a number opens.
@@ -59,6 +77,8 @@ local NOTIFICATION_TITLE = "Desktop Manager"
 ---@field entries AppNumber[]
 ---@field applications SwitchApplication[]
 ---@field window_by_id table<integer, table> the hs.window of each window id in the list
+---@field unreached_by_id table<integer, ServerWindow> the windows of the list that accessibility
+---does not reach
 ---@field selection SwitchSelection|nil
 ---@field images SwitchImages the icons and the previews that the list shows
 ---@field displays SwitchDisplay[] the displays from left to right, for the columns per display
@@ -117,6 +137,18 @@ function ProfileController:refresh_menu()
         end,
         print_diagnostics = function()
             self:print_diagnostics()
+        end,
+        clear_profile = function(number)
+            self:clear_profile(number)
+        end,
+        open_app_pool_window = function()
+            self:open_app_pool_window()
+        end,
+        open_shortcut_window = function()
+            self:open_shortcut_window()
+        end,
+        open_color_window = function()
+            self:open_color_window()
         end,
         choose_app_number = function(app_number, bundle_id, app_name)
             self:choose_app_number(app_number, bundle_id, app_name)
@@ -178,12 +210,47 @@ local function has_valid_id(window)
     return window_id ~= nil and window_id > 0
 end
 
+---@param windows table[] hs.window objects
+---@return table[] the windows of the applications that the desktop manager manages
+function ProfileController:keep_managed_windows(windows)
+    local pool = self.state.app_pool
+    if app_pool.holds_every_application(pool) then
+        return windows
+    end
+    local kept = {}
+    for _, window in ipairs(windows) do
+        if app_pool.is_managed(pool, track_windows.bundle_id_of(window:application())) then
+            table.insert(kept, window)
+        end
+    end
+    return kept
+end
+
+---@param arrangement Arrangement
+---@return Arrangement a copy without the records of the applications that the desktop manager
+---leaves to macOS
+function ProfileController:keep_managed_records(arrangement)
+    local kept = {}
+    for key, value in pairs(arrangement) do
+        kept[key] = value
+    end
+    kept.windows = app_pool.keep_managed(self.state.app_pool, arrangement.windows)
+    return kept
+end
+
+---The windows of the managed applications that the tool knows.
+---@param window_ids integer[]
+---@return table[] hs.window objects
+function ProfileController:list_known_windows(window_ids)
+    return self:keep_managed_windows(self:list_all_known_windows(window_ids))
+end
+
 ---The windows of the window filter, and the windows of `window_ids` that the filter does not list.
 ---The filter drops a window whose subrole is not AXStandardWindow when the window hides or
 ---minimizes, as the window of Calendar does while Calendar is hidden.
 ---@param window_ids integer[]
 ---@return table[] hs.window objects
-function ProfileController:list_known_windows(window_ids)
+function ProfileController:list_all_known_windows(window_ids)
     local windows = {}
     for _, window in ipairs(self.window_filter:getWindows()) do
         if has_valid_id(window) then
@@ -191,6 +258,22 @@ function ProfileController:list_known_windows(window_ids)
         end
     end
     local listed = track_windows.index_by_id(windows)
+    local reached_ids = {}
+    for window_id in pairs(self.reached_windows) do
+        table.insert(reached_ids, window_id)
+    end
+    table.sort(reached_ids)
+    for _, window_id in ipairs(reached_ids) do
+        local window = self.reached_windows[window_id]
+        if listed[window_id] then
+            self.reached_windows[window_id] = nil
+        elseif window:id() == window_id then
+            listed[window_id] = window
+            table.insert(windows, window)
+        else
+            self.reached_windows[window_id] = nil
+        end
+    end
     local missing = {}
     for _, window_id in ipairs(window_ids) do
         if not listed[window_id] then
@@ -276,6 +359,27 @@ function ProfileController:rename_reopened_windows(windows)
     self:write_state()
 end
 
+---The windows of the managed applications that the window server listed on a desktop out of view
+---at the last refresh of the inventory, and that Hammerspoon has not seen.
+---@param known_windows table[] hs.window objects
+---@return ServerWindow[]
+function ProfileController:list_unreached_managed_windows(known_windows)
+    local unreached = {}
+    for _, window in
+        ipairs(
+            window_inventory.list_unreached_windows(
+                self.window_inventory,
+                track_windows.index_ids(known_windows)
+            )
+        )
+    do
+        if app_pool.is_managed(self.state.app_pool, window.bundle_id) then
+            table.insert(unreached, window)
+        end
+    end
+    return unreached
+end
+
 ---@param window_id integer
 ---@return table|nil an hs.window
 function ProfileController:find_window(window_id)
@@ -302,9 +406,12 @@ local function observe_windows(windows)
     return observations, observed_ids
 end
 
----Records every window that the tool sees, under the current monitor configuration.
----A recorded window that the tool does not see but that sits on a desktop keeps its previous record
----with its current desktop, because Hammerspoon sees the windows of a desktop once it was visited.
+---Records every window of a managed application under the current monitor configuration.
+---A window that Hammerspoon has not seen, on a desktop out of view, is recorded from the list of
+---the window server, with its desktop and its frame.
+---Such a window keeps the title of its previous record when the window server gives no title.
+---A recorded window that neither Hammerspoon nor that list holds but that sits on a desktop keeps
+---its previous record with its current desktop.
 function ProfileController:capture_active_arrangement()
     local number = self.state.active_profile_number
     if not number then
@@ -319,7 +426,31 @@ function ProfileController:capture_active_arrangement()
     self:rename_reopened_windows(known_windows)
     local previous = profile_state.find_arrangement(self.state, number, configuration.key)
     local observations, observed_ids = observe_windows(known_windows)
-    for _, record in ipairs(previous and previous.windows or {}) do
+    local previous_records =
+        app_pool.keep_managed(self.state.app_pool, previous and previous.windows or {})
+    local previous_by_id = {}
+    for _, record in ipairs(previous_records) do
+        if record.window_id then
+            previous_by_id[record.window_id] = record
+        end
+    end
+    for _, window in ipairs(self:list_unreached_managed_windows(known_windows)) do
+        if not observed_ids[window.window_id] then
+            observed_ids[window.window_id] = true
+            local previous_record = previous_by_id[window.window_id]
+            table.insert(observations, {
+                window_id = window.window_id,
+                bundle_id = window.bundle_id,
+                app_name = window.app_name,
+                title = (window.title == "" and previous_record) and previous_record.title
+                    or window.title,
+                space_id = window.space_id,
+                frame = window.frame,
+                is_out_of_sight = false,
+            })
+        end
+    end
+    for _, record in ipairs(previous_records) do
         if record.window_id and not observed_ids[record.window_id] then
             local space_id = read_desktops.find_window_space_id(record.window_id)
             if space_id then
@@ -380,9 +511,21 @@ function ProfileController:update_numbers_of_profile_0()
     self:write_state()
 end
 
----Updates the record and the numbers of the active profile, or the numbers of profile 0 while no
----profile is active.
+---Takes the desktops that the user added or removed into the number of desktops of each display.
+---The state is written by the capture that follows.
+function ProfileController:track_desktop_counts()
+    local reading =
+        desktop_counts.read(self:read_monitor_configuration(), read_desktops.read_desktop_layout())
+    self.state = profile_state.with_desktop_counts(
+        self.state,
+        desktop_counts.update(self.state.desktop_counts, reading)
+    )
+end
+
+---Updates the number of desktops of each display, and the record and the numbers of the active
+---profile, or the numbers of profile 0 while no profile is active.
 function ProfileController:capture_numbering_profile()
+    self:track_desktop_counts()
     if self.state.active_profile_number then
         self:capture_active_arrangement()
     else
@@ -403,13 +546,30 @@ function ProfileController:schedule_save()
     end)
 end
 
+---@param text string
+function ProfileController:show_busy_message(text)
+    self:close_busy_message()
+    self.busy_message = busy_message.show(text)
+end
+
+function ProfileController:close_busy_message()
+    if self.busy_message then
+        busy_message.close(self.busy_message)
+        self.busy_message = nil
+    end
+end
+
 ---@param failures string[]
 function ProfileController:report_failures(failures)
     for _, failure in ipairs(failures) do
         self.log.w(failure)
     end
     if #failures > 0 then
-        notify(string.format("%s (%d problems in the Hammerspoon console)", failures[1], #failures))
+        local message =
+            string.format("%s (%d problems in the Hammerspoon console)", failures[1], #failures)
+        -- The alert shows where the busy message was, because a notification is easy to miss.
+        hs.alert.show(message, FAILURE_ALERT_SECONDS)
+        notify(message)
     end
 end
 
@@ -470,10 +630,12 @@ end
 ---@param number integer
 ---@param arrangement Arrangement
 ---@param on_done fun(failures: string[], unmatched_records: WindowRecord[])
-function ProfileController:restore_open_windows(number, arrangement, on_done)
+function ProfileController:restore_open_windows(number, saved_arrangement, on_done)
+    local arrangement = self:keep_managed_records(saved_arrangement)
     local windows = self:list_known_windows(list_recorded_window_ids(arrangement))
     local _, live_windows = describe_open_windows(windows)
     local match_result = window_matching.match_records_to_open_windows(
+        self.settings.match_windows_by,
         self.settings.missing_window_policy,
         arrangement.windows,
         live_windows
@@ -597,6 +759,103 @@ function ProfileController:open_missing_windows(number, unmatched_records, on_do
 end
 
 ---@param number integer
+---Shows each desktop that holds a window of a managed application that Hammerspoon has not seen,
+---so that Hammerspoon sees the window and a switch or a restore can act on it, and then shows again
+---the desktops that were in view.
+---Accessibility reaches a window only while its desktop shows, apart from minimized windows and the
+---windows of hidden applications.
+---The windows come from the last refresh of the inventory.
+---@param on_done fun(failures: string[])
+function ProfileController:reach_unseen_windows(on_done)
+    local windows_by_space_id = {}
+    for _, window in ipairs(self:list_unreached_managed_windows(self:list_known_windows({}))) do
+        windows_by_space_id[window.space_id] = windows_by_space_id[window.space_id] or {}
+        table.insert(windows_by_space_id[window.space_id], window)
+    end
+    local layout = read_desktops.read_desktop_layout()
+    local space_ids, spaces_in_view = {}, {}
+    for _, screen in ipairs(layout.screens) do
+        table.insert(spaces_in_view, screen.active_space_id)
+        for _, space_id in ipairs(screen.space_ids) do
+            if windows_by_space_id[space_id] then
+                table.insert(space_ids, space_id)
+            end
+        end
+    end
+    if #space_ids == 0 then
+        on_done({})
+        return
+    end
+    self.log.f("showing the desktops %s to reach their windows", table.concat(space_ids, ", "))
+    self:show_busy_message("Finding the windows on other desktops… please wait")
+    local failures = {}
+    local function show_again(index)
+        local space_id = spaces_in_view[index]
+        if not space_id then
+            on_done(failures)
+            return
+        end
+        switch_desktops.switch_to_space(space_id, self.settings.timing, function(error_message)
+            if error_message then
+                table.insert(failures, error_message)
+            end
+            show_again(index + 1)
+        end)
+    end
+    local function reach(index)
+        local space_id = space_ids[index]
+        if not space_id then
+            show_again(1)
+            return
+        end
+        local windows = windows_by_space_id[space_id]
+        switch_desktops.switch_to_space(space_id, self.settings.timing, function(error_message)
+            if error_message then
+                table.insert(
+                    failures,
+                    string.format(
+                        "%d windows stay out of reach, such as %s window %q: %s",
+                        #windows,
+                        windows[1].app_name,
+                        windows[1].title,
+                        error_message
+                    )
+                )
+                reach(index + 1)
+                return
+            end
+            retained_timers.after(self.settings.timing.window_settle_seconds, function()
+                for _, window in ipairs(windows) do
+                    local reached = self:find_window(window.window_id)
+                    if reached then
+                        self.reached_windows[window.window_id] = reached
+                    else
+                        self.log.f(
+                            "%s window %q stays out of reach on desktop %d",
+                            window.app_name,
+                            window.title,
+                            space_id
+                        )
+                    end
+                end
+                reach(index + 1)
+            end)
+        end)
+    end
+    reach(1)
+end
+
+---Lists the windows of the window server again, and then reaches the windows that Hammerspoon has
+---not seen, as after a change of monitors, when macOS has just moved desktops.
+---@param on_done fun(failures: string[])
+function ProfileController:reach_unseen_windows_from_now(on_done)
+    window_inventory.refresh_from_now(self.window_inventory, function()
+        return track_windows.index_ids(self.window_filter:getWindows())
+    end, function()
+        self:reach_unseen_windows(on_done)
+    end)
+end
+
 function ProfileController:activate_profile(number)
     if self.is_busy then
         hs.alert.show("Desktop Manager is still switching")
@@ -609,6 +868,17 @@ function ProfileController:activate_profile(number)
     self:capture_active_arrangement()
     self.is_busy = true
     retained_timers.stop(self.save_timer)
+    self:reach_unseen_windows(function(reach_failures)
+        self:switch_to_profile(number, started_at, reach_failures)
+    end)
+end
+
+---Conceals the windows that the profile does not record, and restores the windows it records,
+---once the windows on the other desktops are known.
+---@param number integer
+---@param started_at number
+---@param reach_failures string[]
+function ProfileController:switch_to_profile(number, started_at, reach_failures)
     local configuration_key = self:read_monitor_configuration().key
     local windows = self:list_known_windows(
         list_recorded_window_ids(
@@ -617,10 +887,13 @@ function ProfileController:activate_profile(number)
     )
     self:rename_reopened_windows(windows)
     local saved_arrangement = profile_state.find_arrangement(self.state, number, configuration_key)
-    local arrangement = saved_arrangement
-        or { monitor_configuration_key = configuration_key, monitors = {}, windows = {} }
+    local arrangement = self:keep_managed_records(
+        saved_arrangement
+            or { monitor_configuration_key = configuration_key, monitors = {}, windows = {} }
+    )
     local open_windows, live_windows = describe_open_windows(windows)
     local match_result = window_matching.match_records_to_open_windows(
+        self.settings.match_windows_by,
         self.settings.missing_window_policy,
         arrangement.windows,
         live_windows
@@ -646,14 +919,20 @@ function ProfileController:activate_profile(number)
         inspect_on_one_line(concealment)
     )
     local window_by_id = track_windows.index_by_id(windows)
-    local failures = conceal_windows.apply(concealment, window_by_id)
+    local failures = concatenate(reach_failures, conceal_windows.apply(concealment, window_by_id))
     self.state = profile_state.with_active_profile_number(self.state, number)
     self:write_state()
     self:refresh_menu()
-    hs.alert.show(profile_state.profile_or_default(self.state, number).name)
+    local name = profile_state.profile_or_default(self.state, number).name
+    if saved_arrangement then
+        self:show_busy_message(string.format("Arranging %s… please wait", name))
+    else
+        hs.alert.show(name)
+    end
     local function finish(more_failures)
         local all_failures = concatenate(failures, more_failures)
         self.is_busy = false
+        self:close_busy_message()
         self:schedule_save()
         self.log.f(
             "profile %d is active after %.1f seconds, with %d problems",
@@ -737,6 +1016,140 @@ function ProfileController:prompt_rename_active_profile()
     if button == "Rename" and name:match("%S") then
         self:rename_profile(number, name)
     end
+end
+
+---Removes the records of every monitor configuration of the profile, after the user agrees.
+---An active profile stays active and records the windows from its next update on.
+---@param number integer
+function ProfileController:clear_profile(number)
+    if self.is_busy then
+        hs.alert.show("Desktop Manager is still switching")
+        return
+    end
+    local name = profile_state.profile_or_default(self.state, number).name
+    if not profile_state.has_arrangements(self.state, number) then
+        hs.alert.show(name .. " has no saved layout")
+        return
+    end
+    hs.focus()
+    local button = hs.dialog.blockAlert(
+        string.format("Clear %s?", name),
+        "The profile forgets the desktops and windows it saved for every monitor configuration."
+            .. " Its name and its application numbers stay.",
+        "Clear",
+        "Cancel",
+        "warning"
+    )
+    if button ~= "Clear" then
+        return
+    end
+    retained_timers.stop(self.save_timer)
+    self.state = profile_state.clear_arrangements(self.state, number)
+    self:write_state()
+    self:refresh_menu()
+    if self.state.active_profile_number == number then
+        hs.alert.show(name .. " is cleared and records the windows from now on")
+        self:schedule_save()
+    else
+        hs.alert.show(name .. " is cleared")
+    end
+end
+
+---@return ListedApplication[] the applications with a window that the window filter sees
+function ProfileController:list_window_applications()
+    local applications, seen = {}, {}
+    for _, window in ipairs(self.window_filter:getWindows()) do
+        local application = window:application()
+        local bundle_id = track_windows.bundle_id_of(application)
+        if application and not seen[bundle_id] then
+            seen[bundle_id] = true
+            table.insert(
+                applications,
+                { bundle_id = bundle_id, app_name = application:name() or bundle_id }
+            )
+        end
+    end
+    return applications
+end
+
+---The next update of the active profile records the windows of a newly managed application and
+---forgets those of an application that macOS manages now.
+---@param pool AppPool
+function ProfileController:set_app_pool(pool)
+    self.state = profile_state.with_app_pool(self.state, pool)
+    self:write_state()
+    self:schedule_save()
+end
+
+---@return HighlightColors the colors of the search: the setting, under the colors that the window
+---of the colors chose
+function ProfileController:current_highlight_colors()
+    return highlight_colors.apply(
+        self.settings.search_highlight_colors,
+        self.state.highlight_colors
+    )
+end
+
+---Opens the window that picks the colors of the search, or brings it to the front.
+function ProfileController:open_color_window()
+    if self.color_window then
+        color_window.bring_to_front(self.color_window)
+        return
+    end
+    self.color_window = color_window.open({
+        read_colors = function()
+            return self:current_highlight_colors()
+        end,
+        read_base = function()
+            return self.settings.search_highlight_colors
+        end,
+        set_colors = function(chosen)
+            self.state = profile_state.with_highlight_colors(self.state, chosen)
+            self:write_state()
+        end,
+        on_closed = function()
+            self.color_window = nil
+        end,
+    })
+end
+
+---Opens the window that changes the shortcuts of every utility, or brings it to the front.
+function ProfileController:open_shortcut_window()
+    if self.shortcut_window then
+        shortcut_window.bring_to_front(self.shortcut_window)
+        return
+    end
+    self.shortcut_window = shortcut_window.open(self.shortcuts, function()
+        self.shortcut_window = nil
+    end)
+end
+
+---Opens the window that chooses the managed applications, or brings it to the front.
+---Each tick applies at once, so that several ticks need no reopening.
+function ProfileController:open_app_pool_window()
+    if self.app_pool_window then
+        app_pool_window.bring_to_front(self.app_pool_window)
+        return
+    end
+    self.app_pool_window = app_pool_window.open({
+        read_pool = function()
+            return self.state.app_pool
+        end,
+        list_choices = function()
+            return app_pool.list_choices(self.state.app_pool, self:list_window_applications())
+        end,
+        set_mode = function(mode)
+            self:set_app_pool(app_pool.with_mode(self.state.app_pool, mode))
+        end,
+        set_listed = function(bundle_id, app_name, is_listed)
+            self:set_app_pool(
+                app_pool.with_listed(self.state.app_pool, bundle_id, app_name, is_listed)
+            )
+        end,
+        on_closed = function()
+            self.app_pool_window = nil
+        end,
+    })
 end
 
 ---@param matching string
@@ -868,8 +1281,8 @@ local SWITCH_VIEW_BUILDERS = {
 ---A number that the active profile, or profile 0 while no profile is active, gives to no
 ---application passes its keys through to the application in front while the list is closed.
 ---@param app_number integer
----@param hotkey table the hs.hotkey of the number
-function ProfileController:press_app_number(app_number, hotkey)
+---@param binding ShortcutBinding the shortcut of the number and its hs.hotkey
+function ProfileController:press_app_number(app_number, binding)
     local session = self.switch_session
     if session then
         session.selection = switch_list.press(session.applications, session.selection, app_number)
@@ -887,18 +1300,29 @@ function ProfileController:press_app_number(app_number, hotkey)
         profile_state.find_numbering_profile_number(self.state)
     ).app_numbers
     if not app_numbers.find_by_number(entries, app_number) then
-        hotkey:disable()
-        hs.eventtap.keyStroke(self.settings.app_hotkey_modifiers, tostring(app_number), 0)
-        hotkey:enable()
+        binding.hotkey:disable()
+        hs.eventtap.keyStroke(binding.shortcut.modifiers, binding.shortcut.key, 0)
+        binding.hotkey:enable()
         return
     end
-    self:open_switch_list(entries, app_number)
+    self:open_switch_list(entries, app_number, binding.shortcut.modifiers)
 end
 
 ---@param session SwitchSession
 ---@return SwitchView
 function ProfileController:describe_switch_view(session)
     return SWITCH_VIEW_BUILDERS[self.settings.list_layout](session)
+end
+
+---@return SwitchListSettings the settings that the list and the search of the windows share
+function ProfileController:describe_list_settings()
+    return {
+        preview_size = self.settings.preview_size,
+        font_size = self.settings.list_font_size,
+        sizing = self.settings.list_sizing,
+        title_overflow = self.settings.title_overflow,
+        title_line_count = self.settings.title_line_count,
+    }
 end
 
 ---@return SwitchDisplay[] the displays in the order in which they stand from left to right
@@ -918,8 +1342,15 @@ end
 ---released, or at once when they were released before the event tap started.
 ---@param entries AppNumber[]
 ---@param app_number integer
-function ProfileController:open_switch_list(entries, app_number)
+---@param modifiers string[] the modifiers of the shortcut that opened the list, which the user
+---holds
+function ProfileController:open_switch_list(entries, app_number, modifiers)
     local filter_windows = self.window_filter:getWindows()
+    local unreached_windows = window_inventory.list_unreached_windows(
+        self.window_inventory,
+        track_windows.index_ids(filter_windows)
+    )
+    self:refresh_window_inventory(nil)
     local screen_uuid_by_space = {}
     for _, screen in ipairs(read_desktops.read_desktop_layout().screens) do
         for _, space_id in ipairs(screen.space_ids) do
@@ -928,12 +1359,20 @@ function ProfileController:open_switch_list(entries, app_number)
     end
     local applications, window_by_id = {}, {}
     for _, entry in ipairs(entries) do
-        local application, windows =
-            app_switcher.describe_application(entry, filter_windows, screen_uuid_by_space)
+        local application, windows = app_switcher.describe_application(
+            entry,
+            filter_windows,
+            unreached_windows,
+            screen_uuid_by_space
+        )
         table.insert(applications, application)
         for window_id, window in pairs(windows) do
             window_by_id[window_id] = window
         end
+    end
+    local unreached_by_id = {}
+    for _, window in ipairs(unreached_windows) do
+        unreached_by_id[window.window_id] = window
     end
     local app_icons = {}
     for _, entry in ipairs(entries) do
@@ -943,41 +1382,68 @@ function ProfileController:open_switch_list(entries, app_number)
         entries = entries,
         applications = applications,
         window_by_id = window_by_id,
+        unreached_by_id = unreached_by_id,
         selection = switch_list.press(applications, nil, app_number),
         images = { app_icons = app_icons, previews = {} },
         displays = self:list_displays_from_left(),
+        modifiers = modifiers,
     }
     self.switch_session = session
-    if not keyboard_modifiers.are_held(self.settings.app_hotkey_modifiers) then
+    if not keyboard_modifiers.are_held(modifiers) then
         self:go_to_switch_selection()
         return
     end
-    session.overlay = switch_overlay.show(self:describe_switch_view(session), session.images, {
-        preview_size = self.settings.preview_size,
-        font_size = self.settings.list_font_size,
-        sizing = self.settings.list_sizing,
-        title_overflow = self.settings.title_overflow,
-        title_line_count = self.settings.title_line_count,
-    })
+    session.overlay = switch_overlay.show(
+        self:describe_switch_view(session),
+        session.images,
+        self:describe_list_settings()
+    )
     local event_types = hs.eventtap.event.types
     session.event_tap = hs.eventtap
         .new({ event_types.flagsChanged, event_types.keyDown }, function(event)
             return self:handle_switch_event(event)
         end)
         :start()
-    if not keyboard_modifiers.are_held(self.settings.app_hotkey_modifiers) then
+    if not keyboard_modifiers.are_held(modifiers) then
         self:go_to_switch_selection()
         return
     end
-    if self.settings.preview_method == preview_method.BLURRED_SNAPSHOTS then
-        self:load_switch_previews(session)
-    end
+    self:load_switch_previews(session)
 end
 
----Takes the snapshots of the windows of the list one at a time, after the list shows, and draws
----each as it comes, in the place of the icon.
+---Takes the snapshots of the windows of a list one at a time, after the list shows, and gives each
+---to `on_image` as it comes, under the setting for snapshots.
 ---A snapshot slower than the time limit stops the snapshots until the next reload, because the
 ---function behind it once blocked Hammerspoon for two minutes on macOS 27.0.1.
+---@param window_ids integer[]
+---@param preview_size table the w and h of a preview in points
+---@param is_list_shown fun(): boolean
+---@param on_image fun(window_id: integer, image: table)
+function ProfileController:load_previews(window_ids, preview_size, is_list_shown, on_image)
+    if self.settings.preview_method ~= preview_method.BLURRED_SNAPSHOTS then
+        return
+    end
+    window_previews.load_one_at_a_time(window_ids, {
+        blur = self.settings.preview_blur,
+        preview_size = preview_size,
+        time_limit_seconds = self.settings.timing.snapshot_time_limit_seconds,
+        is_wanted = function()
+            return is_list_shown() and not self.are_snapshots_stopped
+        end,
+        on_image = on_image,
+        on_too_slow = function(seconds)
+            self.are_snapshots_stopped = true
+            self.log.w(
+                string.format(
+                    "a snapshot took %.1f seconds, so the list shows icons until the next reload",
+                    seconds
+                )
+            )
+        end,
+    })
+end
+
+---Draws the preview of each window of the list in the place of the icon, as the snapshot comes.
 ---@param session SwitchSession
 function ProfileController:load_switch_previews(session)
     local window_ids = {}
@@ -986,29 +1452,10 @@ function ProfileController:load_switch_previews(session)
             table.insert(window_ids, window.window_id)
         end
     end
-    local index = 0
-    local function take_next_snapshot()
-        index = index + 1
-        local window_id = window_ids[index]
-        if not window_id or self.switch_session ~= session or self.are_snapshots_stopped then
-            return
-        end
-        local image, seconds = window_previews.take_blurred_snapshot(
-            window_id,
-            self.settings.preview_blur,
-            switch_overlay.read_preview_size(session.overlay)
-        )
-        if seconds > self.settings.timing.snapshot_time_limit_seconds then
-            self.are_snapshots_stopped = true
-            self.log.w(
-                string.format(
-                    "a snapshot took %.1f seconds, so the list shows icons until the next reload",
-                    seconds
-                )
-            )
-            return
-        end
-        if image and session.overlay then
+    self:load_previews(window_ids, switch_overlay.read_preview_size(session.overlay), function()
+        return self.switch_session == session
+    end, function(window_id, image)
+        if session.overlay then
             session.images.previews[window_id] = image
             switch_overlay.update(
                 session.overlay,
@@ -1016,9 +1463,7 @@ function ProfileController:load_switch_previews(session)
                 session.images
             )
         end
-        retained_timers.defer(take_next_snapshot)
-    end
-    retained_timers.defer(take_next_snapshot)
+    end)
 end
 
 ---Goes to the selection when a modifier of the numbers is released, and closes the list on Escape.
@@ -1036,7 +1481,7 @@ function ProfileController:handle_switch_event(event)
         end
         return false
     end
-    if not keyboard_modifiers.are_all_in(event:getFlags(), self.settings.app_hotkey_modifiers) then
+    if not keyboard_modifiers.are_all_in(event:getFlags(), self.switch_session.modifiers) then
         retained_timers.defer(function()
             self:go_to_switch_selection()
         end)
@@ -1067,33 +1512,84 @@ function ProfileController:go_to_switch_selection()
     end
     local entry = app_numbers.find_by_number(session.entries, session.selection.number)
     local window_id = switch_list.find_selected_window_id(session.applications, session.selection)
+    local function report(error_message)
+        if error_message then
+            self:report_failures({ error_message })
+        end
+    end
+    local unreached = window_id and session.unreached_by_id[window_id]
+    if unreached then
+        app_switcher.reach_window(window_id, unreached.space_id, self.settings.timing, report)
+        return
+    end
     app_switcher.switch_to_selection(
         entry,
         window_id and session.window_by_id[window_id],
         self:list_recorded_window_ids_of_application(entry.bundle_id),
         self.settings.timing,
-        function(error_message)
-            if error_message then
-                self:report_failures({ error_message })
-            end
-        end
+        report
     )
 end
 
-function ProfileController:bind_app_hotkeys()
-    for app_number = 1, self.settings.app_number_count do
-        local hotkey
-        hotkey = hs.hotkey.bind(self.settings.app_hotkey_modifiers, tostring(app_number), function()
-            self:press_app_number(app_number, hotkey)
-        end)
-        table.insert(self.hotkeys, hotkey)
+---Lists the windows that accessibility does not reach again, in the background.
+---@param on_done fun()|nil
+function ProfileController:refresh_window_inventory(on_done)
+    window_inventory.refresh(self.window_inventory, function()
+        return track_windows.index_ids(self.window_filter:getWindows())
+    end, on_done)
+end
+
+---Shows the panel of the search of the windows, unless it shows already.
+function ProfileController:open_window_search()
+    if self.search_panel then
+        return
     end
-    table.insert(
-        self.hotkeys,
-        hs.hotkey.bind(self.settings.app_hotkey_modifiers, "0", function()
-            self:reset_app_numbers()
-        end)
-    )
+    local filter_windows = self.window_filter:getWindows()
+    self.search_panel = search_windows.open({
+        filter_windows = filter_windows,
+        unreached_windows = window_inventory.list_unreached_windows(
+            self.window_inventory,
+            track_windows.index_ids(filter_windows)
+        ),
+        refresh_unreached_windows = function(on_done)
+            self:refresh_window_inventory(function()
+                on_done(
+                    window_inventory.list_unreached_windows(
+                        self.window_inventory,
+                        track_windows.index_ids(self.window_filter:getWindows())
+                    )
+                )
+            end)
+        end,
+        app_numbers = profile_state.profile_or_default(
+            self.state,
+            profile_state.find_numbering_profile_number(self.state)
+        ).app_numbers,
+        overlay_settings = {
+            font_size = self.settings.list_font_size,
+            preview_size = self.settings.preview_size,
+            highlight_colors = self:current_highlight_colors(),
+        },
+        timing = self.settings.timing,
+        load_previews = function(window_ids, preview_size, is_list_shown, on_image)
+            self:load_previews(window_ids, preview_size, is_list_shown, on_image)
+        end,
+        on_closed = function()
+            self.search_panel = nil
+        end,
+        report_failures = function(messages)
+            self:report_failures(messages)
+        end,
+    })
+end
+
+---The shortcut of the search shows the panel, and closes it while it shows.
+function ProfileController:toggle_window_search()
+    if self.search_panel then
+        search_windows.close(self.search_panel)
+        return
+    end
+    self:open_window_search()
 end
 
 ---@param params table<string, string>
@@ -1126,6 +1622,10 @@ function ProfileController:run_url_command(params)
         self:reset_app_numbers()
     elseif command.action == url_command.SAVE then
         self:capture_active_arrangement()
+    elseif command.action == url_command.CLEAR then
+        self:clear_profile(command.profile_number)
+    elseif command.action == url_command.SEARCH_WINDOWS then
+        self:open_window_search()
     end
 end
 
@@ -1145,8 +1645,102 @@ function ProfileController:handle_application_unhidden(application)
     end
 end
 
+---The desktops that hold a window: those that the window server listed out of view at the last
+---refresh of the inventory, and those of the windows that Hammerspoon knows, minimized ones
+---included.
+---A window that macOS lists on several desktops holds none of them.
+---@return table<integer, boolean>
+function ProfileController:find_occupied_space_ids()
+    local occupied = {}
+    for space_id in pairs(self.window_inventory.occupied_space_ids) do
+        occupied[space_id] = true
+    end
+    for _, window in ipairs(self:list_all_known_windows({})) do
+        local space_ids = read_desktops.list_window_space_ids(window:id())
+        if #space_ids == 1 then
+            occupied[space_ids[1]] = true
+        end
+    end
+    return occupied
+end
+
+---Removes the desktops beyond the number of each display that do not show and hold no window, which
+---macOS leaves on a display when another display disconnects and returns.
+---@param on_done fun(failures: string[])
+function ProfileController:remove_extra_desktops(on_done)
+    window_inventory.refresh_from_now(self.window_inventory, function()
+        return track_windows.index_ids(self.window_filter:getWindows())
+    end, function()
+        local kept = self.state.desktop_counts.kept
+        local removals = desktop_counts.plan_removals(
+            self.state.desktop_counts,
+            self:read_monitor_configuration(),
+            read_desktops.read_desktop_layout(),
+            self:find_occupied_space_ids()
+        )
+        local failures, index = {}, 0
+        local function remove_next()
+            index = index + 1
+            local removal = removals[index]
+            if not removal then
+                on_done(failures)
+                return
+            end
+            if removal.staying_count > 0 then
+                self.log.f(
+                    "%s keeps %d desktops beyond its %d, because they show or hold a window",
+                    removal.slot_key,
+                    removal.staying_count,
+                    kept[removal.slot_key]
+                )
+            end
+            local screen = read_screens.find_screen(removal.screen_uuid)
+            if #removal.space_ids == 0 or not screen then
+                remove_next()
+                return
+            end
+            self.log.f(
+                "removing the empty desktops %s beyond desktop %d of %s",
+                table.concat(removal.space_ids, ", "),
+                kept[removal.slot_key],
+                removal.slot_key
+            )
+            self:show_busy_message(
+                string.format(
+                    "Removing %d empty desktops from %s… please wait",
+                    #removal.space_ids,
+                    removal.slot_key
+                )
+            )
+            mission_control_desktops.remove_desktops(
+                screen:id(),
+                removal.screen_uuid,
+                removal.space_ids,
+                self.settings.timing,
+                function(error_message)
+                    if error_message then
+                        table.insert(
+                            failures,
+                            string.format(
+                                "The empty desktops beyond desktop %d of %s stay: %s",
+                                kept[removal.slot_key],
+                                removal.slot_key,
+                                error_message
+                            )
+                        )
+                    end
+                    remove_next()
+                end
+            )
+        end
+        remove_next()
+    end)
+end
+
 ---macOS reports a change of the screen parameters also when the Dock changes size, and such a
 ---change leaves the signature of the screens as it was.
+---After a change, the windows of the active profile go back to their places, and the empty desktops
+---beyond the number of each display go away.
 function ProfileController:handle_screens_changed()
     if self.screen_timer == nil and read_screens.read_signature() == self.screen_signature then
         return
@@ -1154,24 +1748,61 @@ function ProfileController:handle_screens_changed()
     self.are_saves_suspended = true
     retained_timers.stop(self.save_timer)
     retained_timers.stop(self.screen_timer)
+    if self.state.active_profile_number and not self.is_busy then
+        self:show_busy_message("Monitors changed, waiting for macOS… please wait")
+    end
     self.screen_timer = retained_timers.after(self.settings.timing.screen_settle_seconds, function()
         self.screen_timer = nil
         self.screen_signature = read_screens.read_signature()
-        local number = self.state.active_profile_number
-        local configuration = self:read_monitor_configuration()
-        local arrangement = number
-            and profile_state.find_arrangement(self.state, number, configuration.key)
-        if not arrangement or self.is_busy then
+        if self.is_busy then
             self.are_saves_suspended = false
             self:schedule_save()
             return
         end
+        local number = self.state.active_profile_number
+        local configuration = self:read_monitor_configuration()
+        local arrangement = number
+            and profile_state.find_arrangement(self.state, number, configuration.key)
         self.is_busy = true
-        hs.alert.show("Restoring " .. configuration.key)
-        self:restore_open_windows(number, arrangement, function(failures)
-            self.is_busy = false
-            self.are_saves_suspended = false
-            self:report_failures(failures)
+        local function remove_desktops_and_finish(failures)
+            self:remove_extra_desktops(function(removal_failures)
+                for _, failure in ipairs(removal_failures) do
+                    table.insert(failures, failure)
+                end
+                self.is_busy = false
+                self.are_saves_suspended = false
+                self:close_busy_message()
+                self:report_failures(failures)
+                self:schedule_save()
+            end)
+        end
+        if not arrangement then
+            self:close_busy_message()
+            if number then
+                local name = profile_state.profile_or_default(self.state, number).name
+                hs.alert.show(
+                    string.format(
+                        "%s has no layout for %s yet, so the windows stay where macOS put them",
+                        name,
+                        configuration.key
+                    )
+                )
+            end
+            remove_desktops_and_finish({})
+            return
+        end
+        local name = profile_state.profile_or_default(self.state, number).name
+        self:reach_unseen_windows_from_now(function(reach_failures)
+            self:show_busy_message(
+                string.format("Arranging %s for %s… please wait", name, configuration.key)
+            )
+            self:restore_open_windows(
+                number,
+                desktop_counts.limit_arrangement(arrangement, self.state.desktop_counts),
+                function(restore_failures)
+                    remove_desktops_and_finish(concatenate(reach_failures, restore_failures))
+                end
+            )
         end)
     end)
 end
@@ -1185,6 +1816,7 @@ function ProfileController:print_diagnostics()
     add("accessibility permission: %s", tostring(hs.accessibilityState()))
     add("running timers: %d", retained_timers.count_running())
     add("monitor matching: %s", self.state.monitor_matching)
+    add("application pool: %s", app_pool.describe(self.state.app_pool))
     local configuration = self:read_monitor_configuration()
     add("monitor configuration: %s", configuration.key)
     for _, screen in
@@ -1220,6 +1852,12 @@ function ProfileController:print_diagnostics()
         )
     end
     add("focused desktop: %s", tostring(layout.focused_space_id))
+    local kept_counts = {}
+    for slot_key, count in pairs(self.state.desktop_counts.kept) do
+        table.insert(kept_counts, string.format("%s %d", slot_key, count))
+    end
+    table.sort(kept_counts)
+    add("desktops kept per display: %s", table.concat(kept_counts, ", "))
     add("active profile: %s", tostring(self.state.active_profile_number))
     local numbering_profile = profile_state.profile_or_default(
         self.state,
@@ -1277,22 +1915,73 @@ function ProfileController:print_diagnostics()
     print(table.concat(lines, "\n"))
 end
 
-function ProfileController:bind_hotkeys()
-    local modifiers = self.settings.hotkey_modifiers
+---The actions of the profiles, the application numbers and the search of the windows, with their
+---default shortcuts.
+---@return RegisteredAction[]
+function ProfileController:list_shortcut_actions()
+    local actions = {}
+    local profile_modifiers = { "cmd", "alt", "shift" }
     for number = 1, self.settings.profile_count do
-        table.insert(
-            self.hotkeys,
-            hs.hotkey.bind(modifiers, tostring(number), function()
+        table.insert(actions, {
+            id = "profiles.toggle." .. number,
+            group = "Profiles",
+            title = string.format(
+                "Activate profile %d, or deactivate it while it is active",
+                number
+            ),
+            default = { modifiers = profile_modifiers, key = tostring(number) },
+            on_press = function()
                 self:toggle_profile(number)
-            end)
-        )
+            end,
+        })
     end
-    table.insert(
-        self.hotkeys,
-        hs.hotkey.bind(modifiers, "0", function()
+    table.insert(actions, {
+        id = "profiles.deactivate",
+        group = "Profiles",
+        title = "Deactivate the active profile",
+        default = { modifiers = profile_modifiers, key = "0" },
+        on_press = function()
             self:deactivate_profile()
-        end)
-    )
+        end,
+    })
+    -- Control-Option takes no shortcut of macOS or of the running applications, while Command
+    -- takes the tabs and views of many applications and Command-Shift takes the screenshots.
+    local app_modifiers = { "ctrl", "alt" }
+    for app_number = 1, self.settings.app_number_count do
+        table.insert(actions, {
+            id = "app_numbers.press." .. app_number,
+            group = "Application numbers",
+            title = string.format(
+                "Show the windows of application %d, and go to the selection on release",
+                app_number
+            ),
+            default = { modifiers = app_modifiers, key = tostring(app_number) },
+            on_press = function(binding)
+                self:press_app_number(app_number, binding)
+            end,
+        })
+    end
+    table.insert(actions, {
+        id = "app_numbers.reset",
+        group = "Application numbers",
+        title = "Return every application number to the default",
+        default = { modifiers = app_modifiers, key = "0" },
+        on_press = function()
+            self:reset_app_numbers()
+        end,
+    })
+    -- Control-Option-Command-Space takes no shortcut of macOS, whose shortcuts use Space with
+    -- Control and with Control-Option for the input sources.
+    table.insert(actions, {
+        id = "window_search.toggle",
+        group = "Window search",
+        title = "Show the search of the windows, or close it",
+        default = { modifiers = { "ctrl", "alt", "cmd" }, key = "space" },
+        on_press = function()
+            self:toggle_window_search()
+        end,
+    })
+    return actions
 end
 
 function ProfileController:start_watchers()
@@ -1330,6 +2019,7 @@ function ProfileController:start_watchers()
         hs.spaces.watcher
             .new(function()
                 self:schedule_save()
+                self:refresh_window_inventory(nil)
             end)
             :start()
     )
@@ -1347,13 +2037,16 @@ function ProfileController:start_watchers()
         self.watchers,
         retained_timers.every(self.settings.timing.periodic_save_seconds, function()
             self:schedule_save()
+            self:refresh_window_inventory(nil)
         end)
     )
 end
 
 ---@param settings Settings
+---@param shortcuts ShortcutCenter|nil the center of the shortcuts of every utility, or nil for a
+---center of this tool alone
 ---@return ProfileController
-function profile_controller.start(settings)
+function profile_controller.start(settings, shortcuts)
     local preview_size = settings.preview_size
     if
         type(preview_size) ~= "table"
@@ -1438,6 +2131,20 @@ function profile_controller.start(settings)
             2
         )
     end
+    local colors, colors_error = highlight_colors.complete(settings.search_highlight_colors)
+    if not colors then
+        error(colors_error, 2)
+    end
+    settings.search_highlight_colors = colors
+    if not match_windows_by.is_valid(settings.match_windows_by) then
+        error(
+            string.format(
+                "the setting match_windows_by is %q, which names no way to match windows",
+                tostring(settings.match_windows_by)
+            ),
+            2
+        )
+    end
     if not missing_window_policy.is_valid(settings.missing_window_policy) then
         error(
             string.format(
@@ -1459,12 +2166,13 @@ function profile_controller.start(settings)
     local controller = setmetatable({
         settings = settings,
         log = hs.logger.new("desktop_mgr", "info"),
-        hotkeys = {},
         watchers = {},
         is_busy = false,
         are_saves_suspended = false,
         window_ids_out_of_sight = {},
         are_snapshots_stopped = false,
+        window_inventory = window_inventory.new(),
+        reached_windows = {},
     }, ProfileController)
     local state, warning =
         state_file.read(settings.state_file_path, settings.initial_monitor_matching)
@@ -1477,12 +2185,13 @@ function profile_controller.start(settings)
     controller.window_filter = track_windows.new_filter()
     controller.menubar = hs.menubar.new()
     controller:refresh_menu()
-    controller:bind_hotkeys()
-    controller:bind_app_hotkeys()
+    controller.shortcuts = shortcuts or shortcut_center.new(nil)
+    controller.shortcuts:register(controller:list_shortcut_actions())
     hs.urlevent.bind(settings.url_event_name, function(_, params)
         controller:run_url_command(params)
     end)
     controller:start_watchers()
+    controller:refresh_window_inventory(nil)
     if not controller.state.active_profile_number then
         controller:schedule_save()
     end

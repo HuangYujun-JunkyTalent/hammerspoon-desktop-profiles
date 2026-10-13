@@ -41,6 +41,55 @@ return {
         expect.equal(unit, { x = 0.5, y = 0, w = 0.5, h = 1 })
     end,
 
+    from_unit_frame_reaches_past_the_screen_like_the_window = function()
+        local unit =
+            arrangement_capture.to_unit_frame({ x = 0, y = 10, w = 1440, h = 900 }, BUILTIN_FRAME)
+        expect.equal(unit.y < 0 and unit.h > 1, true)
+        expect.equal(
+            arrangement_capture.from_unit_frame(unit, BUILTIN_FRAME),
+            { x = 0, y = 10, w = 1440, h = 900 }
+        )
+    end,
+
+    from_unit_frame_gives_no_frame_without_area = function()
+        expect.equal(
+            arrangement_capture.from_unit_frame({ x = 0.2778, y = 1, w = 0, h = 0 }, BUILTIN_FRAME),
+            nil
+        )
+    end,
+
+    a_frame_without_area_keeps_the_previous_frame = function()
+        local previous = {
+            monitor_configuration_key = "built-in + 1 external",
+            monitors = {},
+            windows = {
+                {
+                    window_id = 41,
+                    bundle_id = "org.mozilla.firefox",
+                    app_name = "Firefox",
+                    title = "Inbox",
+                    slot_key = "built-in",
+                    desktop_number = 1,
+                    unit_frame = { x = 0, y = 0, w = 1, h = 1 },
+                    is_out_of_sight = false,
+                },
+            },
+        }
+        local observation = {
+            window_id = 41,
+            bundle_id = "org.mozilla.firefox",
+            app_name = "Firefox",
+            title = "Inbox",
+            space_id = 14,
+            frame = { x = 0, y = -8, w = 0, h = 0 },
+            is_out_of_sight = false,
+        }
+        local record =
+            arrangement_capture.capture(CONFIGURATION, LAYOUT, { observation }, previous).windows[1]
+        expect.equal(record.desktop_number, 2)
+        expect.equal(record.unit_frame, { x = 0, y = 0, w = 1, h = 1 })
+    end,
+
     capture_records_slot_desktop_and_frame = function()
         local observation = {
             window_id = 41,

@@ -60,6 +60,31 @@ function arrangement_capture.to_unit_frame(frame, screen_frame)
     }
 end
 
+---macOS reports a frame without area for some windows, and no window can be given one.
+---@param frame Rect
+---@return boolean
+local function has_area(frame)
+    return frame.w > 0 and frame.h > 0
+end
+
+---The frame on the screen of a unit frame.
+---A unit frame reaches past 0 or 1 for a window that reaches past the screen without the menu bar
+---and the Dock, and `hs.geometry` refuses such a unit frame, so the conversion is done here.
+---@param unit_frame Rect
+---@param screen_frame Rect
+---@return Rect|nil frame nil for a unit frame without area
+function arrangement_capture.from_unit_frame(unit_frame, screen_frame)
+    if not has_area(unit_frame) then
+        return nil
+    end
+    return {
+        x = math.floor(screen_frame.x + unit_frame.x * screen_frame.w),
+        y = math.floor(screen_frame.y + unit_frame.y * screen_frame.h),
+        w = math.floor(unit_frame.w * screen_frame.w),
+        h = math.floor(unit_frame.h * screen_frame.h),
+    }
+end
+
 ---@class SpaceLocation
 ---@field screen ScreenDesktops
 ---@field desktop_number integer
@@ -129,7 +154,7 @@ local function record_window(configuration, desktop_layout, observation, previou
     if location and slot then
         record.slot_key = slot.slot_key
         record.desktop_number = location.desktop_number
-        if observation.frame then
+        if observation.frame and has_area(observation.frame) then
             record.unit_frame =
                 arrangement_capture.to_unit_frame(observation.frame, location.screen.screen_frame)
         end
@@ -145,6 +170,7 @@ end
 
 ---Builds the arrangement of the observed windows.
 ---A window whose desktop or frame cannot be read keeps the location of its previous record.
+---A frame without area counts as unread.
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
 ---@param observations WindowObservation[]

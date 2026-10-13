@@ -1,5 +1,6 @@
 local app_numbers = require("desktop_manager.core.app_numbers")
 local new_windows = require("desktop_manager.macos.new_windows")
+local poll_until = require("desktop_manager.macos.poll_until")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local switch_desktops = require("desktop_manager.macos.switch_desktops")
 local track_windows = require("desktop_manager.macos.track_windows")
@@ -37,20 +38,33 @@ function app_switcher.list_windows(bundle_id, filter_windows)
     return windows
 end
 
----The application of the number for the list, with its windows in the order of the window ids.
+---The application of the number for the list, with its windows in the order of the window ids, the
+---windows that accessibility does not reach included.
 ---The first press selects the window after the focused one when the application is in front, and
 ---otherwise the window of the application that had the focus last.
 ---@param entry AppNumber
 ---@param filter_windows table[] the hs.window objects of the window filter
+---@param unreached_windows ServerWindow[] the windows that accessibility does not reach
 ---@param screen_uuid_by_space table<integer, string> the display of each desktop
 ---@return SwitchApplication
----@return table<integer, table> the hs.window of each window id
-function app_switcher.describe_application(entry, filter_windows, screen_uuid_by_space)
+---@return table<integer, table> the hs.window of each window id that accessibility reaches
+function app_switcher.describe_application(
+    entry,
+    filter_windows,
+    unreached_windows,
+    screen_uuid_by_space
+)
     local windows = app_switcher.list_windows(entry.bundle_id, filter_windows)
-    local window_by_id, window_ids = {}, {}
+    local window_by_id, window_ids, unreached_titles = {}, {}, {}
     for _, window in ipairs(windows) do
         window_by_id[window:id()] = window
         table.insert(window_ids, window:id())
+    end
+    for _, window in ipairs(unreached_windows) do
+        if window.bundle_id == entry.bundle_id and not window_by_id[window.window_id] then
+            unreached_titles[window.window_id] = window.title
+            table.insert(window_ids, window.window_id)
+        end
     end
     table.sort(window_ids)
     local first_window_id = windows[1] and windows[1]:id()
@@ -67,9 +81,10 @@ function app_switcher.describe_application(entry, filter_windows, screen_uuid_by
     local switch_windows, first_window_index = {}, 0
     for index, window_id in ipairs(window_ids) do
         local space_id = read_desktops.find_window_space_id(window_id)
+        local window = window_by_id[window_id]
         table.insert(switch_windows, {
             window_id = window_id,
-            title = window_by_id[window_id]:title() or "",
+            title = window and (window:title() or "") or unreached_titles[window_id],
             screen_uuid = space_id and screen_uuid_by_space[space_id],
         })
         if window_id == first_window_id then
@@ -115,6 +130,43 @@ function app_switcher.bring_to_front(window, timing, on_done)
         return
     end
     focus()
+end
+
+---Shows the desktop of a window that accessibility does not reach, waits until Hammerspoon sees the
+---window there, and brings it to the front.
+---@param window_id integer
+---@param space_id integer
+---@param timing Timing
+---@param on_done fun(error_message: string|nil)
+function app_switcher.reach_window(window_id, space_id, timing, on_done)
+    switch_desktops.switch_to_space(space_id, timing, function(error_message)
+        if error_message then
+            on_done(error_message)
+            return
+        end
+        local window = nil
+        poll_until.wait(
+            function()
+                window = hs.window.get(window_id)
+                return window ~= nil
+            end,
+            timing.desktop_switch_timeout_seconds,
+            timing.poll_interval_seconds,
+            function(is_found)
+                if not is_found then
+                    on_done(
+                        string.format(
+                            "window %d did not appear within %g seconds after its desktop showed",
+                            window_id,
+                            timing.desktop_switch_timeout_seconds
+                        )
+                    )
+                    return
+                end
+                app_switcher.bring_to_front(window, timing, on_done)
+            end
+        )
+    end)
 end
 
 ---@param entry AppNumber

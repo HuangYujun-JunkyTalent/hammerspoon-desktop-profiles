@@ -214,6 +214,7 @@ local function build_selection(frame)
         fillColor = SELECTION_COLOR,
         roundedRectRadii = { xRadius = 6, yRadius = 6 },
         frame = frame,
+        id = "selection",
     }
 end
 

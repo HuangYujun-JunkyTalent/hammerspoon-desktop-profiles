@@ -2,6 +2,7 @@ local concealment_method = require("desktop_manager.core.concealment_method")
 local default_settings = require("desktop_manager.default_settings")
 local list_layout = require("desktop_manager.core.list_layout")
 local list_sizing = require("desktop_manager.core.list_sizing")
+local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
 local expect = require("tests.expect")
@@ -9,10 +10,27 @@ local fake_hammerspoon = require("tests.fake_hammerspoon")
 local profile_controller = require("desktop_manager.macos.profile_controller")
 local profile_state = require("desktop_manager.core.profile_state")
 local retained_timers = require("desktop_manager.macos.retained_timers")
+local shortcut_center = require("keyboard_shortcuts.macos.shortcut_center")
+local switch_desktops = require("desktop_manager.macos.switch_desktops")
+local tiling_controller = require("window_tiling.macos.tiling_controller")
+local tiling_settings = require("window_tiling.default_settings")
 local title_overflow = require("desktop_manager.core.title_overflow")
 
 local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
+local BUILTIN_SCREEN = {
+    id = 1,
+    uuid = "BUILTIN-UUID",
+    name = "Built-in Retina Display",
+    frame = BUILTIN_FRAME,
+}
+local DELL_SCREEN = {
+    id = 2,
+    uuid = "DELL-UUID",
+    name = "DELL S2725DS",
+    frame = { x = 1440, y = 0, w = 2560, h = 1415 },
+}
 local SETTLE_SECONDS = 30
+local SEARCH_SHORTCUT = "ctrl+alt+cmd space"
 local MONITOR_CONFIGURATION_KEY = "built-in"
 
 ---Saved frames are fractions of the screen rounded to four decimals, so a restored frame is near
@@ -40,6 +58,53 @@ local function find_window_titled(world, title)
         end
     end
     return nil
+end
+
+---@param world table
+---@param title string
+---@return table the item of the menu bar item with the title
+local function find_menu_item(world, title)
+    for _, item in ipairs(world.menu_builder()) do
+        if item.title == title then
+            return item
+        end
+    end
+    error("the menu has no item " .. title)
+end
+
+---@param controller ProfileController
+---@param id string
+---@return table the row of the action in the window of the shortcuts
+local function find_shortcut_row(controller, id)
+    for _, group in ipairs(controller.shortcut_window.model.groups) do
+        for _, row in ipairs(group.rows) do
+            if row.id == id then
+                return row
+            end
+        end
+    end
+    error("the window of the shortcuts has no row " .. id)
+end
+
+---@param world table
+local function open_app_pool_window(world)
+    find_menu_item(world, "Managed applications…").fn()
+end
+
+---The busy message is a canvas of a background and one text, one canvas per screen.
+---@param world table
+---@return string[] shown the texts of the busy messages that showed, in order
+---@return integer visible_count the canvases of busy messages that still show
+local function read_busy_messages(world)
+    local shown, visible_count = {}, 0
+    for _, canvas in ipairs(world.canvases) do
+        local elements = canvas.elements
+        if #elements == 2 and elements[2].type == "text" then
+            table.insert(shown, elements[2].text)
+            visible_count = visible_count + (canvas.is_visible and 1 or 0)
+        end
+    end
+    return shown, visible_count
 end
 
 ---@param controller ProfileController
@@ -116,7 +181,350 @@ local function start_world(setting_changes)
     return world, controller
 end
 
+---A world with the built-in display and a Dell monitor beside it, with a window on the built-in
+---display and two windows on the second and third desktops of the monitor.
+---@param builtin_space_ids integer[]
+---@param dell_space_ids integer[]
+---@return table world
+---@return ProfileController controller
+local function start_two_screen_world(builtin_space_ids, dell_space_ids)
+    local world = fake_hammerspoon.install({
+        screens = { BUILTIN_SCREEN, DELL_SCREEN },
+        displays = {
+            {
+                uuid = BUILTIN_SCREEN.uuid,
+                space_ids = builtin_space_ids,
+                active_space_id = builtin_space_ids[1],
+            },
+            {
+                uuid = DELL_SCREEN.uuid,
+                space_ids = dell_space_ids,
+                active_space_id = dell_space_ids[1],
+            },
+        },
+        applications = {
+            { bundle_id = "com.apple.Safari", name = "Safari", is_running = true },
+            { bundle_id = "com.microsoft.Word", name = "Microsoft Word", is_running = true },
+        },
+        windows = {
+            {
+                id = 41,
+                bundle_id = "com.apple.Safari",
+                title = "Inbox",
+                space_id = dell_space_ids[2],
+                frame = { x = 1440, y = 25, w = 1280, h = 1390 },
+            },
+            {
+                id = 42,
+                bundle_id = "com.microsoft.Word",
+                title = "Draft.docx",
+                space_id = builtin_space_ids[1],
+                frame = { x = 0, y = 25, w = 1440, h = 875 },
+            },
+            {
+                id = 43,
+                bundle_id = "com.microsoft.Word",
+                title = "Report.docx",
+                space_id = dell_space_ids[3],
+                frame = { x = 2720, y = 25, w = 1280, h = 1390 },
+            },
+        },
+    })
+    local controller = profile_controller.start(default_settings.create("/fake/state.json"))
+    return world, controller
+end
+
 return {
+    the_empty_desktops_that_macos_leaves_after_a_monitor_returns_are_removed = function()
+        local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 3, ["external 1"] = 4 })
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 8, 9 })
+        expect.equal(world.mission_control_actions, { "remove 10" })
+        expect.equal(world.is_mission_control_open, false)
+        world.advance(61)
+        expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 3, ["external 1"] = 4 })
+        world.connect_screen(DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+        expect.equal(world.displays[2].space_ids, { 20, 2000, 2001, 2002 })
+        expect.equal(world.windows[41].space_id, 2000)
+        expect.equal(world.windows[43].space_id, 2001)
+        expect.equal(world.windows[42].space_id, 3)
+        expect.equal(world.mission_control_actions, {
+            "remove 10",
+            "add 2000",
+            "add 2001",
+            "add 2002",
+            "remove 9",
+            "remove 8",
+        })
+        expect.equal(world.notifications, {})
+        world.advance(61)
+        expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 3, ["external 1"] = 4 })
+    end,
+
+    a_window_that_hammerspoon_has_not_seen_returns_to_the_monitor = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        world.windows[43].is_unseen = true
+        world.key_strokes = {}
+        world.connect_screen(DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.key_strokes[1], "ctrl+5")
+        expect.equal(world.windows[43].space_id, 2001)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+        expect.equal(world.notifications, {})
+    end,
+
+    a_desktop_that_the_user_adds_stays_after_a_monitor_change = function()
+        local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.advance(61)
+        table.insert(world.displays[1].space_ids, 99)
+        world.advance(61)
+        expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 4, ["external 1"] = 4 })
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99, 8, 9 })
+        expect.equal(world.mission_control_actions, { "remove 10" })
+    end,
+
+    desktop_10_is_shown_with_control_0_after_its_shortcut_is_turned_on = function()
+        local world = start_two_screen_world({ 3, 14, 64, 65, 66 }, { 7, 8, 9, 10, 11 })
+        local result = "pending"
+        switch_desktops.switch_to_space(
+            11,
+            default_settings.create("/fake/state.json").timing,
+            function(error_message)
+                result = error_message or "shown"
+            end
+        )
+        world.advance(5)
+        expect.equal(result, "shown")
+        expect.equal(world.displays[2].active_space_id, 11)
+        expect.equal(world.key_strokes, { "ctrl+0" })
+        expect.equal(#world.tasks, 1)
+    end,
+
+    a_profile_records_a_window_that_hammerspoon_has_not_seen = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.key_strokes = {}
+        world.advance(65)
+        expect.equal(recorded_sight(controller, 1, reading.id), "in sight")
+        local arrangement =
+            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY)
+        local record = arrangement.windows[#arrangement.windows]
+        expect.equal(record.title, "Reading list")
+        expect.equal(record.desktop_number, 3)
+        expect.equal(record.unit_frame ~= nil, true)
+        expect.equal(world.key_strokes, {})
+    end,
+
+    a_switch_shows_the_desktop_of_a_window_not_seen_and_minimizes_it = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(65)
+        world.key_strokes = {}
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 2)
+        expect.equal(world.key_strokes, { "ctrl+3", "ctrl+1" })
+        expect.equal(world.windows[reading.id].is_minimized, true)
+        expect.equal(world.displays[1].active_space_id, 3)
+        local shown = read_busy_messages(world)
+        expect.equal(shown[1], "Finding the windows on other desktops… please wait")
+    end,
+
+    a_shortcut_from_the_file_replaces_the_default = function()
+        local world = fake_hammerspoon.install({
+            screens = { BUILTIN_SCREEN },
+            displays = { { uuid = BUILTIN_SCREEN.uuid, space_ids = { 3 }, active_space_id = 3 } },
+            applications = {},
+            windows = {},
+        })
+        world.json_files[world.shortcuts_file_path] = {
+            ["profiles.toggle.1"] = { modifiers = { "cmd", "alt", "shift" }, key = "a" },
+            ["tiling.fill"] = false,
+        }
+        local shortcuts = shortcut_center.new(world.shortcuts_file_path)
+        local controller =
+            profile_controller.start(default_settings.create("/fake/state.json"), shortcuts)
+        tiling_controller.start(tiling_settings.create(), shortcuts)
+        shortcuts:check_overrides()
+        expect.equal(world.notifications, {})
+        shortcuts.overrides["tiling.nowhere"] = false
+        shortcuts:check_overrides()
+        expect.equal(#world.notifications, 1)
+        shortcuts.overrides["tiling.nowhere"] = nil
+        world.notifications = {}
+        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 1"], nil)
+        expect.equal(world.hotkey_by_shortcut["ctrl+alt return"], nil)
+        expect.equal(world.hotkey_by_shortcut["ctrl+alt left"] ~= nil, true)
+        world.hotkey_by_shortcut["cmd+alt+shift a"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 1)
+        expect.equal(world.notifications, {})
+    end,
+
+    the_window_of_the_shortcuts_records_a_new_shortcut = function()
+        local world, controller = start_world()
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        local row = find_shortcut_row(controller, "window_search.toggle")
+        expect.equal(row.title, "Show the search of the windows, or close it")
+        expect.equal(row.macos_conflict, nil)
+        world.hotkey_events = {}
+        world.post_to_webview({ kind = "record_start" })
+        expect.equal(world.hotkey_events[1]:match("^disable") ~= nil, true)
+        world.post_to_webview({
+            kind = "record",
+            id = "window_search.toggle",
+            modifiers = { "ctrl", "alt" },
+            key = "f",
+        })
+        expect.equal(controller.shortcut_window.model.pending, nil)
+        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT], nil)
+        world.hotkey_by_shortcut["ctrl+alt f"]()
+        expect.equal(world.read_search_panel() ~= nil, true)
+        expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, false)
+        world.post_to_webview({ kind = "default", id = "window_search.toggle" })
+        expect.equal(world.hotkey_by_shortcut["ctrl+alt f"], nil)
+        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+    end,
+
+    a_shortcut_of_another_action_moves_after_a_choice = function()
+        local world, controller = start_world()
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        world.post_to_webview({ kind = "record_start" })
+        world.post_to_webview({
+            kind = "record",
+            id = "profiles.deactivate",
+            modifiers = { "cmd", "alt", "shift" },
+            key = "2",
+        })
+        local pending = controller.shortcut_window.model.pending
+        expect.equal(pending.holder.id, "profiles.toggle.2")
+        expect.equal(pending.text, "Option-Shift-Command-2")
+        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"] ~= nil, true)
+        world.post_to_webview({ kind = "resolve", remove_holder = true })
+        expect.equal(controller.shortcut_window.model.pending, nil)
+        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"], nil)
+        expect.equal(controller.shortcuts:find_shortcut("profiles.toggle.2"), nil)
+        expect.equal(controller.shortcuts:find_shortcut("profiles.deactivate").key, "2")
+        world.post_to_webview({ kind = "done" })
+        expect.equal(controller.shortcut_window, nil)
+    end,
+
+    a_shortcut_that_macos_uses_can_turn_the_macos_shortcut_off = function()
+        local world, controller = start_world()
+        world.symbolic_hotkeys["64"] =
+            { enabled = true, value = { parameters = { 32, 49, 1048576 }, type = "standard" } }
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        world.post_to_webview({ kind = "record_start" })
+        world.post_to_webview({
+            kind = "record",
+            id = "window_search.toggle",
+            modifiers = { "cmd" },
+            key = "space",
+        })
+        expect.equal(controller.shortcut_window.model.pending.macos.name, "Show Spotlight search")
+        world.post_to_webview({ kind = "resolve", turn_off_macos = true })
+        expect.equal(
+            world.tasks[#world.tasks].arguments[1]:match("disable_macos_shortcut%.sh$") ~= nil,
+            true
+        )
+        expect.equal(world.symbolic_hotkeys["64"].enabled, false)
+        expect.equal(world.hotkey_by_shortcut["cmd space"] ~= nil, true)
+        expect.equal(find_shortcut_row(controller, "window_search.toggle").macos_conflict, nil)
+    end,
+
+    a_row_warns_when_macos_uses_its_shortcut_and_control_with_a_digit_is_refused = function()
+        local world, controller = start_world()
+        world.symbolic_hotkeys["61"] =
+            { enabled = true, value = { parameters = { 32, 49, 1835008 }, type = "standard" } }
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        expect.equal(
+            find_shortcut_row(controller, "window_search.toggle").macos_conflict.name,
+            "Select next source in Input menu"
+        )
+        world.post_to_webview({ kind = "record_start" })
+        world.post_to_webview({
+            kind = "record",
+            id = "window_search.toggle",
+            modifiers = { "ctrl" },
+            key = "3",
+        })
+        expect.equal(controller.shortcut_window.model.pending.is_reserved, true)
+        world.post_to_webview({ kind = "resolve", remove_holder = true })
+        expect.equal(controller.shortcuts:find_shortcut("window_search.toggle").key, "space")
+        expect.equal(world.hotkey_by_shortcut["ctrl 3"], nil)
+    end,
+
+    a_highlight_color_of_the_setting_marks_the_selection = function()
+        local selection = { hex = "#2E8B57", alpha = 0.9 }
+        local world = start_world({ search_highlight_colors = { selection = selection } })
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        local fill = nil
+        for _, element in ipairs(world.overlay.elements) do
+            if element.id == "selection" then
+                fill = element.fillColor
+            end
+        end
+        expect.equal(fill, selection)
+        expect.raises(function()
+            start_world({ search_highlight_colors = { selected = selection } })
+        end, 'names "selected", which is none of')
+    end,
+
+    a_color_from_the_window_of_the_colors_shows_in_the_next_search = function()
+        local world, controller = start_world()
+        find_menu_item(world, "Search colors…").fn()
+        expect.equal(
+            controller.color_window.model.colors.selection,
+            { hex = "#3373F2", alpha = 0.95 }
+        )
+        local chosen = controller.color_window.model.colors
+        chosen.selection = { hex = "#2E8B57", alpha = 0.9 }
+        world.post_to_webview({ kind = "set", colors = chosen })
+        expect.equal(world.saved_json.highlight_colors.selection, { hex = "#2E8B57", alpha = 0.9 })
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        local fill = nil
+        for _, element in ipairs(world.overlay.elements) do
+            if element.id == "selection" then
+                fill = element.fillColor
+            end
+        end
+        expect.equal(fill, { hex = "#2E8B57", alpha = 0.9 })
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.post_to_webview({ kind = "restore" })
+        expect.equal(controller.state.highlight_colors, {})
+        world.post_to_webview({ kind = "done" })
+        expect.equal(controller.color_window, nil)
+    end,
+
+    an_unknown_way_to_match_windows_stops_the_start = function()
+        expect.raises(function()
+            start_world({ match_windows_by = "guess" })
+        end, 'the setting match_windows_by is "guess", which names no way to match windows')
+    end,
+
     the_first_profile_records_the_open_windows = function()
         local world, controller = start_world()
         world.hotkeys["1"]()
@@ -404,6 +812,44 @@ return {
         expect.equal(world.notifications, {})
     end,
 
+    a_desktop_without_its_shortcut_gets_it_before_the_press = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(41)
+        world.symbolic_hotkeys["119"] = nil
+        world.key_strokes = {}
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(#world.tasks, 1)
+        expect.equal(
+            world.tasks[1].arguments[1]:match("tools/enable_desktop_shortcuts%.sh$") ~= nil,
+            true
+        )
+        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1" })
+        expect.equal(world.notifications, {})
+    end,
+
+    a_shortcut_that_cannot_be_turned_on_is_reported_without_a_press = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(41)
+        world.symbolic_hotkeys["119"] = nil
+        world.task_exit_code = 1
+        world.key_strokes = {}
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.key_strokes, {})
+        local message = "desktop 2 cannot be shown, because its shortcut is off and could not"
+        expect.equal(world.notifications[1]:sub(1, #message), message)
+        expect.equal(world.alerts[#world.alerts], world.notifications[1])
+    end,
+
     a_window_with_the_recorded_title_is_taken_and_no_window_opens = function()
         local world, controller = start_world()
         world.hotkeys["1"]()
@@ -424,6 +870,7 @@ return {
 
     the_policy_that_opens_new_windows_opens_one_despite_a_window_with_the_title = function()
         local world, controller = start_world({
+            match_windows_by = match_windows_by.ID,
             missing_window_policy = missing_window_policy.OPEN_NEW_WINDOW,
         })
         world.hotkeys["1"]()
@@ -522,8 +969,50 @@ return {
         world.advance(61)
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
+        local _, visible_while_settling = read_busy_messages(world)
+        expect.equal(visible_while_settling, 1)
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.alerts, { "Profile 1", "Restoring built-in" })
+        local shown, visible_count = read_busy_messages(world)
+        expect.equal(shown, {
+            "Monitors changed, waiting for macOS… please wait",
+            "Arranging Profile 1 for built-in… please wait",
+        })
+        expect.equal(visible_count, 0)
+        expect.equal(world.alerts, { "Profile 1" })
+    end,
+
+    a_monitor_configuration_new_to_the_profile_is_left_to_macos = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.screens[1].name = "LG TV SSCR2"
+        world.screens[1].frame = { x = 0, y = 25, w = 1872, h = 1053 }
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        local shown, visible_count = read_busy_messages(world)
+        expect.equal(shown, { "Monitors changed, waiting for macOS… please wait" })
+        expect.equal(visible_count, 0)
+        expect.equal(world.alerts, {
+            "Profile 1",
+            "Profile 1 has no layout for 1 external yet, so the windows stay where macOS put them",
+        })
+    end,
+
+    a_switch_to_a_recorded_profile_shows_a_message_until_it_ends = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        local _, visible_while_switching = read_busy_messages(world)
+        expect.equal(visible_while_switching, 1)
+        world.advance(SETTLE_SECONDS)
+        local shown, visible_count = read_busy_messages(world)
+        expect.equal(shown, { "Arranging Profile 1… please wait" })
+        expect.equal(visible_count, 0)
+        expect.equal(world.alerts, { "Profile 1", "Profile 2" })
     end,
 
     a_number_brings_its_application_and_the_next_press_its_next_window = function()
@@ -858,6 +1347,93 @@ return {
         expect.equal(world.snapshot_count, 1)
     end,
 
+    a_window_of_an_unticked_application_stays_and_is_not_recorded = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, 41), "in sight")
+        open_app_pool_window(world)
+        world.post_to_webview({
+            kind = "tick",
+            bundle_id = "com.apple.Safari",
+            app_name = "Safari",
+            is_listed = true,
+        })
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, 41), nil)
+        expect.equal(recorded_sight(controller, 1, 42), "in sight")
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[41].is_minimized, false)
+        expect.equal(world.windows[42].is_minimized, true)
+    end,
+
+    the_window_of_the_pool_takes_several_ticks_and_a_change_of_mode = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        open_app_pool_window(world)
+        expect.equal(world.webview.is_visible, true)
+        expect.equal(
+            world.webview.page:find('data-app-name="Safari"> Safari', 1, true) ~= nil,
+            true
+        )
+        world.post_to_webview({ kind = "mode", mode = "manage_listed" })
+        for _, application in ipairs({
+            { "com.apple.Safari", "Safari" },
+            { "com.microsoft.Word", "Microsoft Word" },
+        }) do
+            world.post_to_webview({
+                kind = "tick",
+                bundle_id = application[1],
+                app_name = application[2],
+                is_listed = true,
+            })
+        end
+        expect.equal(world.webview.is_visible, true)
+        expect.equal(controller.state.app_pool.mode, "manage_listed")
+        expect.equal(#controller.state.app_pool.manage_listed, 2)
+        expect.equal(controller.state.app_pool.skip_listed, {})
+        world.post_to_webview({ kind = "mode", mode = "skip_listed" })
+        expect.equal(world.webview.page:find('data-app-name="Safari" checked', 1, true), nil)
+        world.post_to_webview({ kind = "done" })
+        expect.equal(world.webview.is_visible, false)
+        expect.equal(controller.app_pool_window, nil)
+    end,
+
+    the_menu_offers_each_recorded_profile_to_clear = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local clear_items = find_menu_item(world, "Clear profile").menu
+        expect.equal(clear_items[1].disabled, false)
+        expect.equal(clear_items[2].disabled, true)
+    end,
+
+    clearing_a_profile_after_the_confirmation_removes_its_layouts = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "clear", profile = "1" }
+        )
+        expect.equal(profile_state.has_arrangements(controller.state, 1), true)
+        world.alert_button = "Clear"
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "clear", profile = "1" }
+        )
+        expect.equal(profile_state.has_arrangements(controller.state, 1), false)
+        expect.equal(world.alerts[#world.alerts], "Profile 1 is cleared")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.alerts[#world.alerts], "Profile 1")
+        expect.equal(world.windows[42].is_minimized, true)
+    end,
+
     a_number_reaches_a_window_that_another_profile_recorded = function()
         local world = start_world()
         world.hotkeys["1"]()
@@ -1129,5 +1705,203 @@ return {
             { action = "activate", profile = "11" }
         )
         expect.equal(world.notifications, { 'the profile "11" is not a number from 1 to 9' })
+    end,
+
+    the_search_shows_every_window_above_the_applications = function()
+        local world = start_world()
+        local news = world.create_window("com.apple.Safari", "News")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.focused_window_id = news.id
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        expect.equal(world.read_search_panel(), {
+            line = { "Type to search the titles and the applications", "3 windows" },
+            windows = {
+                "selection Inbox | Safari",
+                "plain Draft.docx | Microsoft Word",
+                "plain News | Safari",
+            },
+            applications = { "plain 1 | Safari", "plain 2 | Microsoft Word" },
+        })
+    end,
+
+    typing_shows_only_the_matches_at_their_levels_and_return_brings_the_best = function()
+        local world = start_world()
+        local news = world.create_window("com.apple.Safari", "News")
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.type_keys("n")
+        world.advance(0)
+        local panel = world.read_search_panel()
+        expect.equal(panel.line, { "n▏", "2 of 3 windows match" })
+        expect.equal(panel.windows, { "selection News | Safari", "match-weak Inbox | Safari" })
+        expect.equal(panel.applications, { "match-strong 1 | Safari", "faded 2 | Microsoft Word" })
+        world.press_key("tab")
+        world.advance(0)
+        expect.equal(world.read_search_panel().windows[2], "selection Inbox | Safari")
+        world.press_key("tab", { shift = true })
+        world.type_keys(utf8.char(0xF702))
+        world.press_key("return")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.read_search_panel(), nil)
+        expect.equal(world.focused_window_id, news.id)
+    end,
+
+    hovering_over_an_application_shows_its_windows_and_a_click_on_one_reaches_it = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.move_mouse_to("application:com.microsoft.Word")
+        world.advance(0)
+        local panel = world.read_search_panel()
+        expect.equal(panel.line[2], "1 window of Microsoft Word")
+        expect.equal(panel.windows, { "selection Draft.docx | Microsoft Word" })
+        expect.equal(panel.applications[2], "hovered 1 | Microsoft Word")
+        world.move_mouse_out_of_panel()
+        world.advance(0)
+        expect.equal(#world.read_search_panel().windows, 2)
+        world.click("window:41")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.read_search_panel(), nil)
+        expect.equal(world.focused_window_id, 41)
+        expect.equal(world.displays[1].active_space_id, 14)
+    end,
+
+    a_click_chooses_an_application_until_typing = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.click("application:com.microsoft.Word")
+        world.move_mouse_to("application:com.apple.Safari")
+        world.advance(0)
+        local panel = world.read_search_panel()
+        expect.equal(panel.line[2], "1 window of Microsoft Word, chosen")
+        expect.equal(panel.windows, { "selection Draft.docx | Microsoft Word" })
+        expect.equal(panel.applications, { "hovered 2 | Safari", "selection 1 | Microsoft Word" })
+        world.type_keys("inbox")
+        world.advance(0)
+        expect.equal(world.read_search_panel().windows, { "selection Inbox | Safari" })
+        world.press_escape()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.read_search_panel(), nil)
+        expect.equal(world.focused_window_id, nil)
+    end,
+
+    the_search_reaches_a_window_on_a_desktop_not_visited = function()
+        local world = start_world()
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(SETTLE_SECONDS)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.type_keys("read")
+        world.advance(0)
+        expect.equal(world.read_search_panel().windows, { "selection Reading list | Safari" })
+        world.press_key("return")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.key_strokes, { "ctrl+3" })
+        expect.equal(world.focused_window_id, reading.id)
+    end,
+
+    a_window_found_after_the_panel_opened_joins_it = function()
+        local world = start_world()
+        world.advance(SETTLE_SECONDS)
+        world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        expect.equal(#world.read_search_panel().windows, 2)
+        world.advance(1)
+        expect.equal(world.read_search_panel().windows[3], "plain Reading list | Safari")
+    end,
+
+    the_numbered_list_holds_a_window_on_a_desktop_not_visited = function()
+        local world = start_world({ list_layout = list_layout.ROWS })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(2 * SETTLE_SECONDS + 1)
+        world.key_strokes = {}
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["2"]()
+        expect.equal(world.read_overlay(), {
+            " 1   Microsoft Word",
+            " Draft.docx",
+            " 2   Safari",
+            ">Inbox",
+            " Reading list",
+        })
+        world.app_hotkeys["2"]()
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.key_strokes, { "ctrl+3" })
+        expect.equal(world.focused_window_id, reading.id)
+    end,
+
+    the_arrows_move_the_selection_in_the_grid_of_the_previews = function()
+        local world = start_world()
+        world.create_window("com.apple.Safari", "News")
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        local function press_and_read(key)
+            world.press_key(key)
+            world.advance(0)
+            local selected = {}
+            for _, window in ipairs(world.read_search_panel().windows) do
+                if window:match("^selection") then
+                    table.insert(selected, window)
+                end
+            end
+            return selected
+        end
+        expect.equal(press_and_read("right"), { "selection Draft.docx | Microsoft Word" })
+        expect.equal(press_and_read("right"), { "selection News | Safari" })
+        expect.equal(press_and_read("right"), { "selection News | Safari" })
+        expect.equal(press_and_read("down"), { "selection News | Safari" })
+        expect.equal(press_and_read("left"), { "selection Draft.docx | Microsoft Word" })
+        expect.equal(press_and_read("tab"), { "selection News | Safari" })
+        expect.equal(press_and_read("tab"), { "selection Inbox | Safari" })
+    end,
+
+    down_reaches_the_next_row_of_the_grid = function()
+        local world = start_world({ list_font_size = 0.01 })
+        for _, title in ipairs({ "News", "Weather", "Maps" }) do
+            world.create_window("com.apple.Safari", title)
+        end
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.press_key("down")
+        world.advance(0)
+        local windows = world.read_search_panel().windows
+        expect.equal(#windows, 5)
+        expect.equal(windows[4], "selection Weather | Safari")
+        world.press_key("up")
+        world.advance(0)
+        expect.equal(world.read_search_panel().windows[1], "selection Inbox | Safari")
+    end,
+
+    the_search_shortcut_again_closes_the_search = function()
+        local world = start_world()
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        expect.equal(world.read_search_panel() ~= nil, true)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        expect.equal(world.read_search_panel(), nil)
+        world.type_keys("x")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.read_search_panel(), nil)
+    end,
+
+    return_without_a_match_keeps_the_search = function()
+        local world = start_world()
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.type_keys("zz")
+        world.press_key("return")
+        world.advance(SETTLE_SECONDS)
+        local panel = world.read_search_panel()
+        expect.equal(panel.line[2], "no window matches")
+        expect.equal(panel.note, "No window matches")
+    end,
+
+    a_url_opens_the_search = function()
+        local world = start_world()
+        world.url_handlers["desktop-manager"]("desktop-manager", { action = "search-windows" })
+        expect.equal(world.read_search_panel().line[2], "2 windows")
     end,
 }

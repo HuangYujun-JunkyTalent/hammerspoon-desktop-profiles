@@ -1,10 +1,26 @@
+local shortcut_center = require("keyboard_shortcuts.macos.shortcut_center")
 local tiling_position = require("window_tiling.core.tiling_position")
 
 local tiling_controller = {}
 
+local TITLE_BY_POSITION = {
+    [tiling_position.FILL] = "Fill the screen with the front window",
+    [tiling_position.LEFT_HALF] = "Tile the front window to the left half",
+    [tiling_position.RIGHT_HALF] = "Tile the front window to the right half",
+    [tiling_position.TOP_HALF] = "Tile the front window to the top half",
+    [tiling_position.BOTTOM_HALF] = "Tile the front window to the bottom half",
+}
+local DEFAULT_KEY_BY_POSITION = {
+    [tiling_position.FILL] = "return",
+    [tiling_position.LEFT_HALF] = "left",
+    [tiling_position.RIGHT_HALF] = "right",
+    [tiling_position.TOP_HALF] = "up",
+    [tiling_position.BOTTOM_HALF] = "down",
+}
+
 ---@class TilingController
 ---@field settings TilingSettings
----@field hotkeys table[] the hs.hotkey objects, kept so that Lua does not collect them
+---@field shortcuts ShortcutCenter
 ---@field log table an hs.logger, whose lines show in the Hammerspoon console
 local TilingController = {}
 TilingController.__index = TilingController
@@ -65,29 +81,36 @@ function TilingController:run_url_command(params)
     self:tile_front_window(position)
 end
 
-function TilingController:bind_hotkeys()
+---The tiling actions, with the default shortcuts of Rectangle: Control-Option with Return or an
+---arrow.
+---@return RegisteredAction[]
+function TilingController:list_shortcut_actions()
+    local actions = {}
     for _, position in ipairs(tiling_position.POSITIONS) do
-        local key = self.settings.key_by_position[position]
-        if key then
-            table.insert(
-                self.hotkeys,
-                hs.hotkey.bind(self.settings.hotkey_modifiers, key, function()
-                    self:tile_front_window(position)
-                end)
-            )
-        end
+        table.insert(actions, {
+            id = "tiling." .. position,
+            group = "Window tiling",
+            title = TITLE_BY_POSITION[position],
+            default = { modifiers = { "ctrl", "alt" }, key = DEFAULT_KEY_BY_POSITION[position] },
+            on_press = function()
+                self:tile_front_window(position)
+            end,
+        })
     end
+    return actions
 end
 
 ---@param settings TilingSettings
+---@param shortcuts ShortcutCenter|nil the center of the shortcuts of every utility, or nil for a
+---center of this tool alone
 ---@return TilingController
-function tiling_controller.start(settings)
+function tiling_controller.start(settings, shortcuts)
     local controller = setmetatable({
         settings = settings,
-        hotkeys = {},
+        shortcuts = shortcuts or shortcut_center.new(nil),
         log = hs.logger.new("win_tiling", "info"),
     }, TilingController)
-    controller:bind_hotkeys()
+    controller.shortcuts:register(controller:list_shortcut_actions())
     hs.urlevent.bind(settings.url_event_name, function(_, params)
         controller:run_url_command(params)
     end)

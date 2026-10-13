@@ -1,3 +1,4 @@
+local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
 local switch_desktops = require("desktop_manager.macos.switch_desktops")
@@ -36,8 +37,14 @@ function place_windows.fit_frame(window, placement)
     if not screen or not placement.unit_frame then
         return
     end
-    local target = screen:fromUnitRect(placement.unit_frame)
-    if not are_frames_close(read_screens.to_rect(window:frame()), read_screens.to_rect(target)) then
+    local target = arrangement_capture.from_unit_frame(
+        placement.unit_frame,
+        read_screens.to_rect(screen:frame())
+    )
+    if not target then
+        return
+    end
+    if not are_frames_close(read_screens.to_rect(window:frame()), target) then
         window:setFrame(target, 0)
     end
 end

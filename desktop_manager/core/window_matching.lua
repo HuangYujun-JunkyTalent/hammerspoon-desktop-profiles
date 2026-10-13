@@ -1,3 +1,4 @@
+local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 
 local window_matching = {}
@@ -40,6 +41,18 @@ local function has_same_title(record, window)
     return record.bundle_id == window.bundle_id and record.title == window.title
 end
 
+---A record without a title, such as the record of a window that the window server listed without
+---the permission for Screen Recording, matches no window by its title.
+---@type MatchCriterion
+local function has_same_given_title(record, window)
+    return record.title ~= "" and has_same_title(record, window)
+end
+
+---@type MatchCriterion
+local function has_same_id_and_title(record, window)
+    return has_same_id(record, window) and record.title == window.title
+end
+
 ---Pairs each saved record with at most one live window, and each window with at most one record,
 ---trying the criteria in order.
 ---@param criteria MatchCriterion[]
@@ -74,23 +87,34 @@ local function match_by_criteria(criteria, records, live_windows)
     return { matches = matches, unmatched_records = unmatched_records }
 end
 
-local OPEN_WINDOW_CRITERIA = {
+local CRITERIA_BY_ID = {
     [missing_window_policy.OPEN_NEW_WINDOW] = { has_same_id },
     [missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW] = { has_same_id, has_same_title },
 }
 
+local CRITERIA_BY_TITLE = { has_same_id_and_title, has_same_given_title, has_same_id }
+
 ---Matches the records to the windows that are open at a switch.
----A window keeps its id while it stays open, so the id decides first.
----Under the policy that matches titles, a window with the same title takes a record whose window no
----longer exists.
+---Under `match_windows_by.ID`, a window keeps its id while it stays open, so the id decides first,
+---and under the policy that matches titles a window with the same title takes a record whose window
+---no longer exists.
+---Under `match_windows_by.TITLE`, the title decides first, and the policy plays no part.
+---@param match_key string a value of match_windows_by
 ---@param policy string a value of missing_window_policy
 ---@param records WindowRecord[]
 ---@param live_windows LiveWindow[]
 ---@return WindowMatchResult
-function window_matching.match_records_to_open_windows(policy, records, live_windows)
-    local criteria = OPEN_WINDOW_CRITERIA[policy]
-    if not criteria then
-        error(string.format("unknown missing window policy %q", tostring(policy)), 2)
+function window_matching.match_records_to_open_windows(match_key, policy, records, live_windows)
+    local criteria
+    if match_key == match_windows_by.TITLE then
+        criteria = CRITERIA_BY_TITLE
+    elseif match_key == match_windows_by.ID then
+        criteria = CRITERIA_BY_ID[policy]
+        if not criteria then
+            error(string.format("unknown missing window policy %q", tostring(policy)), 2)
+        end
+    else
+        error(string.format("unknown way to match windows %q", tostring(match_key)), 2)
     end
     return match_by_criteria(criteria, records, live_windows)
 end

@@ -28,13 +28,23 @@ A window that another profile recorded and the profile entered did not goes out 
 A window that no profile recorded stays as it is, and the profile records it at its next capture.
 The tool minimizes a window to take it out of sight.
 A setting makes the tool hide an application instead when all its windows go out of sight.
+While the tool moves windows, a message on every screen asks the user to wait, so that the user does not move windows or switch desktops while the tool does.
+
+The user can clear a profile, which removes the desktops and windows that the profile saved for every monitor configuration, and keeps its name and its application numbers.
+
+The tool manages the windows of every application by default.
+The user can instead choose the applications that the tool manages, in one choice for every profile, and macOS keeps managing the windows of the other applications.
+The choice has two modes: manage every application except the ticked ones, and manage only the ticked ones.
+The user ticks and unticks several applications in one window, which stays open between the ticks.
 Activating a profile adds the desktops that the profile recorded and a screen lacks.
-The tool removes no desktop, because removing a desktop moves the windows on it and changes what the other profiles recorded.
+The tool removes no desktop that holds a window, because removing it moves the windows on it and changes what the profiles recorded.
 
 A profile records each window by its application, its window id and its title.
 Position and size play no part in the identity, because the tool sets them quickly on the window it takes.
+A setting chooses what pairs a record with an open window first, the title or the window id.
+By default the title decides, the window with the recorded id first among windows with the same title, and the window id decides when no title matches.
 macOS gives a window that its application reopens a new window id.
-When a profile is activated and the window of a record in sight no longer exists, a setting chooses one of two options:
+When the window id decides, and the window of a record in sight no longer exists, a second setting chooses one of two options:
 
 - Option a opens a new window of the same application.
 - Option b takes an open window of the same application with the same title, and opens a new window when no title matches.
@@ -51,6 +61,12 @@ Each profile manages the desktops and windows on all monitor setups that have be
 When monitor configurations change to a remembered configuration, the tool restores the remembered desktop and window configuration.
 
 When monitor configurations change to a new configuration, the tool keeps the current profile active, but let OS automatically manage the desktops and windows.
+An alert then says that the configuration is new to the profile.
+
+When a monitor disconnects, macOS moves its desktops to the end of the built-in display, and gives back only one desktop when the monitor returns, so desktops pile up on the built-in display.
+The tool keeps track of the number of desktops of each display.
+The number follows the desktops that the user adds or removes while the monitors stay the same, and the desktops that macOS moves at a change of monitors leave it unchanged.
+After a change of monitors, the tool removes each desktop beyond the number of its display that is out of view and empty.
 
 The user should be able to switch between level of definitions of "the same monitor configuration".
 For instance, I like to have at least:
@@ -63,15 +79,16 @@ For instance, I like to have at least:
 Hammerspoon 1.1.1 on macOS 27.0.1 reads the desktops and the windows on them, but fails to move a window to another desktop and to switch, add or remove desktops.
 The issues https://github.com/Hammerspoon/hammerspoon/issues/3903 and https://github.com/Hammerspoon/hammerspoon/issues/3897 report the failures, read on 2026-10-10.
 
-The tool switches desktops with the macOS shortcuts Control-1 to Control-9, which the user turns on in System Settings.
+The tool switches desktops with the macOS shortcuts Control-1 to Control-9 and Control-0 for the tenth desktop, which the user turns on in System Settings or with `make enable-desktop-shortcuts`.
+When a switch needs a shortcut that is off, the tool turns on the shortcuts 1 to 10 itself before the press.
 macOS 27.0.1 unminimizes a window onto the desktop it was minimized on, also when another desktop shows, as the log of the tool showed on 2026-10-10.
 The tool therefore restores a minimized window where it is, and switches a desktop only to move a window to another screen.
 A window on another desktop of its screen stays there, because Hammerspoon and unminimizing both fail to move it.
 The console of Hammerspoon notes each such window.
 A window moves to another screen when the tool sets its frame there.
 The tool leaves out a simulated drag of the title bar, because a drag at a fixed point can pull a tab out of a browser window.
-The tool adds desktops through the accessibility tree of Mission Control, which macOS 27 keeps under the process `WindowManager`.
-When adding a desktop fails, the tool notifies the user.
+The tool adds and removes desktops through the accessibility tree of Mission Control, which macOS 27 keeps under the process `WindowManager`.
+When adding or removing a desktop fails, the tool notifies the user.
 One module holds these operations, so that it can be replaced once Hammerspoon works on macOS 27 again.
 
 ## Shortcuts
@@ -84,7 +101,13 @@ Each shortcut is a combination of modifier keys with a number key.
 The modifiers with a number from 1 to 9 activate the profile of that number, or switch to it from another profile.
 The same keys on the active profile deactivate it.
 The modifiers with 0 deactivate the active profile.
-The modifiers are a setting, and their default is Command-Option-Shift.
+The default modifiers are Command-Option-Shift.
+
+Every global shortcut of the tools can be changed, the shortcut of each action on its own.
+One place registers the shortcuts of every utility, so that no utility keeps shortcut settings or binding code of its own.
+A window of the menu bar item lists the actions with their keys, filters them, records a new shortcut, removes one and returns one to its default, and a file keeps the changes.
+When a recorded shortcut belongs to another action or to macOS, the window says so and offers to take it from the other action or to turn the macOS shortcut off.
+The tool rejects Control with a digit, which switches desktops.
 
 The plugin for Asyar is an extension of Asyar.
 It shows one item per profile, and marks the active profile with a dot.
@@ -135,20 +158,42 @@ Control-Option-0 does nothing while the list shows.
 
 Control-Option with a free number reaches the application in front unchanged.
 A number given to an application takes Control-Option with that number from every other application.
-The modifiers are a setting, and their default is Control-Option.
+The default modifiers are Control-Option.
 On 2026-10-10, the shortcuts of macOS and the menus of the running applications left Control-Option with a number unused.
 Command with a number selects tabs, views and groups in many applications, and Command-Shift with 3, 4 and 5 takes screenshots in macOS.
+
+## A shortcut searches every window by its title and its application
+
+Control-Option-Command-Space shows a panel of its own, unlike the list of Control-Option, with the applications in a horizontal row and the previews of windows above it.
+The user types to search the titles of the windows and the names of their applications by fuzzy matching.
+The previews show the windows that match at any level, highlighted at levels that follow how well each one matches, and every window while nothing is typed.
+Hovering over an application shows its windows, a click on an application chooses it and keeps its windows in view, and a click on a window brings it to the front with the focus.
+Typing drops the application that the mouse chose, and shows the windows that match again.
+The arrow keys move the selection among the previews in four directions, and Tab moves it in the order of the previews.
+The user chooses the window to bring to the front, and a window on another desktop is reached by showing that desktop.
+A URL `hammerspoon://desktop-manager?action=search-windows` shows the panel as well.
+A window of the menu bar item picks the colors of the highlights of the selection, of the hover and of each level of match, with a preview and presets, and the next search uses them without a reload.
+
+The tool keeps track of every window, also the minimized ones and the windows on desktops that the user has not visited since Hammerspoon started.
+The search and the list of Control-Option show these windows, and the profiles record them.
+Before a switch of profiles and before the restore after a change of monitors, the tool shows each desktop that holds a window it cannot yet move.
+The switch can then move or minimize the window, and the tool shows again the desktops that were in view.
 
 ## Window tiling is a second tool beside the desktop manager
 
 The window tiling sets the frame of the focused window to the whole screen or to one half of it, as Rectangle does.
 Control-Option-Return fills the screen, and Control-Option with Left, Right, Up or Down takes the left, right, top or bottom half.
-The modifiers and the keys are settings.
 The tiling works without the Window menu of the application, because the shortcut Globe-Control-F of the item Window, Fill of macOS failed on a window just opened or focused, as the user found on 2026-10-11.
 An Asyar extension of its own shows the item Fill Window, which opens a URL `hammerspoon://window-tiling?...` that the tool binds.
 Asyar has its own window management for the halves, so the extension leaves them out, as the user decided on 2026-10-11.
 A tiling started from Asyar acts on the window behind the search window of Asyar, and gives it the focus back.
 The window tiling shares no module with the desktop manager, and has its own folders, settings, tests and Asyar extension.
+
+## An Asyar extension opens and empties the Trash
+
+An Asyar extension of its own shows the items Open Trash and Empty Trash.
+Open Trash opens the Trash in the Finder.
+Empty Trash shows the same confirmation as Finder, Empty Trash, and erases the items in the Trash only after the user confirms.
 
 ## Development practices that the project follows
 
