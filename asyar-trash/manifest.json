@@ -1,0 +1,31 @@
+{
+  "id": "com.huangyujun.trash",
+  "name": "Trash",
+  "version": "1.0.0",
+  "description": "Open the Trash in the Finder, and empty it after the confirmation of the Finder.",
+  "author": "Yujun Huang",
+  "icon": "🗑️",
+  "type": "extension",
+  "asyarSdk": "^4.14.1",
+  "platforms": ["macos"],
+  "permissions": ["shell:spawn", "notifications:send"],
+  "commands": [
+    {
+      "id": "open-trash",
+      "name": "Open Trash",
+      "description": "Open the Trash in a window of the Finder.",
+      "icon": "🗑️",
+      "mode": "background"
+    },
+    {
+      "id": "empty-trash",
+      "name": "Empty Trash",
+      "description": "Erase the items in the Trash, after the same confirmation as Finder, Empty Trash.",
+      "icon": "🧹",
+      "mode": "background"
+    }
+  ],
+  "background": {
+    "main": "dist/worker.js"
+  }
+}

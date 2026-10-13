@@ -1,0 +1,20 @@
+{
+  "name": "com.huangyujun.trash",
+  "version": "1.0.0",
+  "description": "Open and empty the Trash of the Finder from Asyar.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "validate": "asyar validate",
+    "link": "asyar link"
+  },
+  "devDependencies": {
+    "asyar-sdk": "^4.14.1",
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0"
+  }
+}
