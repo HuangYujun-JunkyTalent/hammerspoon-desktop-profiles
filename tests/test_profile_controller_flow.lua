@@ -283,7 +283,7 @@ return {
         world.connect_screen(DELL_SCREEN, { 20 })
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.key_strokes[1], "ctrl+5")
+        expect.equal(world.key_strokes[1], "ctrl+alt+shift+cmd+5")
         expect.equal(world.windows[43].space_id, 2001)
         expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
         expect.equal(world.notifications, {})
@@ -315,7 +315,7 @@ return {
         world.advance(5)
         expect.equal(result, "shown")
         expect.equal(world.displays[2].active_space_id, 11)
-        expect.equal(world.key_strokes, { "ctrl+0" })
+        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+0" })
         expect.equal(#world.tasks, 1)
     end,
 
@@ -346,7 +346,7 @@ return {
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 2)
-        expect.equal(world.key_strokes, { "ctrl+3", "ctrl+1" })
+        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+3", "ctrl+alt+shift+cmd+1" })
         expect.equal(world.windows[reading.id].is_minimized, true)
         expect.equal(world.displays[1].active_space_id, 3)
         local shown = read_busy_messages(world)
@@ -468,13 +468,13 @@ return {
         world.post_to_webview({
             kind = "record",
             id = "window_search.toggle",
-            modifiers = { "ctrl" },
+            modifiers = { "ctrl", "alt", "shift", "cmd" },
             key = "3",
         })
         expect.equal(controller.shortcut_window.model.pending.is_reserved, true)
         world.post_to_webview({ kind = "resolve", remove_holder = true })
         expect.equal(controller.shortcuts:find_shortcut("window_search.toggle").key, "space")
-        expect.equal(world.hotkey_by_shortcut["ctrl 3"], nil)
+        expect.equal(world.hotkey_by_shortcut["ctrl+alt+shift+cmd 3"], nil)
     end,
 
     a_highlight_color_of_the_setting_marks_the_selection = function()
@@ -807,7 +807,7 @@ return {
         expect.equal(opened.is_minimized, false)
         expect_frame_near(opened.frame, { x = 0, y = 25, w = 720, h = 875 })
         expect.equal(world.menu_selections, { "com.apple.Safari New Window" })
-        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1" })
+        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+2", "ctrl+alt+shift+cmd+1" })
         expect.equal(recorded_sight(controller, 1, opened.id), "in sight")
         expect.equal(world.notifications, {})
     end,
@@ -828,7 +828,7 @@ return {
             world.tasks[1].arguments[1]:match("tools/enable_desktop_shortcuts%.sh$") ~= nil,
             true
         )
-        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1" })
+        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+2", "ctrl+alt+shift+cmd+1" })
         expect.equal(world.notifications, {})
     end,
 
@@ -1035,7 +1035,10 @@ return {
         world.app_hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.focused_window_id, 41)
-        expect.equal(world.key_strokes, { "ctrl+2", "ctrl+1", "ctrl+2" })
+        expect.equal(
+            world.key_strokes,
+            { "ctrl+alt+shift+cmd+2", "ctrl+alt+shift+cmd+1", "ctrl+alt+shift+cmd+2" }
+        )
     end,
 
     a_held_press_shows_the_list_and_the_release_goes_to_the_selection = function()
@@ -1800,7 +1803,7 @@ return {
         expect.equal(world.read_search_panel().windows, { "selection Reading list | Safari" })
         world.press_key("return")
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.key_strokes, { "ctrl+3" })
+        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+3" })
         expect.equal(world.focused_window_id, reading.id)
     end,
 
@@ -1833,7 +1836,7 @@ return {
         world.app_hotkeys["2"]()
         world.release_modifiers()
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.key_strokes, { "ctrl+3" })
+        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+3" })
         expect.equal(world.focused_window_id, reading.id)
     end,
 

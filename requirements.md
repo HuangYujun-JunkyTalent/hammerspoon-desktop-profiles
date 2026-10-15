@@ -79,7 +79,8 @@ For instance, I like to have at least:
 Hammerspoon 1.1.1 on macOS 27.0.1 reads the desktops and the windows on them, but fails to move a window to another desktop and to switch, add or remove desktops.
 The issues https://github.com/Hammerspoon/hammerspoon/issues/3903 and https://github.com/Hammerspoon/hammerspoon/issues/3897 report the failures, read on 2026-10-10.
 
-The tool switches desktops with the macOS shortcuts Control-1 to Control-9 and Control-0 for the tenth desktop, which the user turns on in System Settings or with `make enable-desktop-shortcuts`.
+The tool switches desktops with the macOS shortcuts Control-Option-Shift-Command with 1 to 9 and with 0 for the tenth desktop, which the user turns on in System Settings or with `make enable-desktop-shortcuts`.
+Control with a number alone stays free, because many applications use it.
 When a switch needs a shortcut that is off, the tool turns on the shortcuts 1 to 10 itself before the press.
 macOS 27.0.1 unminimizes a window onto the desktop it was minimized on, also when another desktop shows, as the log of the tool showed on 2026-10-10.
 The tool therefore restores a minimized window where it is, and switches a desktop only to move a window to another screen.
@@ -107,7 +108,7 @@ Every global shortcut of the tools can be changed, the shortcut of each action o
 One place registers the shortcuts of every utility, so that no utility keeps shortcut settings or binding code of its own.
 A window of the menu bar item lists the actions with their keys, filters them, records a new shortcut, removes one and returns one to its default, and a file keeps the changes.
 When a recorded shortcut belongs to another action or to macOS, the window says so and offers to take it from the other action or to turn the macOS shortcut off.
-The tool rejects Control with a digit, which switches desktops.
+The tool rejects Control-Option-Shift-Command with a digit, which switches desktops.
 
 The plugin for Asyar is an extension of Asyar.
 It shows one item per profile, and marks the active profile with a dot.

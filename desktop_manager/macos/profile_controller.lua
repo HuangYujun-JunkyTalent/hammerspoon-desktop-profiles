@@ -1838,7 +1838,7 @@ function ProfileController:print_diagnostics()
             table.insert(
                 numbered,
                 string.format(
-                    "%d(Control-%s)",
+                    "%d(desktop shortcut %s)",
                     space_id,
                     tostring(read_desktops.find_desktop_shortcut_number(space_id))
                 )

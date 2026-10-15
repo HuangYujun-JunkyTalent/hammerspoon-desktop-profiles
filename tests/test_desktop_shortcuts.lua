@@ -1,9 +1,9 @@
 local desktop_shortcuts = require("desktop_manager.core.desktop_shortcuts")
 local expect = require("tests.expect")
 
----The entry of "Switch to Desktop 6" as Control-6, as macOS stores it.
+---The entry of "Switch to Desktop 6" as Control-Option-Shift-Command-6, as macOS stores it.
 local function control_6()
-    return { enabled = true, value = { parameters = { 65535, 22, 262144 }, type = "standard" } }
+    return { enabled = true, value = { parameters = { 65535, 22, 1966080 }, type = "standard" } }
 end
 
 return {
@@ -29,7 +29,7 @@ return {
 
     desktop_10_is_on_as_control_and_0 = function()
         local entry =
-            { enabled = true, value = { parameters = { 65535, 29, 262144 }, type = "standard" } }
+            { enabled = true, value = { parameters = { 65535, 29, 1966080 }, type = "standard" } }
         expect.equal(desktop_shortcuts.is_on({ ["127"] = entry }, 10), true)
         expect.equal(desktop_shortcuts.key_of(10), "0")
         expect.equal(desktop_shortcuts.key_of(9), "9")

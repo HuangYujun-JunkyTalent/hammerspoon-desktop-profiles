@@ -79,11 +79,20 @@ return {
 
     control_with_a_digit_stays_with_the_desktop_switches_of_macos = function()
         local resolution = shortcut_registry.resolve(build_registry(), {
-            ["tiling.fill"] = { modifiers = { "ctrl" }, key = "3" },
+            ["tiling.fill"] = { modifiers = { "cmd", "shift", "alt", "ctrl" }, key = "3" },
         }, is_known_key)
         expect.equal(resolution.problems, {
-            '"Fill the screen" has no shortcut, because Control-3 switches desktops in macOS',
+            '"Fill the screen" has no shortcut, because Control-Option-Shift-Command-3'
+                .. " switches desktops in macOS",
         })
+    end,
+
+    control_with_a_digit_alone_is_free_for_an_action = function()
+        local resolution = shortcut_registry.resolve(build_registry(), {
+            ["tiling.fill"] = { modifiers = { "ctrl" }, key = "3" },
+        }, is_known_key)
+        expect.equal(resolution.problems, {})
+        expect.equal(resolution.shortcut_by_id["tiling.fill"].key, "3")
     end,
 
     a_shortcut_reads_as_macos_names_it = function()

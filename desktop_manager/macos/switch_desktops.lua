@@ -54,7 +54,8 @@ local function turn_on_shortcuts(shortcut_number, timing, on_done)
         :start()
 end
 
----Presses Control-N, or Control-0 for desktop 10, once the user releases the modifiers, and waits
+---Presses the modifiers of desktop_shortcuts with N, or with 0 for desktop 10, once the user
+---releases the modifiers, and waits
 ---until the desktop shows.
 ---@param space_id integer
 ---@param shortcut_number integer
@@ -66,7 +67,7 @@ local function press_shortcut(space_id, shortcut_number, timing, is_shortcut_kno
     keyboard_modifiers.wait_for_release(timing, function()
         local pressed_at = hs.timer.secondsSinceEpoch()
         local key = desktop_shortcuts.key_of(shortcut_number)
-        hs.eventtap.keyStroke({ "ctrl" }, key, KEY_PRESS_MICROSECONDS)
+        hs.eventtap.keyStroke(desktop_shortcuts.MODIFIERS, key, KEY_PRESS_MICROSECONDS)
         poll_until.wait(
             function()
                 return read_desktops.is_space_active(space_id)
@@ -83,7 +84,8 @@ local function press_shortcut(space_id, shortcut_number, timing, is_shortcut_kno
                 )
                 if not is_active then
                     local message = string.format(
-                        "Control-%s did not show desktop %d within %g seconds.",
+                        "%s-%s did not show desktop %d within %g seconds.",
+                        desktop_shortcuts.MODIFIER_TEXT,
                         key,
                         shortcut_number,
                         timing.desktop_switch_timeout_seconds
@@ -104,7 +106,8 @@ local function press_shortcut(space_id, shortcut_number, timing, is_shortcut_kno
     end)
 end
 
----Shows a desktop by pressing the macOS shortcut "Switch to Desktop N", Control-N, or Control-0 for
+---Shows a desktop by pressing the macOS shortcut "Switch to Desktop N", the modifiers of
+---desktop_shortcuts with N, or with 0 for
 ---desktop 10.
 ---System Settings lists the shortcut of a desktop only while the desktop exists, so a desktop that
 ---a monitor adds can lack it, and the switch then turns the shortcuts on before the press.

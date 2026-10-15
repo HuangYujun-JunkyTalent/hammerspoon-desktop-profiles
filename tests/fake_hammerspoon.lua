@@ -64,8 +64,8 @@ local WINDOW_MANAGER_BUNDLE_ID = "com.apple.WindowManager"
 
 ---@param spec FakeWorldSpec
 ---@return table world
----The shortcuts "Switch to Desktop 1" to "Switch to Desktop N" as Control-1 to Control-9 and
----Control-0, in the form of `AppleSymbolicHotKeys` of macOS.
+---The shortcuts "Switch to Desktop 1" to "Switch to Desktop N" as Control-Option-Shift-Command
+---with 1 to 9 and 0, in the form of `AppleSymbolicHotKeys` of macOS.
 ---@param highest_number integer 9, as on the machine of the user, or 10, as the script of the
 ---repository turns them on
 ---@return table
@@ -76,7 +76,7 @@ local function all_desktop_shortcuts(highest_number)
         local key_code = key_codes[number]
         hotkeys[tostring(117 + number)] = {
             enabled = true,
-            value = { parameters = { 65535, key_code, 262144 }, type = "standard" },
+            value = { parameters = { 65535, key_code, 1966080 }, type = "standard" },
         }
     end
     return hotkeys
@@ -1090,7 +1090,7 @@ function fake_hammerspoon.install(spec)
             end,
             keyStroke = function(modifiers, character)
                 table.insert(world.key_strokes, table.concat(modifiers, "+") .. "+" .. character)
-                if #modifiers == 1 and modifiers[1] == "ctrl" and tonumber(character) then
+                if table.concat(modifiers, "+") == "ctrl+alt+shift+cmd" and tonumber(character) then
                     switch_by_shortcut(character == "0" and 10 or tonumber(character))
                 end
             end,

@@ -17,7 +17,7 @@ local WINDOW_SIZE = { w = 720, h = 720 }
 ---@field shortcut Shortcut
 ---@field holder table|nil the id and the title of the other action that has the shortcut
 ---@field macos MacosShortcut|nil the shortcut of macOS that is on with the same keys
----@field is_reserved boolean Control with a digit, which switches desktops
+---@field is_reserved boolean the shortcut of a desktop switch
 
 ---@class ShortcutWindowModel
 ---@field groups table[] each with a name and rows, a row being a ShortcutRow with the macOS
@@ -165,7 +165,7 @@ const pendingNote = (pending) => {
   let kind = "warn";
   if (pending.is_reserved) {
     kind = "bad";
-    parts.push(keys + " is Control with a digit, which switches desktops in"
+    parts.push(keys + " is the shortcut of a desktop switch, which switches desktops in"
       + " macOS and in the desktop manager, so no action can take it.");
   }
   if (pending.holder) parts.push(keys + " is the shortcut of “"

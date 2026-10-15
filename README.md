@@ -31,12 +31,13 @@ The tools run on macOS 27.0.1 with Hammerspoon 1.1.1, the versions they were dev
    When `~/.hammerspoon/init.lua` exists already, the command leaves it unchanged, and you add the line to it yourself.
 3. Click the hammer icon in the menu bar and choose Reload Config.
 4. In System Settings, Privacy & Security, Accessibility, turn on Hammerspoon.
-5. In the folder of the repository, run `make enable-desktop-shortcuts`, which turns on the macOS shortcuts "Switch to Desktop 1" to "Switch to Desktop 10" as Control-1 to Control-9 and Control-0, and keeps your other shortcuts.
+5. In the folder of the repository, run `make enable-desktop-shortcuts`, which turns on the macOS shortcuts "Switch to Desktop 1" to "Switch to Desktop 10" as Control-Option-Shift-Command with 1 to 9 and 0, and keeps your other shortcuts.
    The desktop manager also runs the same script by itself when a switch needs a shortcut that is off, so the step only saves the wait of that first switch.
    You can also turn them on in System Settings, Keyboard, Keyboard Shortcuts, Mission Control, but that list shows the shortcut of a desktop only while the desktop exists.
    The desktops of all screens count in one sequence, so an external monitor adds desktops whose shortcuts the list did not show before.
    To see more shortcuts there, add desktops in Mission Control first.
-   The desktop manager switches desktops with these shortcuts, Control-1 to Control-9 and Control-0 for the tenth desktop.
+   The desktop manager switches desktops with these shortcuts, Control-Option-Shift-Command with the number of the desktop and with 0 for the tenth desktop.
+   Four modifiers leave the shortcuts to no other application, while Control with a number alone is free for the applications that use it.
 6. In System Settings, Desktop & Dock, Mission Control, keep "Displays have separate Spaces" on, and turn "Automatically rearrange Spaces based on most recent use" off.
    The desktop manager finds a desktop by its position, and a rearrangement moves the positions.
 7. Shorten the animations, if you like.
@@ -280,7 +281,7 @@ A recorded shortcut that something else uses waits under its row for a choice.
 | is the shortcut of another action of the tools | Move it here, which leaves the other action without a shortcut, or Cancel |
 | is on in macOS, such as "Select the previous input source" for Control-Space | Turn off the macOS shortcut and use it here, Use it anyway, or Cancel |
 | is both | Move it here and turn off the macOS shortcut, Move it here only, or Cancel |
-| is Control with a digit | Cancel alone, because the desktop manager presses it to switch desktops |
+| is Control-Option-Shift-Command with a digit | Cancel alone, because the desktop manager presses it to switch desktops |
 
 The window reads the shortcuts of macOS from System Settings, Keyboard, Keyboard Shortcuts, and also knows the defaults of the screenshot, help and focus shortcuts, which macOS leaves out of its file until they change.
 A row whose shortcut macOS also uses shows a warning with the name of the macOS shortcut and a button that turns it off.
@@ -303,7 +304,7 @@ The modifiers are `ctrl`, `alt`, `shift`, `cmd` and `fn`, and the keys are the n
 The module leaves out a shortcut in three cases, and a notification and the console name each one.
 
 - A shortcut that an action earlier in the list holds, so the later action has no shortcut.
-- Control with a digit, because the desktop manager presses it to switch desktops.
+- Control-Option-Shift-Command with a digit, because the desktop manager presses it to switch desktops.
 - A shortcut that names an unknown modifier or key, so the action keeps its default.
 
 The list of application numbers stays open while you hold the modifiers of the shortcut that opened it.
@@ -481,7 +482,7 @@ A switch shows another desktop for four reasons alone:
 - to bring the desktop that the profile had in front back to the front.
 
 Hammerspoon can move or minimize a window only after the window has shown once since Hammerspoon started, apart from the minimized windows and the windows of hidden applications.
-Before a switch, and before the restore after a change of monitors, the desktop manager therefore shows each desktop that holds a window of a managed application that Hammerspoon has not seen, with Control and the number of the desktop.
+Before a switch, and before the restore after a change of monitors, the desktop manager therefore shows each desktop that holds a window of a managed application that Hammerspoon has not seen, with the shortcut of the desktop.
 The message at the top of every screen reads "Finding the windows on other desktops… please wait".
 The desktop manager then shows again the desktops that were in view, and the switch treats those windows as any other.
 A window that has shown once stays known until it closes, so later switches show no desktop for it.
@@ -533,7 +534,7 @@ The desktop manager works around them as follows.
   A switch therefore brings minimized windows back without switching desktops.
   For the same reason, a window on another desktop of its screen stays there, and the console notes it.
   A window moves to another screen when the desktop manager sets its frame there.
-- A desktop switch presses Control with the number of the desktop, and Control-0 for the tenth desktop.
+- A desktop switch presses Control-Option-Shift-Command with the number of the desktop, and with 0 for the tenth desktop.
   Mission Control numbers the desktops of all screens in one sequence, so desktops after the tenth cannot be reached.
   Ten desktops across all screens are enough for most setups, such as five on the built-in display and five on an external monitor.
   Before the press, the desktop manager reads whether macOS has the shortcut on.
@@ -550,7 +551,7 @@ The desktop manager works around them as follows.
   The desktop manager runs the script at the start, at each change of desktop, once a minute and when the search opens, in about 0.2 seconds each time.
   Such a window counts when it lies on a desktop out of view, belongs to an application with a Dock icon, and measures at least 100 by 50 points, which leaves out most of the hidden windows that applications keep.
   Its title needs the permission for Screen Recording, and without it the window shows as "untitled window".
-  Choosing such a window shows its desktop with Control and its number, so a window on an eleventh desktop cannot be reached.
+  Choosing such a window shows its desktop with the shortcut of the desktop, so a window on an eleventh desktop cannot be reached.
 - The window filter of Hammerspoon drops a window whose subrole changes while its application is hidden, as the window of Calendar does.
   The desktop manager looks such windows up among all windows of macOS.
 
