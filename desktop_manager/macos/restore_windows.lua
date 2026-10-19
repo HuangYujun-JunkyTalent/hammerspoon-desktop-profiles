@@ -1,195 +1,232 @@
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
-local place_windows = require("desktop_manager.macos.place_windows")
+local move_windows = require("desktop_manager.macos.move_windows")
 local poll_until = require("desktop_manager.macos.poll_until")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local step_sequence = require("desktop_manager.core.step_sequence")
-local track_windows = require("desktop_manager.macos.track_windows")
+local window_routes = require("desktop_manager.core.window_routes")
 
+---Brings the windows of a restore plan to their desktops and frames without a switch of desktops,
+---as `window_routes` plans the way of each window.
 local restore_windows = {}
 
 ---@class RestoreContext
 ---@field timing Timing
 ---@field find_window fun(window_id: integer): table|nil returns the hs.window of an id
----@field log_info fun(message: string)
+---@field show_busy_message fun(text: string)
+---@field busy_text string the message of the whole restore, which shows again after a step with a
+---message of its own
+---@field describe_window fun(window_id: integer): string such as 'Safari window "Inbox"'
+---@field is_current fun(): boolean whether the switch or the restore still runs, false once the
+---watchdog has stopped it, so that no later step acts
 
----A window to unminimize and fit, with the desktop it belongs on.
----@class WindowToBring
----@field window table an hs.window
+---The route of a window, with the placement it serves and the hs.window.
+---@class PlannedRoute
+---@field route WindowRoute
 ---@field placement WindowPlacement
----@field space_id integer
+---@field window table
 
----@param placement WindowPlacement
----@return integer|nil the space of the desktop that the placement names
-local function find_target_space_id(placement)
-    local screen = place_windows.read_screen_desktops(placement.screen_uuid)
-    return screen and screen.space_ids[placement.desktop_number]
+---@param additions DesktopAddition[]
+---@return string
+local function describe_additions(additions)
+    local count = 0
+    for _, addition in ipairs(additions) do
+        count = count + addition.desktops_to_add
+    end
+    if #additions == 1 then
+        return string.format(
+            "Adding %d desktops to %s… please wait",
+            count,
+            additions[1].slot_key
+        )
+    end
+    return string.format("Adding %d desktops… please wait", count)
 end
 
----@param placements WindowPlacement[]
----@param find_space_id fun(placement: WindowPlacement): integer|nil
+---Adds the desktops of every screen in one opening of Mission Control.
+---@param additions DesktopAddition[]
 ---@param context RestoreContext
 ---@param failures string[]
----@return WindowToBring[]
-local function resolve_windows(placements, find_space_id, context, failures)
-    local windows_to_bring = {}
-    for _, placement in ipairs(placements) do
-        local window = context.find_window(placement.window_id)
-        local space_id = find_space_id(placement)
-        if not window then
-            table.insert(failures, string.format("window %d was not found", placement.window_id))
-        elseif not space_id then
-            table.insert(
-                failures,
-                string.format(
-                    "desktop %d of screen %s was not found",
-                    placement.desktop_number,
-                    placement.screen_uuid
-                )
-            )
-        else
-            table.insert(
-                windows_to_bring,
-                { window = window, placement = placement, space_id = space_id }
-            )
-        end
-    end
-    return windows_to_bring
-end
-
----@param windows_to_bring WindowToBring[]
----@return boolean
-local function are_all_unminimized(windows_to_bring)
-    for _, entry in ipairs(windows_to_bring) do
-        if entry.window:isMinimized() then
-            return false
-        end
-    end
-    return true
-end
-
----Unminimizes the windows together, fits their frames, and passes on the windows that are not on
----their desktop afterwards.
----@param windows_to_bring WindowToBring[]
----@param timing Timing
----@param on_done fun(off_desktop: WindowToBring[])
-local function unminimize_and_fit(windows_to_bring, timing, on_done)
-    if #windows_to_bring == 0 then
-        on_done({})
+---@param on_done fun()
+local function add_desktops(additions, context, failures, on_done)
+    if #additions == 0 then
+        on_done()
         return
     end
-    for _, entry in ipairs(windows_to_bring) do
-        if entry.window:isMinimized() then
-            entry.window:unminimize()
+    context.show_busy_message(describe_additions(additions))
+    local edits = {}
+    for _, addition in ipairs(additions) do
+        table.insert(edits, {
+            screen_uuid = addition.screen_uuid,
+            slot_key = addition.slot_key,
+            desktops_to_add = addition.desktops_to_add,
+            space_ids_to_remove = {},
+        })
+    end
+    mission_control_desktops.edit(
+        edits,
+        function()
+            return nil
+        end,
+        context.timing,
+        function(edit_failures)
+            for _, failure in ipairs(edit_failures) do
+                table.insert(failures, failure)
+            end
+            context.show_busy_message(context.busy_text)
+            on_done()
         end
+    )
+end
+
+---Unminimizes the windows together, and waits until macOS has unminimized them.
+---macOS 27.0.1 unminimizes a window onto the desktop it was minimized on.
+---@param placements WindowPlacement[]
+---@param context RestoreContext
+---@param on_done fun()
+local function unminimize_windows(placements, context, on_done)
+    local windows = {}
+    for _, placement in ipairs(placements) do
+        local window = context.find_window(placement.window_id)
+        if window and window:isMinimized() then
+            window:unminimize()
+            table.insert(windows, window)
+        end
+    end
+    if #windows == 0 then
+        on_done()
+        return
     end
     poll_until.wait(
         function()
-            return are_all_unminimized(windows_to_bring)
-        end,
-        timing.minimize_timeout_seconds,
-        timing.poll_interval_seconds,
-        function()
-            retained_timers.after(timing.window_settle_seconds, function()
-                for _, entry in ipairs(windows_to_bring) do
-                    place_windows.fit_frame(entry.window, entry.placement)
+            for _, window in ipairs(windows) do
+                if window:isMinimized() then
+                    return false
                 end
-                retained_timers.after(timing.window_settle_seconds, function()
-                    local off_desktop = {}
-                    for _, entry in ipairs(windows_to_bring) do
-                        local space_id =
-                            read_desktops.find_window_space_id(entry.placement.window_id)
-                        if space_id ~= entry.space_id then
-                            table.insert(off_desktop, entry)
-                        end
-                    end
-                    on_done(off_desktop)
-                end)
-            end)
+            end
+            return true
+        end,
+        context.timing.minimize_timeout_seconds,
+        context.timing.poll_interval_seconds,
+        function()
+            retained_timers.after(context.timing.window_settle_seconds, on_done)
         end
     )
 end
 
----Moves the windows to the desktop that shows on their recorded screen, and fits their frames.
----Setting the frame of a window onto another screen moves it to the desktop that shows there.
+---Plans the route of each placement from where macOS lists its window now.
 ---@param placements WindowPlacement[]
----@param space_id integer
 ---@param context RestoreContext
 ---@param failures string[]
----@param on_done fun()
-local function bring_windows(placements, space_id, context, failures, on_done)
-    local windows_to_bring = resolve_windows(placements, function()
-        return space_id
-    end, context, failures)
-    unminimize_and_fit(windows_to_bring, context.timing, function(off_desktop)
-        for _, entry in ipairs(off_desktop) do
-            table.insert(
-                failures,
-                string.format(
-                    "%s stayed off desktop %d of its screen",
-                    track_windows.describe(entry.window),
-                    entry.placement.desktop_number
+---@return PlannedRoute[]
+local function plan_routes(placements, context, failures)
+    local desktop_layout = read_desktops.read_desktop_layout()
+    local planned = {}
+    for _, placement in ipairs(placements) do
+        local window = context.find_window(placement.window_id)
+        if not window then
+            table.insert(failures, string.format("window %d was not found", placement.window_id))
+        else
+            local location = {
+                space_ids = read_desktops.list_window_space_ids(placement.window_id),
+                frame = read_screens.to_rect(window:frame()),
+            }
+            local route, reason = window_routes.plan(placement, location, desktop_layout)
+            if reason then
+                table.insert(
+                    failures,
+                    context.describe_window(placement.window_id) .. " " .. reason
                 )
-            )
+            elseif route then
+                table.insert(planned, { route = route, placement = placement, window = window })
+            end
         end
-        on_done()
+    end
+    return planned
+end
+
+---Moves the windows of the routes by their ids, and calls `on_done` with the routes whose window
+---arrived.
+---@param planned PlannedRoute[]
+---@param find_space_id fun(route: WindowRoute): integer|nil the desktop of the move, nil for none
+---@param describe_failure fun(entry: PlannedRoute, message: string): string
+---@param context RestoreContext
+---@param failures string[]
+---@param on_done fun(arrived: PlannedRoute[])
+local function move_routes(planned, find_space_id, describe_failure, context, failures, on_done)
+    local moves = {}
+    for _, entry in ipairs(planned) do
+        local space_id = find_space_id(entry.route)
+        if space_id then
+            table.insert(moves, { window_id = entry.route.window_id, space_id = space_id })
+        end
+    end
+    move_windows.move_all(moves, context.timing, function(move_failures)
+        local has_failed = {}
+        for _, failure in ipairs(move_failures) do
+            has_failed[failure.window_id] = true
+            for _, entry in ipairs(planned) do
+                if entry.route.window_id == failure.window_id then
+                    table.insert(failures, describe_failure(entry, failure.message))
+                end
+            end
+        end
+        local arrived = {}
+        for _, entry in ipairs(planned) do
+            if not has_failed[entry.route.window_id] then
+                table.insert(arrived, entry)
+            end
+        end
+        on_done(arrived)
     end)
 end
 
----Shows each desktop in turn and brings its windows there.
----@param visits DesktopVisit[]
+---Sets the frames of the routes that have one, each while its window is on the desktop in view.
+---Setting the frame of a window onto another screen moves it to the desktop that shows there.
+---@param planned PlannedRoute[]
 ---@param context RestoreContext
----@param failures string[]
 ---@param on_done fun()
-local function run_visits(visits, context, failures, on_done)
-    local next_index = 1
-    local function visit_next()
-        local visit = visits[next_index]
-        if visit == nil then
-            on_done()
-            return
+local function set_frames(planned, context, on_done)
+    local has_set_frame = false
+    for _, entry in ipairs(planned) do
+        if entry.route.target_frame then
+            entry.window:setFrame(entry.route.target_frame, 0)
+            has_set_frame = true
         end
-        next_index = next_index + 1
-        place_windows.show_desktop(
-            visit.screen_uuid,
-            visit.desktop_number,
-            context.timing,
-            function(space_id, error_message)
-                if error_message or not space_id then
-                    table.insert(failures, error_message or "the desktop was not found")
-                    visit_next()
-                    return
-                end
-                bring_windows(visit.placements, space_id, context, failures, visit_next)
-            end
-        )
     end
-    visit_next()
-end
-
----@param addition DesktopAddition
----@param context RestoreContext
----@param failures string[]
----@param on_done fun()
-local function add_desktops(addition, context, failures, on_done)
-    local screen = read_screens.find_screen(addition.screen_uuid)
-    if not screen then
-        table.insert(failures, string.format("screen %s is gone", addition.screen_uuid))
+    if not has_set_frame then
         on_done()
         return
     end
-    mission_control_desktops.add_desktops(
-        screen:id(),
-        addition.desktops_to_add,
-        context.timing,
-        function(error_message)
-            if error_message then
-                table.insert(failures, "Adding desktops failed: " .. error_message)
-            end
-            on_done()
+    retained_timers.after(context.timing.window_settle_seconds, on_done)
+end
+
+---Keeps the routes whose window is on the screen of its placement, which a move by id needs.
+---A route across screens whose window stayed off that screen ends with a failure.
+---@param planned PlannedRoute[]
+---@param context RestoreContext
+---@param failures string[]
+---@return PlannedRoute[]
+local function keep_routes_on_their_screens(planned, context, failures)
+    local kept = {}
+    for _, entry in ipairs(planned) do
+        local space_id = read_desktops.find_window_space_id(entry.route.window_id)
+        local screen = space_id and read_desktops.find_screen_of_space(space_id)
+        if screen and screen.screen_uuid == entry.route.target_screen_uuid then
+            table.insert(kept, entry)
+        else
+            table.insert(
+                failures,
+                string.format(
+                    "%s stayed off screen %s",
+                    context.describe_window(entry.route.window_id),
+                    entry.placement.slot_key
+                )
+            )
         end
-    )
+    end
+    return kept
 end
 
 ---@param plan RestorePlan
@@ -197,6 +234,7 @@ end
 ---@param failures string[]
 ---@return Step[]
 local function build_steps(plan, context, failures)
+    local planned = {}
     local steps = {}
     table.insert(steps, function(continue)
         for _, bundle_id in ipairs(plan.bundle_ids_to_unhide) do
@@ -215,73 +253,90 @@ local function build_steps(plan, context, failures)
             continue()
         end)
     end)
-    for _, addition in ipairs(plan.desktop_additions) do
-        table.insert(steps, function(continue)
-            add_desktops(addition, context, failures, continue)
-        end)
-    end
     table.insert(steps, function(continue)
-        for _, placement in ipairs(plan.placements_in_place) do
-            local window = context.find_window(placement.window_id)
-            if window then
-                place_windows.fit_frame(window, placement)
-            end
-        end
-        continue()
+        add_desktops(plan.desktop_additions, context, failures, continue)
     end)
     table.insert(steps, function(continue)
-        local windows_to_bring =
-            resolve_windows(plan.unminimizations_in_place, find_target_space_id, context, failures)
-        unminimize_and_fit(windows_to_bring, context.timing, function(off_desktop)
-            for _, entry in ipairs(off_desktop) do
-                context.log_info(
-                    string.format(
-                        "%s stays off desktop %d of its screen, where macOS cannot move it",
-                        track_windows.describe(entry.window),
-                        entry.placement.desktop_number
-                    )
+        unminimize_windows(plan.unminimizations, context, continue)
+    end)
+    table.insert(steps, function(continue)
+        planned = plan_routes(plan.placements, context, failures)
+        move_routes(
+            planned,
+            function(route)
+                return route.view_space_id
+            end,
+            function(entry, message)
+                return string.format(
+                    "%s did not come into view to take its frame: %s",
+                    context.describe_window(entry.route.window_id),
+                    message
                 )
+            end,
+            context,
+            failures,
+            function(arrived)
+                planned = arrived
+                continue()
             end
-            continue()
-        end)
+        )
     end)
     table.insert(steps, function(continue)
-        run_visits(plan.visits, context, failures, continue)
+        set_frames(planned, context, continue)
     end)
-    if plan.focus then
-        table.insert(steps, function(continue)
-            place_windows.show_desktop(
-                plan.focus.screen_uuid,
-                plan.focus.desktop_number,
-                context.timing,
-                function(_, error_message)
-                    if error_message then
-                        table.insert(failures, error_message)
-                    end
-                    continue()
-                end
-            )
-        end)
-    end
+    table.insert(steps, function(continue)
+        planned = keep_routes_on_their_screens(planned, context, failures)
+        move_routes(
+            planned,
+            function(route)
+                return route.target_space_id
+            end,
+            function(entry, message)
+                return string.format(
+                    "%s did not reach desktop %d of %s: %s",
+                    context.describe_window(entry.route.window_id),
+                    entry.placement.desktop_number,
+                    entry.placement.slot_key,
+                    message
+                )
+            end,
+            context,
+            failures,
+            function()
+                continue()
+            end
+        )
+    end)
     return steps
 end
 
 ---Carries out a restore plan, and calls `on_done` with the failures that the user should hear of.
+---A restore that the watchdog stopped ends before its next step, and calls `on_done` no more.
+---The steps are: unhide the applications, add the desktops in one opening of Mission Control,
+---unminimize the windows together, bring into view by id the windows that need a frame, set the
+---frames, and move the windows on their screens to their desktops by id.
+---The desktops of `plan.shown_desktops` are left to the caller, which shows the desktop of the
+---screen of the focus in the last opening of Mission Control, after the removal of the extra
+---desktops.
 ---@param plan RestorePlan
 ---@param context RestoreContext
 ---@param on_done fun(failures: string[])
 function restore_windows.apply(plan, context, on_done)
     local failures = {}
-    step_sequence.run(
-        build_steps(plan, context, failures),
-        retained_timers.defer,
-        function(error_message)
-            if error_message then
-                table.insert(failures, error_message)
+    local steps = {}
+    for _, step in ipairs(build_steps(plan, context, failures)) do
+        table.insert(steps, function(continue)
+            if context.is_current() then
+                step(continue)
             end
-            on_done(failures)
+        end)
+    end
+    step_sequence.run(steps, retained_timers.defer, function(error_message)
+        if error_message then
+            table.insert(failures, error_message)
         end
-    )
+        on_done(failures)
+    end)
 end
 
 return restore_windows

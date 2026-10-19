@@ -1,3 +1,6 @@
+---Reads the modifier keys that the user holds.
+---The list of the application numbers shows while the user holds the modifiers of its shortcut, and
+---Mission Control opens once the user has released every modifier key.
 local poll_until = require("desktop_manager.macos.poll_until")
 
 local keyboard_modifiers = {}
@@ -33,17 +36,16 @@ function keyboard_modifiers.are_held(modifiers)
     return keyboard_modifiers.are_all_in(hs.eventtap.checkKeyboardModifiers(), modifiers)
 end
 
----A simulated Control-number would combine with modifiers that the user still holds.
+---Waits until the user releases every modifier key, before Mission Control opens, because Option
+---held in Mission Control turns the thumbnails into buttons that remove desktops.
 ---@param timing Timing
----@param on_done fun()
+---@param on_done fun(are_released: boolean) false when a key stays held past the time limit
 function keyboard_modifiers.wait_for_release(timing, on_done)
     poll_until.wait(
         keyboard_modifiers.are_released,
         timing.modifier_release_timeout_seconds,
         timing.poll_interval_seconds,
-        function()
-            on_done()
-        end
+        on_done
     )
 end
 

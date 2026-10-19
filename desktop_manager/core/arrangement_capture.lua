@@ -27,17 +27,14 @@ local arrangement_capture = {}
 
 ---@class MonitorDesktops
 ---@field slot_key string
----@field desktop_count integer
-
----@class DesktopLocation
----@field slot_key string
----@field desktop_number integer
+---@field desktop_count integer the number of desktops that the profile holds on the screen
+---@field shown_desktop_number integer|nil the desktop that the screen showed, counted from 1
 
 ---The desktops and windows that one profile recorded under one monitor configuration.
 ---@class Arrangement
 ---@field monitor_configuration_key string
 ---@field monitors MonitorDesktops[]
----@field focus DesktopLocation|nil
+---@field focused_slot_key string|nil the screen whose desktop had the focus
 ---@field windows WindowRecord[]
 
 local UNIT_FRAME_DECIMALS = 10000
@@ -106,21 +103,73 @@ function arrangement_capture.locate_space(desktop_layout, space_id)
     return nil
 end
 
+---@param screen ScreenDesktops
+---@return integer|nil the position of the desktop that the screen shows, nil for a space in full
+---screen, which is no user desktop
+local function find_shown_desktop_number(screen)
+    for desktop_number, space_id in ipairs(screen.space_ids) do
+        if space_id == screen.active_space_id then
+            return desktop_number
+        end
+    end
+    return nil
+end
+
+---@param desktop_layout DesktopLayout
+---@param screen_uuid string
+---@return ScreenDesktops|nil
+local function find_screen(desktop_layout, screen_uuid)
+    for _, screen in ipairs(desktop_layout.screens) do
+        if screen.screen_uuid == screen_uuid then
+            return screen
+        end
+    end
+    return nil
+end
+
+---@param arrangement Arrangement|nil
+---@param slot_key string
+---@return MonitorDesktops|nil
+local function find_monitor(arrangement, slot_key)
+    for _, monitor in ipairs(arrangement and arrangement.monitors or {}) do
+        if monitor.slot_key == slot_key then
+            return monitor
+        end
+    end
+    return nil
+end
+
+---@param screen ScreenDesktops
+---@param space_id integer
+---@return boolean whether the space is a desktop of the screen or the space that it shows
+local function holds_space(screen, space_id)
+    if screen.active_space_id == space_id then
+        return true
+    end
+    for _, candidate in ipairs(screen.space_ids) do
+        if candidate == space_id then
+            return true
+        end
+    end
+    return false
+end
+
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
----@param space_id integer|nil
----@return DesktopLocation|nil
-local function find_desktop_location(configuration, desktop_layout, space_id)
-    local location = arrangement_capture.locate_space(desktop_layout, space_id)
-    if not location then
+---@return string|nil the slot of the screen that holds the desktop with the focus
+local function find_focused_slot_key(configuration, desktop_layout)
+    local focused_space_id = desktop_layout.focused_space_id
+    if focused_space_id == nil then
         return nil
     end
-    local slot =
-        monitor_configuration.find_slot_of_screen(configuration, location.screen.screen_uuid)
-    if not slot then
-        return nil
+    for _, screen in ipairs(desktop_layout.screens) do
+        if holds_space(screen, focused_space_id) then
+            local slot =
+                monitor_configuration.find_slot_of_screen(configuration, screen.screen_uuid)
+            return slot and slot.slot_key
+        end
     end
-    return { slot_key = slot.slot_key, desktop_number = location.desktop_number }
+    return nil
 end
 
 ---@param arrangement Arrangement|nil
@@ -171,6 +220,10 @@ end
 ---Builds the arrangement of the observed windows.
 ---A window whose desktop or frame cannot be read keeps the location of its previous record.
 ---A frame without area counts as unread.
+---A screen that shows a space in full screen keeps the shown desktop of its previous record, and so
+---does the focus on a screen of no slot.
+---A screen whose desktops macOS does not list keeps the record of its previous arrangement, and has
+---no record without one, because a number of 0 would remove its desktops at the next restore.
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
 ---@param observations WindowObservation[]
@@ -184,13 +237,19 @@ function arrangement_capture.capture(
 )
     local monitors = {}
     for _, slot in ipairs(configuration.slots) do
-        local desktop_count = 0
-        for _, screen in ipairs(desktop_layout.screens) do
-            if screen.screen_uuid == slot.screen_uuid then
-                desktop_count = #screen.space_ids
-            end
+        local screen = find_screen(desktop_layout, slot.screen_uuid)
+        local previous_monitor = find_monitor(previous_arrangement, slot.slot_key)
+        if screen then
+            table.insert(monitors, {
+                slot_key = slot.slot_key,
+                desktop_count = #screen.space_ids,
+                shown_desktop_number = find_shown_desktop_number(screen)
+                    or previous_monitor and previous_monitor.shown_desktop_number
+                    or nil,
+            })
+        elseif previous_monitor then
+            table.insert(monitors, deep_copy.copy(previous_monitor))
         end
-        table.insert(monitors, { slot_key = slot.slot_key, desktop_count = desktop_count })
     end
     local previous_records = index_records_by_window_id(previous_arrangement)
     local windows = {}
@@ -204,11 +263,9 @@ function arrangement_capture.capture(
     return {
         monitor_configuration_key = configuration.key,
         monitors = monitors,
-        focus = find_desktop_location(
-            configuration,
-            desktop_layout,
-            desktop_layout.focused_space_id
-        ),
+        focused_slot_key = find_focused_slot_key(configuration, desktop_layout)
+            or previous_arrangement and previous_arrangement.focused_slot_key
+            or nil,
         windows = windows,
     }
 end

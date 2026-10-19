@@ -79,19 +79,38 @@ function read_desktops.is_space_active(space_id)
     return false
 end
 
----The number N of the macOS shortcut "Switch to Desktop N" that shows the desktop.
----Mission Control numbers the user desktops of all displays in one sequence.
+---@param screen_uuid string
+---@return ScreenDesktops|nil
+function read_desktops.find_screen_desktops(screen_uuid)
+    for _, screen in ipairs(read_desktops.read_desktop_layout().screens) do
+        if screen.screen_uuid == screen_uuid then
+            return screen
+        end
+    end
+    return nil
+end
+
 ---@param space_id integer
----@return integer|nil
-function read_desktops.find_desktop_shortcut_number(space_id)
-    local count = 0
+---@return ScreenDesktops|nil the screen whose user desktops hold the desktop
+function read_desktops.find_screen_of_space(space_id)
+    for _, screen in ipairs(read_desktops.read_desktop_layout().screens) do
+        for _, candidate in ipairs(screen.space_ids) do
+            if candidate == space_id then
+                return screen
+            end
+        end
+    end
+    return nil
+end
+
+---@param space_id integer
+---@return string|nil the UUID of the screen whose spaces hold the space, a space in full screen
+---included
+function read_desktops.find_screen_uuid_of_any_space(space_id)
     for _, display in ipairs(read_managed_displays()) do
         for _, space in ipairs(display.Spaces or {}) do
-            if space.type == USER_SPACE_TYPE then
-                count = count + 1
-                if space.ManagedSpaceID == space_id then
-                    return count
-                end
+            if space.ManagedSpaceID == space_id then
+                return resolve_screen_uuid(display["Display Identifier"])
             end
         end
     end

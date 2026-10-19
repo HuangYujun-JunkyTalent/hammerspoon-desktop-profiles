@@ -13,14 +13,15 @@ local search_windows = {}
 
 ---What the panel needs from the controller.
 ---@class SearchContext
----@field filter_windows table[] the hs.window objects of the window filter, the most recently
----focused first
+---@field filter_windows table[] the hs.window objects that accessibility reaches and the setting
+---hidden_application_windows shows: the windows of the window filter, the most recently focused
+---first, and the windows of hidden applications that the filter leaves out
 ---@field unreached_windows ServerWindow[] the windows that accessibility does not reach, as the
 ---last refresh found them
 ---@field refresh_unreached_windows fun(on_done: fun(windows: ServerWindow[])) lists them again
 ---@field app_numbers AppNumber[] the numbers of the numbering profile, which the panel shows
 ---@field overlay_settings SearchOverlaySettings
----@field timing Timing
+---@field switcher SwitcherContext what brings the selected window to the front
 ---@field load_previews fun(window_ids: integer[], preview_size: table,
 ---is_list_shown: fun(): boolean, on_image: fun(window_id: integer, image: table))
 ---@field on_closed fun()
@@ -131,6 +132,7 @@ end
 
 ---Closes the panel and brings the selected window to the front, which shows its desktop first.
 ---Without a selection, as when nothing matches, the panel stays.
+---While a switch, a restore or a press runs, the panel closes with the alert of the refusal.
 ---@param panel SearchPanel
 local function go_to_selection(panel)
     local window_id = window_search.find_selected_window_id(panel.search)
@@ -140,20 +142,24 @@ local function go_to_selection(panel)
         return
     end
     search_windows.close(panel)
+    if panel.context.switcher.refuse_while_busy() then
+        return
+    end
     local function report(error_message)
         if error_message then
             panel.context.report_failures({ error_message })
         end
     end
     if window then
-        app_switcher.bring_to_front(window, panel.context.timing, report)
+        app_switcher.bring_to_front(window, panel.context.switcher, report)
         return
     end
-    app_switcher.reach_window(window_id, unreached.space_id, panel.context.timing, report)
+    app_switcher.reach_window(unreached, panel.context.switcher, report)
 end
 
 ---What each key does in the panel, by its name in hs.keycodes.map.
----Return and Escape act after the event tap returns, because a desktop switch posts keys itself.
+---Return and Escape act after the event tap returns, so that the tap has stopped before Mission
+---Control opens to show another desktop.
 local KEY_ACTIONS = {
     escape = function(panel)
         retained_timers.defer(function()

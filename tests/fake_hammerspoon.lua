@@ -13,7 +13,19 @@ local fake_hammerspoon = {}
 ---@field frame Rect
 ---@field is_standard boolean|nil false for a panel such as the search window of a launcher
 ---@field is_unseen boolean|nil true for a window on a desktop that the user has not visited since
----Hammerspoon started, which accessibility does not reach until its desktop shows
+---Hammerspoon started, which accessibility does not reach until its desktop shows, unless its
+---application is hidden
+---A test sets `is_ordered_out` on `world.windows[id]` for a window that its application keeps
+---after it closed, which shows nowhere: accessibility never reaches it, and the fake of
+---`list_server_windows.js` prints it with `is_shown` false.
+---A test sets `is_on_every_desktop` on `world.windows[id]` after the install for a window that
+---macOS shows on every desktop of its display, which `hs.spaces.windowSpaces` and
+---`hs.spaces.windowsForSpace` then list on each of them.
+---A test sets `role` on `world.windows[id]` after the install for an element of `allWindows` that
+---accessibility gives another role than `AXWindow`, such as `AXSheet`, which `isStandard` and the
+---window filter then reject.
+---A test sets `is_missed_by_filter` on `world.windows[id]` for a window that the window filter
+---leaves out while `allWindows` of its application gives it.
 
 ---@class FakeApplicationSpec
 ---@field bundle_id string
@@ -24,16 +36,43 @@ local fake_hammerspoon = {}
 ---@field reopen_title string|nil the title of the window that a reopen opens
 ---A test sets these fields on `world.applications[bundle_id]` after the install:
 ---`is_dropped_by_filter_while_hidden` makes the window filter leave out the windows of the hidden
----application, as Hammerspoon does with a window that reports another subrole while hidden.
+---application, and `isStandard` of each of them false, as Hammerspoon does with a window that
+---reports another subrole while hidden, such as `AXDialog`.
+---`kind` is the value of `kind()`, 1 for an application with a Dock icon by default, and 0 for one
+---without.
 ---`ignores_unhide` makes an unhide leave the application hidden.
+---`hidden_read_error` makes `isHidden` raise that error.
+---`standard_delay_after_unhide_seconds` is the time after an unhide during which the windows of an
+---application with `is_dropped_by_filter_while_hidden` still report another subrole, 0 by default.
+---`main_window_id` names the window that `mainWindow` gives, and without it `mainWindow` gives nil.
+---`focused_window_id` names the window of the application that had the focus last, which a focus
+---of a window of the application sets.
+---`focusedWindow` gives that window while its desktop shows, and nil otherwise, as accessibility
+---gives AXFocusedWindow only for a window in view.
+---Without the field, `focusedWindow` gives the focused window of the world when it belongs to the
+---application.
+---`activation_delay_seconds` is the time after a focus of a window of the application until the
+---window has the focus of the world, which makes the application frontmost, 0 by default.
+---`math.huge` keeps the application from becoming frontmost.
+
+---@class FakeDisplaySpec
+---@field uuid string
+---@field space_ids integer[] the desktops of the display
+---@field active_space_id integer a desktop, or a space in full screen
+---@field full_screen_space_ids integer[]|nil the spaces of the windows in full screen, which follow
+---the desktops in Mission Control unless `all_space_ids` orders them
+---@field all_space_ids integer[]|nil the order of the desktops and the spaces in full screen in
+---Mission Control, such as a space in full screen between two desktops, and a desktop that it
+---leaves out, such as one added later, follows the others
 
 ---@class FakeWorldSpec
 ---@field screens { id: integer, uuid: string, name: string, frame: Rect }[]
----@field displays { uuid: string, space_ids: integer[], active_space_id: integer }[]
+---@field displays FakeDisplaySpec[]
 ---@field applications FakeApplicationSpec[]
 ---@field windows FakeWindowSpec[]
 
 local USER_SPACE_TYPE = 0
+local FULL_SCREEN_SPACE_TYPE = 4
 local ESCAPE_KEY_CODE = 53
 ---The key codes of the keys that the lists act on, and the code that the fake gives a typed
 ---character, which names no key.
@@ -62,28 +101,66 @@ local OSASCRIPT_PATH = "/usr/bin/osascript"
 local FIRST_PID = 500
 local WINDOW_MANAGER_BUNDLE_ID = "com.apple.WindowManager"
 
----@param spec FakeWorldSpec
----@return table world
----The shortcuts "Switch to Desktop 1" to "Switch to Desktop N" as Control-Option-Shift-Command
----with 1 to 9 and 0, in the form of `AppleSymbolicHotKeys` of macOS.
----@param highest_number integer 9, as on the machine of the user, or 10, as the script of the
----repository turns them on
----@return table
-local function all_desktop_shortcuts(highest_number)
-    local key_codes = { 18, 19, 20, 21, 23, 22, 26, 28, 25, 29 }
-    local hotkeys = {}
-    for number = 1, highest_number do
-        local key_code = key_codes[number]
-        hotkeys[tostring(117 + number)] = {
-            enabled = true,
-            value = { parameters = { 65535, key_code, 1966080 }, type = "standard" },
-        }
-    end
-    return hotkeys
-end
-
 local SYMBOLIC_HOTKEYS_EXPORT = "defaults export com.apple.symbolichotkeys -"
 
+---The world of the last install, where the loggers write, because a module keeps the logger that
+---it made under an earlier install.
+local current_world = nil
+
+---A test sets these fields of the world after the install:
+---`ignores_desktop_presses` makes a press on the thumbnail of a desktop in Mission Control do
+---nothing, so that a test can check the failure.
+---`ignored_desktop_press_count` is the number of presses on a thumbnail that Mission Control
+---ignores before it takes one.
+---`desktop_press_delay_seconds` is the time after which a press on a thumbnail takes effect.
+---Mission Control keeps showing its groups until then, a further press changes nothing, and a
+---toggle of Mission Control drops the press, closes Mission Control and leaves the desktop as it
+---was.
+---`mission_control_close_delay_seconds` is the time that the groups keep showing after a press has
+---made its desktop active.
+---`desktop_press_refusals[n]` is the message with which the press number n on a thumbnail fails.
+---`makes_thumbnails_stale` makes each press on a thumbnail turn every thumbnail read before it into
+---an element that refuses its actions, as an element of accessibility may go stale.
+---No measurement on macOS 27.0.1 shows what Mission Control does during its animation, so these
+---fields stand for possible behaviours that no measurement has confirmed.
+---The fake records each press on a thumbnail in `desktop_presses`, with its desktop, its time and
+---the number of reads of the accessibility tree of WindowManager before it, which
+---`window_manager_reads` counts.
+---`log_lines` holds the lines that the tools write to the loggers of Hammerspoon.
+---`focused_display_uuid` names the display of the focus, the first display while it is nil, and
+---the focus of a window moves the focus to its display.
+---`press_moves_focus`, true by default, makes a press on a thumbnail move the focus to its display,
+---which no check on macOS 27.0.1 has confirmed yet.
+---`reach_delay_seconds` is the time after which accessibility reaches a window that a press or a
+---move by id brought into view, 0 by default.
+---`unreachable_window_ids` holds the windows that accessibility does not reach in view either.
+---`move_call_seconds` is the time that each call of `hs.spaces.moveWindowToSpace` takes.
+---`all_windows_calls` counts the calls of `hs.window.allWindows`, also the call of
+---`hs.application.get` that finds no running application and then searches every window, as
+---Hammerspoon does, and
+---`application_window_reads[bundle_id]` the calls of `allWindows` of each application.
+---`hidden_reads[bundle_id]` counts the calls of `isHidden` of each application, and
+---`focused_window_reads[bundle_id]` the calls of `focusedWindow` and `mainWindow`.
+---`on_mission_control_open` is called each time a toggle opens Mission Control.
+---`move_delay_seconds` is the time after which `hs.spaces.moveWindowToSpace` moves a window, as a
+---build with pull request #3889 moves it after the call returns.
+---`unmovable_window_ids` holds the windows that `hs.spaces.moveWindowToSpace` leaves where they
+---are while it returns true, as Hammerspoon 1.1.1 does on macOS 27.
+---`frame_refusing_window_ids` holds the windows whose frame stays when the tool sets one.
+---`swallows_timer_errors` makes an error in a timer go into `timer_errors` instead of the test, as
+---Hammerspoon logs such an error and goes on.
+---`desktop_read_error` makes `hs.spaces.data_managedDisplaySpaces` raise that error.
+---`bounce_delay_seconds`, nil by default, models the return to the replaced desktop that the README
+---describes under the limits of Hammerspoon and macOS 27.0.1.
+---When a press on a thumbnail shows a desktop whose front window belongs to an application that is
+---not frontmost, and the focused window of that application lies on the desktop that the press
+---replaced, the fake shows the replaced desktop again after `bounce_delay_seconds`.
+---The application is then frontmost with that window focused.
+---The fake records each bounce in `bounces`, with the desktop shown, the desktop shown again and
+---the time.
+---`on_window_manager_read` is called at each read of the accessibility tree of WindowManager.
+---@param spec FakeWorldSpec
+---@return table world
 function fake_hammerspoon.install(spec)
     local world = {
         clock = 0,
@@ -96,7 +173,7 @@ function fake_hammerspoon.install(spec)
         window_operations = {},
         held_modifiers = {},
         key_strokes = {},
-        symbolic_hotkeys = all_desktop_shortcuts(9),
+        symbolic_hotkeys = {},
         tasks = {},
         task_exit_code = 0,
         alerts = {},
@@ -105,6 +182,14 @@ function fake_hammerspoon.install(spec)
         app_hotkeys = {},
         hotkey_by_shortcut = {},
         hotkey_events = {},
+        window_moves = {},
+        move_delay_seconds = 0.1,
+        unmovable_window_ids = {},
+        frame_refusing_window_ids = {},
+        frames_set_out_of_view = {},
+        windows_moved_by_removal = {},
+        swallows_timer_errors = false,
+        timer_errors = {},
         event_taps = {},
         snapshot_count = 0,
         rendered_sizes = {},
@@ -123,9 +208,36 @@ function fake_hammerspoon.install(spec)
         next_window_id = 1000,
         next_space_id = 2000,
         is_mission_control_open = false,
+        mission_control_openings = 0,
         mission_control_actions = {},
+        ignores_desktop_presses = false,
+        ignored_desktop_press_count = 0,
+        desktop_press_delay_seconds = 0,
+        mission_control_close_delay_seconds = 0,
+        desktop_press_refusals = {},
+        makes_thumbnails_stale = false,
+        desktop_presses = {},
+        bounce_delay_seconds = nil,
+        bounces = {},
+        on_window_manager_read = nil,
+        window_manager_reads = 0,
+        pending_desktop_press = nil,
+        pending_close = nil,
+        log_lines = {},
+        focused_display_uuid = nil,
+        press_moves_focus = true,
+        reach_delay_seconds = 0,
+        unreachable_window_ids = {},
+        move_call_seconds = 0,
+        all_windows_calls = 0,
+        application_window_reads = {},
+        hidden_reads = {},
+        focused_window_reads = {},
+        on_mission_control_open = nil,
+        window_levels = { overlay = 102, screenSaver = 1000 },
         window_list_runs = 0,
     }
+    current_world = world
 
     local function find_screen_at(frame)
         local center_x = frame.x + frame.w / 2
@@ -144,6 +256,64 @@ function fake_hammerspoon.install(spec)
             end
         end
         return nil
+    end
+
+    ---@param space_id integer
+    ---@return table|nil the display whose desktops or spaces in full screen hold the space
+    local function find_display_of_space(space_id)
+        for _, display in ipairs(world.displays) do
+            for _, candidate in ipairs(display.space_ids) do
+                if candidate == space_id then
+                    return display
+                end
+            end
+            for _, candidate in ipairs(display.full_screen_space_ids or {}) do
+                if candidate == space_id then
+                    return display
+                end
+            end
+        end
+        return nil
+    end
+
+    ---@param display table
+    ---@return { space_id: integer, type: integer }[] the desktops and the spaces in full screen of
+    ---the display, in the order of Mission Control
+    local function list_typed_spaces(display)
+        local type_by_space = {}
+        for _, space_id in ipairs(display.space_ids) do
+            type_by_space[space_id] = USER_SPACE_TYPE
+        end
+        for _, space_id in ipairs(display.full_screen_space_ids or {}) do
+            type_by_space[space_id] = FULL_SCREEN_SPACE_TYPE
+        end
+        local spaces, is_listed = {}, {}
+        local function add(space_id)
+            if type_by_space[space_id] and not is_listed[space_id] then
+                is_listed[space_id] = true
+                table.insert(spaces, { space_id = space_id, type = type_by_space[space_id] })
+            end
+        end
+        for _, space_id in ipairs(display.all_space_ids or {}) do
+            add(space_id)
+        end
+        for _, space_id in ipairs(display.space_ids) do
+            add(space_id)
+        end
+        for _, space_id in ipairs(display.full_screen_space_ids or {}) do
+            add(space_id)
+        end
+        return spaces
+    end
+
+    ---@param display table
+    ---@return integer[] every space of the display, in the order of Mission Control
+    local function list_all_spaces(display)
+        local space_ids = {}
+        for _, space in ipairs(list_typed_spaces(display)) do
+            table.insert(space_ids, space.space_id)
+        end
+        return space_ids
     end
 
     local screen_objects = {}
@@ -181,11 +351,12 @@ function fake_hammerspoon.install(spec)
 
     local new_timer
     local mission_control_element
+    local schedule_bounce
 
     ---An accessibility element whose attributes may be functions, read at each call, and whose
-    ---actions are functions.
+    ---actions are functions, which return a message when they refuse.
     ---@param attributes table<string, any>
-    ---@param actions table<string, fun()>
+    ---@param actions table<string, fun(): string|nil>
     ---@return table
     local function accessibility_element(attributes, actions)
         return {
@@ -201,10 +372,29 @@ function fake_hammerspoon.install(spec)
                 if not action then
                     return nil, "the element has no action " .. name
                 end
-                action()
+                local refusal = action()
+                if refusal then
+                    return nil, refusal
+                end
                 return true
             end,
         }
+    end
+
+    ---Lets accessibility reach a window that Hammerspoon had not seen, once a press or a move by id
+    ---brought it into view, after `reach_delay_seconds`, and never for `unreachable_window_ids`.
+    ---@param window table
+    local function reveal(window)
+        if not window.is_unseen or world.unreachable_window_ids[window.id] then
+            return
+        end
+        if world.reach_delay_seconds > 0 then
+            new_timer(world.reach_delay_seconds, function()
+                window.is_unseen = false
+            end, false)
+            return
+        end
+        window.is_unseen = false
     end
 
     local window_manager_application = {}
@@ -212,23 +402,143 @@ function fake_hammerspoon.install(spec)
         return WINDOW_MANAGER_BUNDLE_ID
     end
 
+    ---@param space_id integer
+    ---@return table|nil the window at the front of the desktop, the first of `window_order` on it
+    ---that shows
+    local function find_front_window(space_id)
+        for _, window_id in ipairs(world.window_order) do
+            local window = world.windows[window_id]
+            if
+                window.space_id == space_id
+                and not window.is_minimized
+                and not world.applications[window.bundle_id].is_hidden
+            then
+                return window
+            end
+        end
+        return nil
+    end
+
+    ---Shows the replaced desktop again after `bounce_delay_seconds`, when the application of the
+    ---front window of the shown desktop is not frontmost and its focused window lies on the
+    ---replaced desktop.
+    ---@param display table a display of the world
+    ---@param replaced_space_id integer
+    ---@param space_id integer the desktop that the press showed
+    schedule_bounce = function(display, replaced_space_id, space_id)
+        local front = world.bounce_delay_seconds and find_front_window(space_id)
+        if not front then
+            return
+        end
+        local focused = world.focused_window_id and world.windows[world.focused_window_id]
+        if focused and focused.bundle_id == front.bundle_id then
+            return
+        end
+        local returning_id = world.applications[front.bundle_id].focused_window_id
+        local returning = returning_id and world.windows[returning_id]
+        if not returning or returning.space_id ~= replaced_space_id then
+            return
+        end
+        new_timer(world.bounce_delay_seconds, function()
+            display.active_space_id = replaced_space_id
+            world.focused_window_id = returning.id
+            world.focused_display_uuid = display.uuid
+            table.insert(world.bounces, {
+                shown_space_id = space_id,
+                shown_again_space_id = replaced_space_id,
+                at = world.clock,
+            })
+        end, false)
+    end
+
     ---@param display table a display of the world
     ---@param space_id integer
-    ---@return table the thumbnail of a desktop in the list of Mission Control
+    ---@return table the thumbnail of a desktop in the list of Mission Control: a press shows the
+    ---desktop and closes Mission Control, and macOS removes no desktop that shows
     local function desktop_thumbnail(display, space_id)
+        local function show_desktop()
+            local replaced_space_id = display.active_space_id
+            display.active_space_id = space_id
+            schedule_bounce(display, replaced_space_id, space_id)
+            for _, window in pairs(world.windows) do
+                if window.space_id == space_id then
+                    reveal(window)
+                end
+            end
+            if world.mission_control_close_delay_seconds > 0 then
+                local pending_close = {}
+                world.pending_close = pending_close
+                new_timer(world.mission_control_close_delay_seconds, function()
+                    if world.pending_close == pending_close then
+                        world.pending_close = nil
+                        world.is_mission_control_open = false
+                    end
+                end, false)
+            else
+                world.is_mission_control_open = false
+            end
+            if world.press_moves_focus then
+                world.focused_display_uuid = display.uuid
+            end
+            table.insert(world.mission_control_actions, "show " .. space_id)
+        end
+        local presses_at_read = #world.desktop_presses
         return accessibility_element({ AXIdentifier = "mc.space" }, {
+            AXPress = function()
+                if world.makes_thumbnails_stale and presses_at_read < #world.desktop_presses then
+                    return "the element is stale"
+                end
+                table.insert(world.desktop_presses, {
+                    space_id = space_id,
+                    at = world.clock,
+                    window_manager_reads = world.window_manager_reads,
+                })
+                local refusal = world.desktop_press_refusals[#world.desktop_presses]
+                if refusal then
+                    return refusal
+                end
+                if world.ignores_desktop_presses or world.pending_desktop_press then
+                    return nil
+                end
+                if world.ignored_desktop_press_count > 0 then
+                    world.ignored_desktop_press_count = world.ignored_desktop_press_count - 1
+                    return nil
+                end
+                if world.desktop_press_delay_seconds > 0 then
+                    local pending_press = {}
+                    world.pending_desktop_press = pending_press
+                    new_timer(world.desktop_press_delay_seconds, function()
+                        if world.pending_desktop_press == pending_press then
+                            world.pending_desktop_press = nil
+                            show_desktop()
+                        end
+                    end, false)
+                    return nil
+                end
+                show_desktop()
+                return nil
+            end,
             AXRemoveDesktop = function()
+                if display.active_space_id == space_id then
+                    return "the desktop shows"
+                end
                 for index = #display.space_ids, 1, -1 do
                     if display.space_ids[index] == space_id then
                         table.remove(display.space_ids, index)
                     end
                 end
-                for _, window in pairs(world.windows) do
+                for _, window_id in ipairs(world.window_order) do
+                    local window = world.windows[window_id]
                     if window.space_id == space_id then
                         window.space_id = display.space_ids[1]
+                        local is_hidden = world.applications[window.bundle_id].is_hidden
+                        if not window.is_minimized and not is_hidden then
+                            table.insert(world.windows_moved_by_removal, window_id)
+                        end
                     end
                 end
                 table.insert(world.mission_control_actions, "remove " .. space_id)
+                return nil
             end,
         })
     end
@@ -246,13 +556,14 @@ function fake_hammerspoon.install(spec)
                     world.next_space_id = space_id + 1
                     table.insert(display.space_ids, space_id)
                     table.insert(world.mission_control_actions, "add " .. space_id)
+                    return nil
                 end,
             })
             local spaces_list = accessibility_element({
                 AXIdentifier = "mc.spaces.list",
                 AXChildren = function()
                     local thumbnails = {}
-                    for _, space_id in ipairs(display.space_ids) do
+                    for _, space_id in ipairs(list_all_spaces(display)) do
                         table.insert(thumbnails, desktop_thumbnail(display, space_id))
                     end
                     return thumbnails
@@ -268,6 +579,15 @@ function fake_hammerspoon.install(spec)
             )
         end
         return accessibility_element({ AXChildren = groups }, {})
+    end
+
+    ---Whether the windows of the application report another subrole than a standard window: while
+    ---it is hidden, and for `standard_delay_after_unhide_seconds` after its unhide.
+    ---@param application table an application of the fake world
+    ---@return boolean
+    local function reports_other_subrole(application)
+        return application.is_dropped_by_filter_while_hidden == true
+            and (application.is_hidden or world.clock < (application.standard_again_at or 0))
     end
 
     local application_objects = {}
@@ -287,13 +607,23 @@ function fake_hammerspoon.install(spec)
             return application.pid
         end
         function object:kind()
-            return 1
+            return application.kind or 1
         end
         function object:isHidden()
+            world.hidden_reads[bundle_id] = (world.hidden_reads[bundle_id] or 0) + 1
+            if application.hidden_read_error then
+                error(application.hidden_read_error)
+            end
             return application.is_hidden
         end
         function object:hide()
+            local was_hidden = application.is_hidden
             application.is_hidden = true
+            if not was_hidden then
+                for _, watcher in ipairs(world.application_watchers) do
+                    watcher(application.name, hs.application.watcher.hidden, object)
+                end
+            end
             return true
         end
         function object:unhide()
@@ -303,6 +633,8 @@ function fake_hammerspoon.install(spec)
             local was_hidden = application.is_hidden
             application.is_hidden = false
             if was_hidden then
+                application.standard_again_at = world.clock
+                    + (application.standard_delay_after_unhide_seconds or 0)
                 for _, watcher in ipairs(world.application_watchers) do
                     watcher(application.name, hs.application.watcher.unhidden, object)
                 end
@@ -320,11 +652,53 @@ function fake_hammerspoon.install(spec)
             end, false)
             return true
         end
+        ---Whether accessibility reaches the window: a window in view once its desktop has shown,
+        ---and while the application is hidden also a window on a desktop that has not shown,
+        ---as the README of the repository says.
+        ---@param window table a window of the fake world
+        ---@return boolean
+        local function is_reached(window)
+            if window.is_ordered_out or world.unreachable_window_ids[window.id] then
+                return false
+            end
+            return not window.is_unseen or application.is_hidden == true
+        end
+        local function count_focused_window_read()
+            world.focused_window_reads[bundle_id] = (world.focused_window_reads[bundle_id] or 0) + 1
+        end
+        function object:focusedWindow()
+            count_focused_window_read()
+            local window_id = application.focused_window_id
+            local world_focused = world.focused_window_id and world.windows[world.focused_window_id]
+            if not window_id and world_focused and world_focused.bundle_id == bundle_id then
+                window_id = world_focused.id
+            end
+            local window = window_id and world.windows[window_id]
+            if not window or not is_reached(window) or window.is_minimized then
+                return nil
+            end
+            local display = find_display_of_space(window.space_id)
+            if not display or display.active_space_id ~= window.space_id then
+                return nil
+            end
+            return window.object
+        end
+        function object:mainWindow()
+            count_focused_window_read()
+            local window = world.windows[application.main_window_id]
+            if not window or not is_reached(window) then
+                return nil
+            end
+            return window.object
+        end
         function object:allWindows()
+            world.application_window_reads[bundle_id] = (
+                world.application_window_reads[bundle_id] or 0
+            ) + 1
             local windows = {}
             for _, window_id in ipairs(world.window_order) do
                 local window = world.windows[window_id]
-                if window.bundle_id == bundle_id and not window.is_unseen then
+                if window.bundle_id == bundle_id and is_reached(window) then
                     table.insert(windows, window.object)
                 end
             end
@@ -368,12 +742,30 @@ function fake_hammerspoon.install(spec)
             return window.id
         end
         function object:focus()
-            world.focused_window_id = window.id
+            local application = world.applications[window.bundle_id]
+            application.focused_window_id = window.id
+            local function take_focus()
+                world.focused_window_id = window.id
+                local display = find_display_of_space(window.space_id)
+                world.focused_display_uuid = display and display.uuid or world.focused_display_uuid
+            end
+            local delay_seconds = application.activation_delay_seconds or 0
+            if delay_seconds > 0 then
+                new_timer(delay_seconds, take_focus, false)
+            else
+                take_focus()
+            end
             table.insert(world.window_operations, "focus " .. window.id)
             return object
         end
         function object:isStandard()
+            local application = world.applications[window.bundle_id]
             return window.is_standard ~= false
+                and object:role() == "AXWindow"
+                and not reports_other_subrole(application)
+        end
+        function object:role()
+            return window.role or "AXWindow"
         end
         function object:title()
             return window.title
@@ -405,6 +797,13 @@ function fake_hammerspoon.install(spec)
         end
         function object:setFrame(rect)
             record_operation("setFrame", window)
+            local display = find_display_of_space(window.space_id)
+            if not display or display.active_space_id ~= window.space_id then
+                table.insert(world.frames_set_out_of_view, window.id)
+            end
+            if world.frame_refusing_window_ids[window.id] then
+                return object
+            end
             local old_screen, new_screen = find_screen_at(window.frame), find_screen_at(rect)
             window.frame = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
             if old_screen ~= new_screen then
@@ -462,6 +861,32 @@ function fake_hammerspoon.install(spec)
             space_id = space_id,
             frame = { x = screen.frame.x, y = screen.frame.y, w = 600, h = 400 },
             is_unseen = true,
+        })
+    end
+
+    ---Adds a window that Hammerspoon has seen on any desktop, such as a window of an application
+    ---that the desktop manager leaves to macOS, at the top left corner of the screen of the
+    ---desktop.
+    ---@param bundle_id string
+    ---@param title string
+    ---@param space_id integer
+    ---@return table window
+    function world.add_window_of(bundle_id, title, space_id)
+        world.next_window_id = world.next_window_id + 1
+        world.applications[bundle_id].is_running = true
+        local display = find_display_of_space(space_id)
+        local screen = world.screens[1]
+        for _, candidate in ipairs(world.screens) do
+            if display and candidate.uuid == display.uuid then
+                screen = candidate
+            end
+        end
+        return add_window({
+            id = world.next_window_id,
+            bundle_id = bundle_id,
+            title = title,
+            space_id = space_id,
+            frame = { x = screen.frame.x, y = screen.frame.y, w = 600, h = 400 },
         })
     end
 
@@ -716,6 +1141,26 @@ function fake_hammerspoon.install(spec)
         application_object(bundle_id):unhide()
     end
 
+    ---Hides an application as Command-H does.
+    ---@param bundle_id string
+    function world.hide_application(bundle_id)
+        application_object(bundle_id):hide()
+    end
+
+    ---Quits an application and reports the quit to the application watchers, and leaves its
+    ---windows to the test.
+    ---@param bundle_id string
+    function world.terminate_application(bundle_id)
+        world.applications[bundle_id].is_running = false
+        for _, watcher in ipairs(world.application_watchers) do
+            watcher(
+                world.applications[bundle_id].name,
+                hs.application.watcher.terminated,
+                application_object(bundle_id)
+            )
+        end
+    end
+
     new_timer = function(seconds, callback, is_repeating)
         local timer = { due = world.clock + seconds, interval = seconds, callback = callback }
         timer.is_repeating = is_repeating
@@ -794,6 +1239,13 @@ function fake_hammerspoon.install(spec)
         rebuild_screen_objects()
     end
 
+    ---Calls the callback after the seconds, as a change that macOS makes on its own.
+    ---@param seconds number
+    ---@param callback fun()
+    function world.schedule(seconds, callback)
+        new_timer(seconds, callback, false)
+    end
+
     function world.advance(seconds)
         local target = world.clock + seconds
         while true do
@@ -816,17 +1268,27 @@ function fake_hammerspoon.install(spec)
             else
                 next_timer.is_running = false
             end
-            next_timer.callback()
+            if world.swallows_timer_errors then
+                local is_successful, message = pcall(next_timer.callback)
+                if not is_successful then
+                    table.insert(world.timer_errors, tostring(message))
+                end
+            else
+                next_timer.callback()
+            end
         end
         world.clock = target
     end
 
     local function managed_displays()
+        if world.desktop_read_error then
+            error(world.desktop_read_error)
+        end
         local displays = {}
         for _, display in ipairs(world.displays) do
             local spaces = {}
-            for _, space_id in ipairs(display.space_ids) do
-                table.insert(spaces, { ManagedSpaceID = space_id, type = USER_SPACE_TYPE })
+            for _, space in ipairs(list_typed_spaces(display)) do
+                table.insert(spaces, { ManagedSpaceID = space.space_id, type = space.type })
             end
             table.insert(displays, {
                 ["Display Identifier"] = display.uuid,
@@ -835,23 +1297,6 @@ function fake_hammerspoon.install(spec)
             })
         end
         return displays
-    end
-
-    local function switch_by_shortcut(number)
-        local count = 0
-        for _, display in ipairs(world.displays) do
-            for _, space_id in ipairs(display.space_ids) do
-                count = count + 1
-                if count == number then
-                    display.active_space_id = space_id
-                    for _, window in pairs(world.windows) do
-                        if window.space_id == space_id then
-                            window.is_unseen = false
-                        end
-                    end
-                end
-            end
-        end
     end
 
     local function watcher_factory()
@@ -867,7 +1312,9 @@ function fake_hammerspoon.install(spec)
     end
 
     local application_watcher = {
+        hidden = "hidden",
         unhidden = "unhidden",
+        terminated = "terminated",
         new = function(callback)
             table.insert(world.application_watchers, callback)
             return {
@@ -879,10 +1326,12 @@ function fake_hammerspoon.install(spec)
     }
 
     local function list_window_objects()
+        world.all_windows_calls = world.all_windows_calls + 1
         local windows = {}
         for _, window_id in ipairs(world.window_order) do
-            if not world.windows[window_id].is_unseen then
-                table.insert(windows, world.windows[window_id].object)
+            local window = world.windows[window_id]
+            if not window.is_unseen and not window.is_ordered_out then
+                table.insert(windows, window.object)
             end
         end
         return windows
@@ -899,7 +1348,10 @@ function fake_hammerspoon.install(spec)
             local application = world.applications[window.bundle_id]
             if
                 not window.is_unseen
-                and not (application.is_hidden and application.is_dropped_by_filter_while_hidden)
+                and not window.is_ordered_out
+                and not window.is_missed_by_filter
+                and (window.role or "AXWindow") == "AXWindow"
+                and not reports_other_subrole(application)
             then
                 table.insert(windows, window.object)
             end
@@ -915,6 +1367,7 @@ function fake_hammerspoon.install(spec)
 
     _G.hs = {
         configdir = "/fake/.hammerspoon",
+        processInfo = { version = "8cde946" },
         accessibilityState = function()
             return true
         end,
@@ -957,27 +1410,77 @@ function fake_hammerspoon.install(spec)
         spaces = {
             data_managedDisplaySpaces = managed_displays,
             focusedSpace = function()
-                return world.displays[1].active_space_id
+                local display = world.focused_display_uuid
+                    and find_display(world.focused_display_uuid)
+                return (display or world.displays[1]).active_space_id
             end,
             windowSpaces = function(window_id)
                 local window = world.windows[window_id]
                 if not window then
                     return {}
                 end
+                local display = window.is_on_every_desktop
+                    and find_display_of_space(window.space_id)
+                if display then
+                    return { table.unpack(display.space_ids) }
+                end
                 return { window.space_id }
+            end,
+            ---Moves the window after `move_delay_seconds`, and a window that arrives on the desktop
+            ---in view becomes one that Hammerspoon has seen.
+            ---A desktop of another display raises an error, because the tool moves a window to
+            ---another screen by its frame alone.
+            moveWindowToSpace = function(window_id, space_id)
+                table.insert(world.window_moves, string.format("%d to %d", window_id, space_id))
+                local window = world.windows[window_id]
+                if not window then
+                    return true
+                end
+                local display = find_display_of_space(space_id)
+                if not display or display ~= find_display_of_space(window.space_id) then
+                    error(string.format("desktop %d is on another display", space_id))
+                end
+                world.clock = world.clock + world.move_call_seconds
+                if world.unmovable_window_ids[window_id] then
+                    return true
+                end
+                new_timer(world.move_delay_seconds, function()
+                    window.space_id = space_id
+                    if display.active_space_id == space_id then
+                        reveal(window)
+                    end
+                end, false)
+                return true
             end,
             windowsForSpace = function(space_id)
                 local window_ids = {}
                 for _, window_id in ipairs(world.window_order) do
                     local window = world.windows[window_id]
-                    if window.space_id == space_id and not window.is_minimized then
+                    local is_on_space = window.space_id == space_id
+                        or window.is_on_every_desktop
+                            and find_display_of_space(window.space_id) == find_display_of_space(
+                                space_id
+                            )
+                    if is_on_space and not window.is_minimized then
                         table.insert(window_ids, window_id)
                     end
                 end
                 return window_ids
             end,
             toggleMissionControl = function()
+                world.pending_close = nil
+                if world.pending_desktop_press then
+                    world.pending_desktop_press = nil
+                    world.is_mission_control_open = false
+                    return
+                end
                 world.is_mission_control_open = not world.is_mission_control_open
+                if world.is_mission_control_open then
+                    world.mission_control_openings = world.mission_control_openings + 1
+                    if world.on_mission_control_open then
+                        world.on_mission_control_open()
+                    end
+                end
             end,
             watcher = watcher_factory(),
         },
@@ -1041,7 +1544,8 @@ function fake_hammerspoon.install(spec)
         },
         task = {
             ---A task of the fake lists the windows of the window server after 0.2 seconds, or
-            ---runs the script that turns on the desktop shortcuts at once.
+            ---runs the script that turns one shortcut of macOS off at once, and the fake runs no
+            ---other script.
             new = function(path, callback, arguments)
                 local task = {}
                 function task:start()
@@ -1052,11 +1556,12 @@ function fake_hammerspoon.install(spec)
                         end, false)
                         return task
                     end
-                    table.insert(world.tasks, { path = path, arguments = arguments })
                     local script = arguments and arguments[1] or ""
-                    if
-                        world.task_exit_code == 0 and script:match("disable_macos_shortcut%.sh$")
-                    then
+                    if not script:match("disable_macos_shortcut%.sh$") then
+                        error("the fake runs no script but disable_macos_shortcut.sh: " .. script)
+                    end
+                    table.insert(world.tasks, { path = path, arguments = arguments })
+                    if world.task_exit_code == 0 then
                         world.symbolic_hotkeys[arguments[2]] = {
                             enabled = false,
                             value = {
@@ -1067,8 +1572,6 @@ function fake_hammerspoon.install(spec)
                                 },
                             },
                         }
-                    elseif world.task_exit_code == 0 then
-                        world.symbolic_hotkeys = all_desktop_shortcuts(10)
                     end
                     callback(world.task_exit_code, "", "")
                     return task
@@ -1090,9 +1593,6 @@ function fake_hammerspoon.install(spec)
             end,
             keyStroke = function(modifiers, character)
                 table.insert(world.key_strokes, table.concat(modifiers, "+") .. "+" .. character)
-                if table.concat(modifiers, "+") == "ctrl+alt+shift+cmd" and tonumber(character) then
-                    switch_by_shortcut(character == "0" and 10 or tonumber(character))
-                end
             end,
             event = { types = { keyDown = 10, flagsChanged = 12 } },
             new = function(_, callback)
@@ -1130,11 +1630,12 @@ function fake_hammerspoon.install(spec)
             end,
         },
         canvas = {
-            windowLevels = { overlay = 102 },
+            windowLevels = world.window_levels,
             new = function(frame)
                 local canvas = { current_frame = frame, elements = {}, is_visible = false }
                 table.insert(world.canvases, canvas)
-                function canvas:level()
+                function canvas:level(level)
+                    canvas.window_level = level
                     return canvas
                 end
                 function canvas:behaviorAsLabels()
@@ -1229,6 +1730,20 @@ function fake_hammerspoon.install(spec)
         },
         application = {
             watcher = application_watcher,
+            runningApplications = function()
+                local bundle_ids = {}
+                for bundle_id, application in pairs(world.applications) do
+                    if application.is_running then
+                        table.insert(bundle_ids, bundle_id)
+                    end
+                end
+                table.sort(bundle_ids)
+                local objects = {}
+                for _, bundle_id in ipairs(bundle_ids) do
+                    table.insert(objects, application_object(bundle_id))
+                end
+                return objects
+            end,
             applicationForPID = function(pid)
                 for bundle_id, application in pairs(world.applications) do
                     if application.pid == pid and application.is_running then
@@ -1255,6 +1770,7 @@ function fake_hammerspoon.install(spec)
                         return application_object(bundle_id)
                     end
                 end
+                list_window_objects()
                 return nil
             end,
             frontmostApplication = function()
@@ -1286,6 +1802,12 @@ function fake_hammerspoon.install(spec)
         },
         axuielement = {
             applicationElement = function(application)
+                if application == window_manager_application then
+                    world.window_manager_reads = world.window_manager_reads + 1
+                    if world.on_window_manager_read then
+                        world.on_window_manager_read()
+                    end
+                end
                 if application == window_manager_application and world.is_mission_control_open then
                     return mission_control_element()
                 end
@@ -1355,8 +1877,17 @@ function fake_hammerspoon.install(spec)
         },
         logger = {
             new = function()
-                local function ignore() end
-                return { i = ignore, f = ignore, w = ignore, e = ignore, d = ignore }
+                local function record(...)
+                    local parts = {}
+                    for index = 1, select("#", ...) do
+                        table.insert(parts, tostring(select(index, ...)))
+                    end
+                    table.insert(current_world.log_lines, table.concat(parts, " "))
+                end
+                local function record_formatted(format, ...)
+                    table.insert(current_world.log_lines, string.format(format, ...))
+                end
+                return { i = record, f = record_formatted, w = record, e = record, d = record }
             end,
         },
         json = {
@@ -1369,14 +1900,16 @@ function fake_hammerspoon.install(spec)
                 local rows = {}
                 for _, window_id in ipairs(world.window_order) do
                     local window = world.windows[window_id]
+                    local application = world.applications[window.bundle_id]
                     table.insert(rows, {
                         window_id = window_id,
-                        pid = world.applications[window.bundle_id].pid,
+                        pid = application.pid,
                         title = window.title,
                         x = window.frame.x,
                         y = window.frame.y,
                         w = window.frame.w,
                         h = window.frame.h,
+                        is_shown = not window.is_ordered_out,
                     })
                 end
                 return rows

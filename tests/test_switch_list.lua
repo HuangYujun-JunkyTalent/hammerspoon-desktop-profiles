@@ -85,6 +85,23 @@ return {
         expect.equal(lines[4].text, "      untitled window")
     end,
 
+    a_hidden_application_without_listed_windows_is_noted_as_hidden = function()
+        local hidden_word = {
+            number = 3,
+            bundle_id = "com.microsoft.Word",
+            app_name = "Microsoft Word",
+            windows = {},
+            first_window_index = 0,
+            is_hidden = true,
+        }
+        local lines = switch_list.describe_lines({ hidden_word }, nil, 40)
+        expect.equal(lines[2].text, "      hidden, a press unhides it")
+        local groups = switch_list.describe_application_columns({ hidden_word }, nil)
+        expect.equal(groups[1].columns[1].note, "hidden, a press unhides it")
+        expect.equal(switch_list.describe_note(APPLICATIONS[1]), nil)
+        expect.equal(switch_list.describe_note(APPLICATIONS[2]), "no window, a new one opens")
+    end,
+
     application_columns_hold_every_window_and_mark_the_selection = function()
         local groups =
             switch_list.describe_application_columns(APPLICATIONS, { number = 1, window_index = 2 })

@@ -1,10 +1,12 @@
 local deep_copy = require("desktop_manager.core.deep_copy")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 
----Keeps the number of desktops of each display, so that the desktops that macOS moves to a display
----when another display disconnects can be told apart and removed once they are empty.
----macOS appends those desktops at the end of the display that stays, and removes none of them when
----the other display returns.
+---Plans the removal of the desktops beyond the number that a profile holds on each display, and
+---keeps the number of desktops of each display for a monitor configuration that the active profile
+---has no layout for.
+---macOS appends the desktops of a display that disconnects at the end of the display that stays,
+---and removes none of them when the other display returns, so the kept numbers tell those desktops
+---apart and the removal takes them away once they are empty.
 local desktop_counts = {}
 
 ---The desktops of each display at one reading.
@@ -17,13 +19,15 @@ local desktop_counts = {}
 ---@field kept table<string, integer> the number of desktops of each display, by slot key
 ---@field last_reading DesktopReading|nil
 
----A desktop beyond the count of its display that the plan removes.
+---The desktops beyond the count of a display that the plan removes.
 ---@class DesktopRemoval
 ---@field screen_uuid string
 ---@field slot_key string
+---@field count integer the number of desktops that the display keeps
 ---@field space_ids integer[] from the end of the display
----@field staying_count integer the desktops beyond the count that stay, because they show or hold
----a window
+---@field staying_count integer the desktops beyond the count that stay
+---@field empty_staying_space_ids integer[] the empty desktops that stay below a desktop that shows
+---or holds a window, so that the desktops below them keep their numbers
 
 ---@return DesktopCounts
 function desktop_counts.new()
@@ -74,45 +78,55 @@ function desktop_counts.update(counts, reading)
     return { kept = kept, last_reading = deep_copy.copy(reading) }
 end
 
----Limits the desktops that an arrangement adds to the counts, so that a restore after a change of
----monitors adds no desktop that the removal of the empty desktops would take away again.
 ---@param arrangement Arrangement
----@param counts DesktopCounts
----@return Arrangement
-function desktop_counts.limit_arrangement(arrangement, counts)
-    local limited = deep_copy.copy(arrangement)
-    for _, monitor in ipairs(limited.monitors) do
-        local kept_count = counts.kept[monitor.slot_key]
-        if kept_count then
-            monitor.desktop_count = math.min(monitor.desktop_count, kept_count)
-        end
+---@return table<string, integer> the number of desktops that the arrangement holds on each slot,
+---at least 1
+function desktop_counts.count_by_slot(arrangement)
+    local counts = {}
+    for _, monitor in ipairs(arrangement.monitors) do
+        counts[monitor.slot_key] = math.max(monitor.desktop_count, 1)
     end
-    return limited
+    return counts
 end
 
 ---Plans the removal of the desktops beyond the count of each display that do not show and hold no
 ---window, from the end of the display, where macOS appends the desktops it moves.
----@param counts DesktopCounts
+---The removal of a display stops at the first desktop from the end that stays, so that a desktop
+---that stays keeps its number, and the desktops below it keep theirs.
+---@param count_by_slot table<string, integer> the number of desktops of each slot
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
----@param occupied_space_ids table<integer, boolean> the desktops that hold a window
+---@param occupied_space_ids table<integer, boolean> the desktops that hold a window that keeps them
 ---@return DesktopRemoval[] one per display with desktops beyond its count
-function desktop_counts.plan_removals(counts, configuration, desktop_layout, occupied_space_ids)
+function desktop_counts.plan_removals(
+    count_by_slot,
+    configuration,
+    desktop_layout,
+    occupied_space_ids
+)
     local removals = {}
     for _, screen in ipairs(desktop_layout.screens) do
         local slot = monitor_configuration.find_slot_of_screen(configuration, screen.screen_uuid)
-        local kept_count = slot and counts.kept[slot.slot_key]
-        if kept_count and #screen.space_ids > kept_count then
+        local count = slot and count_by_slot[slot.slot_key]
+        if count and #screen.space_ids > count then
             local removal = {
                 screen_uuid = screen.screen_uuid,
                 slot_key = slot.slot_key,
+                count = count,
                 space_ids = {},
                 staying_count = 0,
+                empty_staying_space_ids = {},
             }
-            for position = #screen.space_ids, math.max(kept_count, 1) + 1, -1 do
+            local has_stopped = false
+            for position = #screen.space_ids, math.max(count, 1) + 1, -1 do
                 local space_id = screen.space_ids[position]
-                if space_id == screen.active_space_id or occupied_space_ids[space_id] then
+                local is_kept = space_id == screen.active_space_id or occupied_space_ids[space_id]
+                if is_kept or has_stopped then
                     removal.staying_count = removal.staying_count + 1
+                    if not is_kept then
+                        table.insert(removal.empty_staying_space_ids, space_id)
+                    end
+                    has_stopped = true
                 else
                     table.insert(removal.space_ids, space_id)
                 end

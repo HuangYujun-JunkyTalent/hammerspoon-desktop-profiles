@@ -1,5 +1,7 @@
+local app_switcher = require("desktop_manager.macos.app_switcher")
 local concealment_method = require("desktop_manager.core.concealment_method")
 local default_settings = require("desktop_manager.default_settings")
+local hidden_application_windows = require("desktop_manager.core.hidden_application_windows")
 local list_layout = require("desktop_manager.core.list_layout")
 local list_sizing = require("desktop_manager.core.list_sizing")
 local match_windows_by = require("desktop_manager.core.match_windows_by")
@@ -7,11 +9,11 @@ local missing_window_policy = require("desktop_manager.core.missing_window_polic
 local preview_method = require("desktop_manager.core.preview_method")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
+local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
 local profile_controller = require("desktop_manager.macos.profile_controller")
 local profile_state = require("desktop_manager.core.profile_state")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local shortcut_center = require("keyboard_shortcuts.macos.shortcut_center")
-local switch_desktops = require("desktop_manager.macos.switch_desktops")
 local tiling_controller = require("window_tiling.macos.tiling_controller")
 local tiling_settings = require("window_tiling.default_settings")
 local title_overflow = require("desktop_manager.core.title_overflow")
@@ -123,9 +125,10 @@ local function recorded_sight(controller, number, window_id)
 end
 
 ---@param setting_changes table|nil settings that replace the defaults, such as concealment_method
+---@param saved_state table|nil the state file that the desktop manager finds at its start
 ---@return table world
 ---@return ProfileController controller
-local function start_world(setting_changes)
+local function start_world(setting_changes, saved_state)
     local world = fake_hammerspoon.install({
         screens = {
             {
@@ -173,6 +176,7 @@ local function start_world(setting_changes)
             },
         },
     })
+    world.saved_json = saved_state
     local settings = default_settings.create("/fake/state.json")
     for name, value in pairs(setting_changes or {}) do
         settings[name] = value
@@ -234,6 +238,139 @@ local function start_two_screen_world(builtin_space_ids, dell_space_ids)
     return world, controller
 end
 
+---The world of `start_two_screen_world` with Safari in front on the built-in display, and the
+---Microsoft Word window "Notes.docx", which Word focused last, on the desktop that the Dell monitor
+---shows.
+---Each press takes effect after about one second, and the fake models the bounce shortly after.
+---@return table world
+---@return table notes the window "Notes.docx"
+local function start_bounce_world()
+    local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+    local news = world.add_window_of("com.apple.Safari", "News", 3)
+    local notes = world.add_window_of("com.microsoft.Word", "Notes.docx", 7)
+    world.focused_window_id = news.id
+    world.applications["com.microsoft.Word"].focused_window_id = notes.id
+    world.desktop_press_delay_seconds = 1.01
+    world.bounce_delay_seconds = 0.02
+    return world, notes
+end
+
+---@param world table
+---@return string[] the focus operations on windows, in order
+local function list_focus_operations(world)
+    local focuses = {}
+    for _, operation in ipairs(world.window_operations) do
+        if operation:match("^focus ") then
+            table.insert(focuses, operation)
+        end
+    end
+    return focuses
+end
+
+---@param world table
+local function leave_notes_to_macos(world)
+    open_app_pool_window(world)
+    world.post_to_webview({
+        kind = "tick",
+        bundle_id = "com.apple.Notes",
+        app_name = "Notes",
+        is_listed = true,
+    })
+end
+
+---Puts a window of Notes, which the desktop manager leaves to macOS, on a desktop beyond the 3
+---desktops of profile 1 while profile 2 is active, changes the window as `change_window` does, and
+---switches to profile 1.
+---@param change_window fun(world: table, window: table)
+---@return table world
+---@return table window the window of Notes
+local function switch_with_a_window_left_to_macos(change_window)
+    local world = start_world()
+    world.hotkeys["1"]()
+    world.advance(SETTLE_SECONDS)
+    world.hotkeys["2"]()
+    world.advance(SETTLE_SECONDS)
+    leave_notes_to_macos(world)
+    world.displays[1].space_ids = { 3, 14, 64, 99 }
+    local shopping = world.add_window_of("com.apple.Notes", "Shopping", 99)
+    change_window(world, shopping)
+    world.advance(61)
+    world.hotkeys["1"]()
+    world.advance(SETTLE_SECONDS)
+    return world, shopping
+end
+
+---Makes the desktops unreadable once Mission Control opens, so that the step that runs then raises
+---and leaves Mission Control open.
+---@param world table
+local function make_desktops_unreadable_once_mission_control_opens(world)
+    world.on_mission_control_open = function()
+        world.desktop_read_error = "macOS stopped answering"
+    end
+end
+
+---@param controller ProfileController
+---@param window_id integer
+---@return WindowRecord|nil the record of the window in profile 1 for the built-in display alone
+local function find_record_of_profile_1(controller, window_id)
+    local arrangement =
+        profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY)
+    for _, record in ipairs(arrangement and arrangement.windows or {}) do
+        if record.window_id == window_id then
+            return record
+        end
+    end
+    return nil
+end
+
+local WATCHDOG_MESSAGE = "Desktop Manager stopped a switch that did not finish within 90 seconds"
+    .. " (1 problems in the Hammerspoon console)"
+
+---A world under the value of hidden_application_windows, after profile 1 recorded it, with Safari
+---and Microsoft Word hidden and the windows that accessibility does not reach listed again.
+---Window 41 of Safari, on desktop 14 out of view, keeps its subrole while hidden, so the window
+---filter keeps it.
+---Window 42 of Word, on desktop 3 in view, and the window "Notes.docx" of Word, on desktop 64 out
+---of view, report `AXDialog` while Word is hidden, so the window filter drops them, and the list of
+---the window server holds "Notes.docx" alone.
+---@param setting string a value of hidden_application_windows
+---@return table world
+---@return ProfileController controller
+---@return table notes the window "Notes.docx" of the fake world
+local function start_world_with_hidden_applications(setting)
+    local world, controller = start_world({
+        hidden_application_windows = setting,
+        list_layout = list_layout.ROWS,
+    })
+    local notes = world.add_window_of("com.microsoft.Word", "Notes.docx", 64)
+    world.hotkeys["1"]()
+    world.advance(SETTLE_SECONDS)
+    world.applications["com.microsoft.Word"].is_dropped_by_filter_while_hidden = true
+    world.hide_application("com.microsoft.Word")
+    world.hide_application("com.apple.Safari")
+    world.advance(61)
+    return world, controller, notes
+end
+
+---Holds Control and Option, presses the number and reads the list.
+---@param world table
+---@param number string
+---@return string[] the texts of the list
+local function read_list_after_press(world, number)
+    world.held_modifiers = { ctrl = true, alt = true }
+    world.app_hotkeys[number]()
+    return world.read_overlay()
+end
+
+---Opens the search, waits for the new list of the window server, and reads the previews.
+---@param world table
+---@return string[] the previews of the search
+local function read_search_windows(world)
+    world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+    world.advance(1)
+    return world.read_search_panel().windows
+end
+
 return {
     the_empty_desktops_that_macos_leaves_after_a_monitor_returns_are_removed = function()
         local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
@@ -265,6 +402,10 @@ return {
             "remove 9",
             "remove 8",
         })
+        expect.equal(world.mission_control_openings, 3)
+        expect.equal(world.window_moves, { "41 to 3", "43 to 3", "41 to 2000", "43 to 2001" })
+        expect.equal(world.frames_set_out_of_view, {})
+        expect.equal(world.is_mission_control_open, false)
         expect.equal(world.notifications, {})
         world.advance(61)
         expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 3, ["external 1"] = 4 })
@@ -279,18 +420,540 @@ return {
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
         world.windows[43].is_unseen = true
-        world.key_strokes = {}
+        world.mission_control_actions = {}
         world.connect_screen(DELL_SCREEN, { 20 })
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.key_strokes[1], "ctrl+alt+shift+cmd+5")
+        expect.equal(world.window_moves, { "43 to 3", "41 to 3", "41 to 2000", "43 to 2001" })
+        expect.equal(
+            world.mission_control_actions,
+            { "add 2000", "add 2001", "add 2002", "remove 9", "remove 8" }
+        )
+        expect.equal(world.frames_set_out_of_view, {})
+        expect.equal(world.key_strokes, {})
         expect.equal(world.windows[43].space_id, 2001)
         expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
         expect.equal(world.notifications, {})
     end,
 
+    a_switch_shows_the_desktop_that_each_screen_showed = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.displays[1].active_space_id = 14
+        world.displays[2].active_space_id = 9
+        world.focused_display_uuid = BUILTIN_SCREEN.uuid
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].active_space_id = 3
+        world.displays[2].active_space_id = 7
+        world.focused_display_uuid = DELL_SCREEN.uuid
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 9", "show 14" })
+        expect.equal(world.mission_control_openings, 2)
+        expect.equal(world.displays[1].active_space_id, 14)
+        expect.equal(world.displays[2].active_space_id, 9)
+        expect.equal(world.focused_display_uuid, BUILTIN_SCREEN.uuid)
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown - 2], "Showing desktop 3 of external 1… please wait")
+        expect.equal(shown[#shown], "Showing desktop 2 of built-in… please wait")
+        expect.equal(world.notifications, {})
+    end,
+
+    a_switch_ends_with_the_focus_on_the_screen_that_had_it = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.displays[1].active_space_id = 14
+        world.displays[2].active_space_id = 8
+        world.focused_display_uuid = DELL_SCREEN.uuid
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].active_space_id = 3
+        world.focused_display_uuid = BUILTIN_SCREEN.uuid
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 14" })
+        expect.equal(world.focused_display_uuid, DELL_SCREEN.uuid)
+        expect.equal(world.focused_window_id, 41)
+    end,
+
+    a_saved_state_of_the_first_version_shows_its_desktop_without_the_moved_desktops = function()
+        local saved_state = {
+            format_version = 1,
+            monitor_matching = "by_count",
+            desktop_counts = { kept = { ["built-in"] = 3 } },
+            profiles = {
+                ["1"] = {
+                    number = 1,
+                    arrangements = {
+                        ["built-in"] = {
+                            monitor_configuration_key = "built-in",
+                            monitors = { { slot_key = "built-in", desktop_count = 5 } },
+                            focus = { slot_key = "built-in", desktop_number = 3 },
+                            windows = {
+                                {
+                                    window_id = 41,
+                                    bundle_id = "com.apple.Safari",
+                                    app_name = "Safari",
+                                    title = "Inbox",
+                                    slot_key = "built-in",
+                                    desktop_number = 2,
+                                    unit_frame = { x = 0, y = 0, w = 0.5, h = 1 },
+                                    is_out_of_sight = false,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        local world, controller = start_world(nil, saved_state)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 64" })
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+        expect.equal(world.displays[1].active_space_id, 64)
+        local arrangement =
+            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY)
+        expect.equal(arrangement.monitors, {
+            { slot_key = "built-in", desktop_count = 3, shown_desktop_number = 3 },
+        })
+        expect.equal(world.saved_json.format_version, 2)
+        expect.equal(world.notifications, {})
+    end,
+
+    a_switch_removes_the_empty_desktops_beyond_the_profile_and_adds_them_back = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14, 64, 98, 99 }
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+        expect.equal(world.mission_control_actions, { "remove 99", "remove 98" })
+        expect.equal(world.mission_control_openings, 1)
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown], "Removing 2 empty desktops from built-in… please wait")
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 2000, 2001 })
+        shown = read_busy_messages(world)
+        expect.equal(shown[#shown - 1], "Adding 2 desktops to built-in… please wait")
+        expect.equal(shown[#shown], "Arranging Profile 2… please wait")
+        expect.equal(world.windows_moved_by_removal, {})
+        expect.equal(world.notifications, {})
+    end,
+
+    a_window_left_to_macos_keeps_its_desktop_beyond_the_profile_in_sight = function()
+        local world, shopping = switch_with_a_window_left_to_macos(function() end)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99 })
+        expect.equal(world.windows[shopping.id].space_id, 99)
+        expect.equal(world.mission_control_actions, {})
+    end,
+
+    a_minimized_window_left_to_macos_keeps_its_desktop_beyond_the_profile = function()
+        local world, shopping = switch_with_a_window_left_to_macos(function(world, window)
+            world.minimize_window(window.id)
+        end)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99 })
+        expect.equal(world.windows[shopping.id].space_id, 99)
+        expect.equal(world.mission_control_actions, {})
+    end,
+
+    a_window_of_a_hidden_application_left_to_macos_keeps_its_desktop_beyond_the_profile = function()
+        local world, shopping = switch_with_a_window_left_to_macos(function(world)
+            world.applications["com.apple.Notes"].is_hidden = true
+        end)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99 })
+        expect.equal(world.windows[shopping.id].space_id, 99)
+        expect.equal(world.mission_control_actions, {})
+    end,
+
+    a_window_that_a_hidden_application_keeps_ordered_out_keeps_no_desktop = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        leave_notes_to_macos(world)
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
+        local closed = world.create_unseen_window("com.apple.Notes", "New Note", 99)
+        world.windows[closed.id].is_ordered_out = true
+        world.applications["com.apple.Notes"].is_hidden = true
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "remove 99" })
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+    end,
+
+    a_window_that_its_application_keeps_ordered_out_keeps_no_desktop_beyond_the_profile = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        leave_notes_to_macos(world)
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
+        local closed = world.create_unseen_window("com.apple.Notes", "New Note", 99)
+        world.windows[closed.id].is_ordered_out = true
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "remove 99" })
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+    end,
+
+    a_window_of_a_managed_application_that_the_switch_hides_keeps_no_desktop = function()
+        local world = start_world({ concealment_method = concealment_method.HIDE_APPLICATIONS })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
+        world.add_window_of("com.apple.Notes", "Shopping", 99)
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.apple.Notes"].is_hidden, true)
+        expect.equal(world.mission_control_actions, { "remove 99" })
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+        expect.equal(world.windows_moved_by_removal, {})
+    end,
+
+    a_window_on_every_desktop_keeps_none_of_them = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        leave_notes_to_macos(world)
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
+        local sticky = world.add_window_of("com.apple.Notes", "Sticky", 99)
+        world.windows[sticky.id].is_on_every_desktop = true
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "remove 99" })
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+    end,
+
+    a_minimized_window_keeps_no_desktop_beyond_the_profile = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
+        world.displays[1].active_space_id = 99
+        local news = world.create_window("com.apple.Safari", "News")
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].active_space_id = 3
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[news.id].is_minimized, true)
+        expect.equal(world.mission_control_actions, { "remove 99" })
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+        expect.equal(world.windows[news.id].space_id, 3)
+        expect.equal(world.windows_moved_by_removal, {})
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 2000 })
+        expect.equal(world.windows[news.id].space_id, 2000)
+        expect.equal(world.windows[news.id].is_minimized, false)
+        expect.equal(world.window_moves, { news.id .. " to 2000" })
+        expect.equal(world.mission_control_actions, { "remove 99", "add 2000" })
+        expect.equal(world.notifications, {})
+    end,
+
+    the_desktop_in_view_beyond_the_profile_goes_after_the_recorded_desktop_shows = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
+        world.displays[1].active_space_id = 99
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 3", "remove 99" })
+        expect.equal(world.mission_control_openings, 2)
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+    end,
+
+    a_desktop_in_view_beyond_the_profile_goes_when_the_profile_records_no_shown_desktop = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        local arrangement = controller.state.profiles["1"].arrangements[MONITOR_CONFIGURATION_KEY]
+        arrangement.monitors[1].shown_desktop_number = nil
+        arrangement.focused_slot_key = nil
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
+        world.displays[1].active_space_id = 99
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 64", "remove 99" })
+        expect.equal(world.displays[1].active_space_id, 64)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+    end,
+
+    a_window_that_no_profile_recorded_is_minimized_by_a_profile_with_a_layout = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["0"]()
+        world.advance(SETTLE_SECONDS)
+        local notes = world.create_window("com.microsoft.Word", "Notes.docx")
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[notes.id].is_minimized, true)
+        expect.equal(recorded_sight(controller, 1, notes.id), "out of sight")
+        world.hotkeys["0"]()
+        world.advance(SETTLE_SECONDS)
+        local budget = world.create_window("com.microsoft.Word", "Budget.docx")
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["3"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[budget.id].is_minimized, false)
+        expect.equal(world.windows[42].is_minimized, true)
+    end,
+
+    a_restore_after_a_change_of_monitors_minimizes_no_window = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        local news = world.create_window("com.apple.Safari", "News")
+        world.advance(61)
+        world.connect_screen(DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[news.id].is_minimized, false)
+        expect.equal(world.windows[41].space_id, 2000)
+        expect.equal(world.notifications, {})
+    end,
+
+    a_window_on_another_screen_moves_by_its_frame_and_its_id_without_a_desktop_switch = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.windows[41].space_id = 3
+        world.windows[41].frame = { x = 0, y = 25, w = 600, h = 400 }
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[41].space_id, 8)
+        expect_frame_near(world.windows[41].frame, { x = 1440, y = 25, w = 1280, h = 1390 })
+        expect.equal(world.window_moves, { "41 to 8" })
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.frames_set_out_of_view, {})
+        expect.equal(world.notifications, {})
+    end,
+
+    a_window_that_stays_off_its_screen_is_not_moved_by_its_id = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.windows[41].space_id = 3
+        world.windows[41].frame = { x = 0, y = 25, w = 600, h = 400 }
+        world.frame_refusing_window_ids[41] = true
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[41].space_id, 3)
+        expect.equal(world.window_moves, {})
+        expect.equal(world.notifications, {
+            'Safari window "Inbox" stayed off screen external 1'
+                .. " (1 problems in the Hammerspoon console)",
+        })
+    end,
+
+    a_new_window_for_another_screen_goes_there_without_a_desktop_switch = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.applications["com.apple.Safari"].new_window_title = "Start Page"
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(41)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local opened = find_window_titled(world, "Start Page")
+        expect.equal(opened.space_id, 8)
+        expect_frame_near(opened.frame, { x = 1440, y = 25, w = 1280, h = 1390 })
+        expect.equal(world.window_moves, { opened.id .. " to 8" })
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.notifications, {})
+    end,
+
+    an_unseen_window_in_place_is_not_moved_at_a_switch = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(65)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.window_moves, {})
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.windows[reading.id].is_unseen, true)
+        expect.equal(world.menu_selections, {})
+        expect.equal(world.notifications, {})
+    end,
+
+    mission_control_opens_once_for_the_additions_of_two_screens = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14 }
+        world.displays[2].space_ids = { 7, 8, 9 }
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "add 2000", "add 2001" })
+        expect.equal(world.mission_control_openings, 1)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 2000 })
+        expect.equal(world.displays[2].space_ids, { 7, 8, 9, 2001 })
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown - 2], "Adding 2 desktops… please wait")
+    end,
+
+    a_switch_while_a_window_shows_in_full_screen_shows_a_desktop_first = function()
+        local world = start_world()
+        world.displays[1].full_screen_space_ids = { 500 }
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].active_space_id = 500
+        world.windows[42].frame = { x = 100, y = 100, w = 600, h = 500 }
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 3" })
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.windows[41].space_id, 14)
+        expect.equal(world.windows[42].space_id, 3)
+        expect_frame_near(world.windows[42].frame, { x = 720, y = 25, w = 720, h = 875 })
+        expect.equal(world.frames_set_out_of_view, {})
+        expect.equal(world.notifications, {})
+    end,
+
+    a_monitor_change_during_a_switch_is_restored_after_the_switch = function()
+        local timing = default_settings.create("/fake/state.json").timing
+        timing.screen_settle_seconds = 0.5
+        local world, controller = start_world({ timing = timing })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
+        world.screen_watchers[1]()
+        world.advance(0.6)
+        expect.equal(controller.is_busy, true)
+        world.advance(SETTLE_SECONDS)
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown], "Arranging Profile 1 for built-in… please wait")
+        expect.equal(controller.is_busy, false)
+        expect.equal(controller.are_saves_suspended, false)
+        expect_frame_near(world.windows[42].frame, { x = 756, y = 25, w = 756, h = 957 })
+    end,
+
+    a_step_that_raises_ends_the_switch_with_a_failure = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.swallows_timer_errors = true
+        world.hotkeys["1"]()
+        world.desktop_read_error = "macOS stopped answering"
+        world.advance(60)
+        expect.equal(controller.is_busy, true)
+        world.advance(40)
+        expect.equal(controller.is_busy, false)
+        expect.equal(#world.timer_errors > 0, true)
+        local message = "Desktop Manager stopped a switch that did not finish within 90 seconds"
+            .. " (1 problems in the Hammerspoon console)"
+        expect.equal(world.notifications, { message })
+        local _, visible_count = read_busy_messages(world)
+        expect.equal(visible_count, 0)
+    end,
+
+    a_save_during_a_switch_records_nothing_until_its_end = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.url_handlers["desktop-manager"]("desktop-manager", { action = "save" })
+        expect.equal(recorded_sight(controller, 1, 41), "in sight")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 1, 41), "in sight")
+        expect.equal(world.windows[41].is_minimized, false)
+    end,
+
+    a_window_reopened_on_a_desktop_not_visited_takes_over_its_records = function()
+        local world, controller = start_world({ match_windows_by = match_windows_by.ID })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["0"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(recorded_sight(controller, 2, 42), "out of sight")
+        world.close_window(42)
+        local reopened = world.create_unseen_window("com.microsoft.Word", "Draft.docx", 64)
+        world.advance(61)
+        world.hotkeys["1"]()
+        world.advance(0.5)
+        expect.equal(controller.is_busy, true)
+        expect.equal(recorded_sight(controller, 2, reopened.id), "out of sight")
+        expect.equal(recorded_sight(controller, 2, 42), nil)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.windows[reopened.id].space_id, 3)
+        expect.equal(world.windows[reopened.id].is_minimized, false)
+        expect.equal(world.menu_selections, {})
+    end,
+
+    the_hiding_setting_reaches_no_window_of_an_application_that_it_hides = function()
+        local world = start_world({ concealment_method = concealment_method.HIDE_APPLICATIONS })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(65)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.apple.Safari"].is_hidden, true)
+        expect.equal(world.window_moves, {})
+        expect.equal(world.windows[reading.id].is_unseen, true)
+    end,
+
     a_desktop_that_the_user_adds_stays_after_a_monitor_change = function()
         local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
         world.advance(61)
         table.insert(world.displays[1].space_ids, 99)
         world.advance(61)
@@ -302,11 +965,118 @@ return {
         expect.equal(world.mission_control_actions, { "remove 10" })
     end,
 
-    desktop_10_is_shown_with_control_0_after_its_shortcut_is_turned_on = function()
-        local world = start_two_screen_world({ 3, 14, 64, 65, 66 }, { 7, 8, 9, 10, 11 })
+    mission_control_opens_once_for_the_removals_and_the_last_press = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].active_space_id = 14
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.displays[1].active_space_id = 3
+        world.mission_control_actions = {}
+        world.mission_control_openings = 0
+        world.connect_screen(DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, {
+            "add 2000",
+            "add 2001",
+            "add 2002",
+            "remove 9",
+            "remove 8",
+            "show 14",
+        })
+        expect.equal(world.mission_control_openings, 2)
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+        expect.equal(world.displays[1].active_space_id, 14)
+        expect.equal(world.is_mission_control_open, false)
+        expect.equal(world.notifications, {})
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown], "Removing 2 empty desktops from built-in… please wait")
+    end,
+
+    an_extra_desktop_in_view_on_the_screen_of_the_focus_goes_after_its_own_opening = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].active_space_id = 9
+        world.mission_control_actions = {}
+        world.connect_screen(DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, {
+            "add 2000",
+            "add 2001",
+            "add 2002",
+            "show 3",
+            "remove 9",
+            "remove 8",
+        })
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.windows[43].space_id, 2001)
+        expect.equal(world.notifications, {})
+    end,
+
+    a_window_keeps_its_desktop_from_a_removal_while_in_sight_or_left_to_macos = function()
+        local world, controller = start_world()
+        expect.equal(controller:does_window_keep_desktop(41), true)
+        world.minimize_window(41)
+        expect.equal(controller:does_window_keep_desktop(41), false)
+        world.minimize_window(42)
+        open_app_pool_window(world)
+        world.post_to_webview({
+            kind = "tick",
+            bundle_id = "com.microsoft.Word",
+            app_name = "Microsoft Word",
+            is_listed = true,
+        })
+        expect.equal(controller:does_window_keep_desktop(42), true)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        expect.equal(controller:does_window_keep_desktop(reading.id), false)
+        expect.equal(controller:does_window_keep_desktop(999), false)
+    end,
+
+    a_monitor_change_without_an_active_profile_leaves_everything_to_macos = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        world.connect_screen(DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 8, 9, 10 })
+        expect.equal(world.alerts, {})
+        expect.equal(world.notifications, {})
+    end,
+
+    a_profile_deactivated_while_the_monitors_settle_leaves_everything_to_macos = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.hotkeys["0"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 8, 9, 10 })
+    end,
+
+    a_desktop_after_the_tenth_shows_through_mission_control = function()
+        local world = start_two_screen_world({ 3, 14, 64, 65, 66 }, { 7, 8, 9, 10, 11, 12 })
         local result = "pending"
-        switch_desktops.switch_to_space(
-            11,
+        mission_control_desktops.show_space(
+            12,
             default_settings.create("/fake/state.json").timing,
             function(error_message)
                 result = error_message or "shown"
@@ -314,9 +1084,13 @@ return {
         )
         world.advance(5)
         expect.equal(result, "shown")
-        expect.equal(world.displays[2].active_space_id, 11)
-        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+0" })
-        expect.equal(#world.tasks, 1)
+        expect.equal(world.displays[2].active_space_id, 12)
+        expect.equal(world.focused_display_uuid, DELL_SCREEN.uuid)
+        expect.equal(world.mission_control_actions, { "show 12" })
+        expect.equal(world.mission_control_openings, 1)
+        expect.equal(world.is_mission_control_open, false)
+        expect.equal(world.key_strokes, {})
+        expect.equal(world.tasks, {})
     end,
 
     a_profile_records_a_window_that_hammerspoon_has_not_seen = function()
@@ -324,7 +1098,6 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
-        world.key_strokes = {}
         world.advance(65)
         expect.equal(recorded_sight(controller, 1, reading.id), "in sight")
         local arrangement =
@@ -333,24 +1106,29 @@ return {
         expect.equal(record.title, "Reading list")
         expect.equal(record.desktop_number, 3)
         expect.equal(record.unit_frame ~= nil, true)
-        expect.equal(world.key_strokes, {})
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.window_moves, {})
     end,
 
-    a_switch_shows_the_desktop_of_a_window_not_seen_and_minimizes_it = function()
+    a_switch_brings_a_window_not_seen_into_view_and_minimizes_it = function()
         local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
         world.advance(65)
-        world.key_strokes = {}
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 2)
-        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+3", "ctrl+alt+shift+cmd+1" })
+        expect.equal(world.window_moves, { reading.id .. " to 3" })
+        expect.equal(world.mission_control_actions, {})
         expect.equal(world.windows[reading.id].is_minimized, true)
         expect.equal(world.displays[1].active_space_id, 3)
-        local shown = read_busy_messages(world)
-        expect.equal(shown[1], "Finding the windows on other desktops… please wait")
+        expect.equal(read_busy_messages(world), {
+            "Arranging Profile 1… please wait",
+            "Arranging Profile 2… please wait",
+            "Finding the windows on other desktops… please wait",
+            "Arranging Profile 2… please wait",
+        })
     end,
 
     a_shortcut_from_the_file_replaces_the_default = function()
@@ -455,10 +1233,12 @@ return {
         expect.equal(find_shortcut_row(controller, "window_search.toggle").macos_conflict, nil)
     end,
 
-    a_row_warns_when_macos_uses_its_shortcut_and_control_with_a_digit_is_refused = function()
+    a_row_warns_when_macos_uses_its_shortcut = function()
         local world, controller = start_world()
         world.symbolic_hotkeys["61"] =
             { enabled = true, value = { parameters = { 32, 49, 1835008 }, type = "standard" } }
+        world.symbolic_hotkeys["120"] =
+            { enabled = true, value = { parameters = { 65535, 20, 1966080 }, type = "standard" } }
         find_menu_item(world, "Keyboard shortcuts…").fn()
         expect.equal(
             find_shortcut_row(controller, "window_search.toggle").macos_conflict.name,
@@ -471,10 +1251,16 @@ return {
             modifiers = { "ctrl", "alt", "shift", "cmd" },
             key = "3",
         })
-        expect.equal(controller.shortcut_window.model.pending.is_reserved, true)
-        world.post_to_webview({ kind = "resolve", remove_holder = true })
-        expect.equal(controller.shortcuts:find_shortcut("window_search.toggle").key, "space")
-        expect.equal(world.hotkey_by_shortcut["ctrl+alt+shift+cmd 3"], nil)
+        local pending = controller.shortcut_window.model.pending
+        expect.equal(pending.text, "Control-Option-Shift-Command-3")
+        expect.equal(pending.macos.name, "Switch to Desktop 3")
+        world.post_to_webview({ kind = "resolve" })
+        expect.equal(controller.shortcuts:find_shortcut("window_search.toggle").key, "3")
+        expect.equal(world.hotkey_by_shortcut["ctrl+alt+shift+cmd 3"] ~= nil, true)
+        expect.equal(
+            find_shortcut_row(controller, "window_search.toggle").macos_conflict.name,
+            "Switch to Desktop 3"
+        )
     end,
 
     a_highlight_color_of_the_setting_marks_the_selection = function()
@@ -571,11 +1357,11 @@ return {
         expect.equal(world.windows[42].is_minimized, false)
         expect.equal(world.windows[42].space_id, 3)
         expect.equal(world.displays[1].active_space_id, 3)
-        expect.equal(world.key_strokes, {})
+        expect.equal(world.mission_control_actions, {})
         expect.equal(world.notifications, {})
     end,
 
-    a_switch_removes_no_desktop_and_presses_no_key_for_windows_in_place = function()
+    a_switch_keeps_the_desktops_that_the_profile_recorded = function()
         local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -587,7 +1373,7 @@ return {
         local arrangement = profile_state.find_arrangement(controller.state, 1, "built-in")
         expect.equal(arrangement.monitors[1].desktop_count, 4)
         expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99 })
-        expect.equal(world.key_strokes, {})
+        expect.equal(world.mission_control_actions, {})
         expect.equal(world.notifications, {})
         expect.equal(world.windows[41].space_id, 14)
         expect.equal(world.windows[42].space_id, 3)
@@ -667,8 +1453,10 @@ return {
         expect_frame_near(world.windows[41].frame, moved_frame)
         expect.equal(
             world.window_operations,
-            { "setFrame 41", "unminimize 42", "minimize 42", "setFrame 41" }
+            { "unminimize 42", "setFrame 41", "minimize 42", "setFrame 41" }
         )
+        expect.equal(world.window_moves, { "41 to 3", "41 to 14", "41 to 3", "41 to 14" })
+        expect.equal(world.frames_set_out_of_view, {})
     end,
 
     a_window_minimized_by_hand_stays_out_of_sight_in_that_profile = function()
@@ -798,7 +1586,6 @@ return {
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         world.close_window(41)
-        world.key_strokes = {}
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         local opened = find_window_titled(world, "Start Page")
@@ -807,47 +1594,12 @@ return {
         expect.equal(opened.is_minimized, false)
         expect_frame_near(opened.frame, { x = 0, y = 25, w = 720, h = 875 })
         expect.equal(world.menu_selections, { "com.apple.Safari New Window" })
-        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+2", "ctrl+alt+shift+cmd+1" })
+        expect.equal(world.window_moves, { opened.id .. " to 14" })
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.mission_control_openings, 0)
         expect.equal(recorded_sight(controller, 1, opened.id), "in sight")
         expect.equal(world.notifications, {})
-    end,
-
-    a_desktop_without_its_shortcut_gets_it_before_the_press = function()
-        local world = start_world()
-        world.hotkeys["1"]()
-        world.advance(SETTLE_SECONDS)
-        world.hotkeys["2"]()
-        world.advance(SETTLE_SECONDS)
-        world.close_window(41)
-        world.symbolic_hotkeys["119"] = nil
-        world.key_strokes = {}
-        world.hotkeys["1"]()
-        world.advance(SETTLE_SECONDS)
-        expect.equal(#world.tasks, 1)
-        expect.equal(
-            world.tasks[1].arguments[1]:match("tools/enable_desktop_shortcuts%.sh$") ~= nil,
-            true
-        )
-        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+2", "ctrl+alt+shift+cmd+1" })
-        expect.equal(world.notifications, {})
-    end,
-
-    a_shortcut_that_cannot_be_turned_on_is_reported_without_a_press = function()
-        local world = start_world()
-        world.hotkeys["1"]()
-        world.advance(SETTLE_SECONDS)
-        world.hotkeys["2"]()
-        world.advance(SETTLE_SECONDS)
-        world.close_window(41)
-        world.symbolic_hotkeys["119"] = nil
-        world.task_exit_code = 1
-        world.key_strokes = {}
-        world.hotkeys["1"]()
-        world.advance(SETTLE_SECONDS)
-        expect.equal(world.key_strokes, {})
-        local message = "desktop 2 cannot be shown, because its shortcut is off and could not"
-        expect.equal(world.notifications[1]:sub(1, #message), message)
-        expect.equal(world.alerts[#world.alerts], world.notifications[1])
     end,
 
     a_window_with_the_recorded_title_is_taken_and_no_window_opens = function()
@@ -974,6 +1726,7 @@ return {
         world.advance(SETTLE_SECONDS)
         local shown, visible_count = read_busy_messages(world)
         expect.equal(shown, {
+            "Arranging Profile 1… please wait",
             "Monitors changed, waiting for macOS… please wait",
             "Arranging Profile 1 for built-in… please wait",
         })
@@ -991,7 +1744,10 @@ return {
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
         local shown, visible_count = read_busy_messages(world)
-        expect.equal(shown, { "Monitors changed, waiting for macOS… please wait" })
+        expect.equal(shown, {
+            "Arranging Profile 1… please wait",
+            "Monitors changed, waiting for macOS… please wait",
+        })
         expect.equal(visible_count, 0)
         expect.equal(world.alerts, {
             "Profile 1",
@@ -1010,7 +1766,11 @@ return {
         expect.equal(visible_while_switching, 1)
         world.advance(SETTLE_SECONDS)
         local shown, visible_count = read_busy_messages(world)
-        expect.equal(shown, { "Arranging Profile 1… please wait" })
+        expect.equal(shown, {
+            "Arranging Profile 1… please wait",
+            "Arranging Profile 2… please wait",
+            "Arranging Profile 1… please wait",
+        })
         expect.equal(visible_count, 0)
         expect.equal(world.alerts, { "Profile 1", "Profile 2" })
     end,
@@ -1023,7 +1783,6 @@ return {
         local entries = profile_state.profile_or_default(controller.state, 1).app_numbers
         expect.equal(entries[1].bundle_id, "com.apple.Safari")
         expect.equal(entries[2].bundle_id, "com.microsoft.Word")
-        world.key_strokes = {}
         world.app_hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.focused_window_id, 41)
@@ -1035,10 +1794,95 @@ return {
         world.app_hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.focused_window_id, 41)
-        expect.equal(
-            world.key_strokes,
-            { "ctrl+alt+shift+cmd+2", "ctrl+alt+shift+cmd+1", "ctrl+alt+shift+cmd+2" }
-        )
+        expect.equal(world.mission_control_actions, { "show 14", "show 3", "show 14" })
+        expect.equal(world.key_strokes, {})
+        local shown, visible_count = read_busy_messages(world)
+        expect.equal(shown, {
+            "Arranging Profile 1… please wait",
+            "Showing desktop 2 of built-in… please wait",
+            "Showing desktop 1 of built-in… please wait",
+            "Showing desktop 2 of built-in… please wait",
+        })
+        expect.equal(visible_count, 0)
+        expect.equal(controller.is_showing_desktop, false)
+    end,
+
+    a_press_of_the_list_during_a_switch_is_refused = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.app_hotkeys["2"]()
+        expect.equal(world.alerts[#world.alerts], "Desktop Manager is still switching")
+        expect.equal(world.notifications, {})
+        local shown, visible_count = read_busy_messages(world)
+        expect.equal(shown[#shown], "Arranging Profile 1… please wait")
+        expect.equal(visible_count, 1)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 1)
+        expect.equal(controller.is_busy, false)
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.displays[1].active_space_id, 3)
+    end,
+
+    a_switch_during_a_press_of_the_list_is_refused = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.app_hotkeys["2"]()
+        expect.equal(controller.is_showing_desktop, true)
+        world.hotkeys["2"]()
+        expect.equal(world.alerts[#world.alerts], "Desktop Manager is still switching")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 1)
+        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(world.focused_window_id, 41)
+    end,
+
+    a_monitor_change_during_a_press_of_the_list_is_restored_after_the_press = function()
+        local timing = default_settings.create("/fake/state.json").timing
+        timing.screen_settle_seconds = 0.2
+        local world, controller = start_world({ timing = timing })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.app_hotkeys["2"]()
+        world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
+        world.screen_watchers[1]()
+        world.advance(0.3)
+        expect.equal(controller.is_showing_desktop, true)
+        expect.equal(controller.is_busy, false)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 14" })
+        expect.equal(world.displays[1].active_space_id, 14)
+        expect.equal(read_busy_messages(world), {
+            "Arranging Profile 1… please wait",
+            "Showing desktop 2 of built-in… please wait",
+            "Monitors changed, waiting for macOS… please wait",
+            "Arranging Profile 1 for built-in… please wait",
+        })
+        expect.equal(controller.is_busy, false)
+        expect.equal(controller.are_saves_suspended, false)
+        expect_frame_near(world.windows[42].frame, { x = 756, y = 25, w = 756, h = 957 })
+    end,
+
+    a_desktop_that_mission_control_does_not_show_is_reported = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.ignores_desktop_presses = true
+        world.app_hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        local message = "Mission Control did not show desktop 2 of Built-in Retina Display"
+            .. " within 5 seconds, after one opening and two presses"
+            .. " (1 problems in the Hammerspoon console)"
+        expect.equal(world.alerts[#world.alerts], message)
+        expect.equal(world.notifications, { message })
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.is_mission_control_open, false)
+        expect.equal(world.focused_window_id, nil)
     end,
 
     a_held_press_shows_the_list_and_the_release_goes_to_the_selection = function()
@@ -1404,6 +2248,33 @@ return {
         expect.equal(controller.app_pool_window, nil)
     end,
 
+    the_diagnostics_show_the_build_the_desktops_shown_and_the_numbers_of_the_profile = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(61)
+        local printed, original_print = {}, print
+        _G.print = function(text) -- luacheck: ignore 122
+            table.insert(printed, text)
+        end
+        local is_printed, error_message =
+            pcall(find_menu_item(world, "Print diagnostics to the console").fn)
+        _G.print = original_print -- luacheck: ignore 122
+        if not is_printed then
+            error(error_message, 0)
+        end
+        local lines = {}
+        for line in table.concat(printed, "\n"):gmatch("[^\n]+") do
+            lines[line] = true
+        end
+        expect.equal(lines["Hammerspoon 8cde946"], true)
+        expect.equal(lines["  desktops of BUILTIN-UUID (built-in): 1=3 2=14 3=64, shown 1"], true)
+        expect.equal(lines["profile 1 holds 3 desktops on built-in and shows desktop 1"], true)
+        expect.equal(lines["profile 1 had the focus on built-in"], true)
+        expect.equal(lines["windows out of reach: 1"], true)
+    end,
+
     the_menu_offers_each_recorded_profile_to_clear = function()
         local world = start_world()
         world.hotkeys["1"]()
@@ -1437,6 +2308,60 @@ return {
         expect.equal(world.windows[42].is_minimized, true)
     end,
 
+    a_window_on_another_desktop_of_its_screen_moves_back_by_its_id = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.windows[41].space_id = 64
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.window_moves, { "41 to 14" })
+        expect.equal(world.windows[41].space_id, 14)
+        expect.equal(world.notifications, {})
+    end,
+
+    a_window_that_does_not_move_is_reported_at_each_switch = function()
+        local world = start_world()
+        world.unmovable_window_ids[41] = true
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.windows[41].space_id = 64
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.window_moves, { "41 to 14" })
+        expect.equal(world.windows[41].space_id, 64)
+        world.hotkeys["1"]()
+        world.windows[41].space_id = 14
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.window_moves, { "41 to 14", "41 to 64" })
+        local function describe_failure(desktop_number)
+            return string.format(
+                'Safari window "Inbox" did not reach desktop %d of built-in: did not reach its'
+                    .. " desktop within 1 seconds (1 problems in the Hammerspoon console)",
+                desktop_number
+            )
+        end
+        expect.equal(world.notifications, { describe_failure(2), describe_failure(3) })
+    end,
+
+    control_option_command_with_the_number_clears_a_profile_after_the_confirmation = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkey_by_shortcut["ctrl+alt+cmd 1"]()
+        expect.equal(profile_state.has_arrangements(controller.state, 1), true)
+        world.alert_button = "Clear"
+        world.hotkey_by_shortcut["ctrl+alt+cmd 1"]()
+        expect.equal(profile_state.has_arrangements(controller.state, 1), false)
+        expect.equal(
+            world.alerts[#world.alerts],
+            "Profile 1 is cleared and records the windows from now on"
+        )
+    end,
+
     a_number_reaches_a_window_that_another_profile_recorded = function()
         local world = start_world()
         world.hotkeys["1"]()
@@ -1468,6 +2393,49 @@ return {
         local opened = find_window_titled(world, "Document1")
         expect.equal(opened ~= nil, true)
         expect.equal(world.focused_window_id, opened.id)
+    end,
+
+    opening_a_window_for_a_number_shows_a_message = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "4", app = "com.microsoft.Word" }
+        )
+        world.app_hotkeys["4"]()
+        local shown, visible_while_opening = read_busy_messages(world)
+        expect.equal(shown[#shown], "Opening a window of Microsoft Word… please wait")
+        expect.equal(visible_while_opening, 1)
+        expect.equal(controller.is_showing_desktop, true)
+        world.advance(SETTLE_SECONDS)
+        local _, visible_count = read_busy_messages(world)
+        expect.equal(visible_count, 0)
+        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(world.focused_window_id, find_window_titled(world, "Document1").id)
+    end,
+
+    a_number_without_a_window_during_a_switch_keeps_the_message_of_the_switch = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "4", app = "com.microsoft.Word" }
+        )
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.app_hotkeys["4"]()
+        expect.equal(world.alerts[#world.alerts], "Desktop Manager is still switching")
+        expect.equal(world.notifications, {})
+        local shown, visible_count = read_busy_messages(world)
+        expect.equal(shown[#shown], "Arranging Profile 1… please wait")
+        expect.equal(visible_count, 1)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(find_window_titled(world, "Document1"), nil)
     end,
 
     a_number_without_an_application_passes_its_keys_through = function()
@@ -1793,6 +2761,65 @@ return {
         expect.equal(world.focused_window_id, nil)
     end,
 
+    the_search_focuses_the_application_before_the_press_so_that_the_desktop_stays = function()
+        local world, notes = start_bounce_world()
+        world.advance(SETTLE_SECONDS)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.type_keys("report")
+        world.advance(0)
+        expect.equal(
+            world.read_search_panel().windows,
+            { "selection Report.docx | Microsoft Word" }
+        )
+        world.press_key("return")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.bounces, {})
+        expect.equal(world.displays[2].active_space_id, 9)
+        expect.equal(world.mission_control_openings, 1)
+        expect.equal(list_focus_operations(world), { "focus " .. notes.id, "focus 43" })
+        expect.equal(world.focused_window_id, 43)
+        expect.equal(world.notifications, {})
+    end,
+
+    the_search_focuses_the_application_before_the_press_for_a_window_not_reached = function()
+        local world, notes = start_bounce_world()
+        local letter = world.create_unseen_window("com.microsoft.Word", "Letter.docx", 10)
+        world.advance(SETTLE_SECONDS)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.type_keys("letter")
+        world.advance(0)
+        expect.equal(
+            world.read_search_panel().windows,
+            { "selection Letter.docx | Microsoft Word" }
+        )
+        world.press_key("return")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.bounces, {})
+        expect.equal(world.displays[2].active_space_id, 10)
+        expect.equal(world.mission_control_openings, 1)
+        expect.equal(list_focus_operations(world), { "focus " .. notes.id, "focus " .. letter.id })
+        expect.equal(world.notifications, {})
+    end,
+
+    a_number_without_a_selected_window_passes_the_recorded_window_for_the_focus = function()
+        local world = start_bounce_world()
+        local letter = world.create_unseen_window("com.microsoft.Word", "Letter.docx", 8)
+        local shown = {}
+        local context = {
+            show_space = function(space_id, _, _, chosen_window)
+                table.insert(shown, { space_id = space_id, chosen_window = chosen_window })
+            end,
+        }
+        local entry = { number = 1, bundle_id = "com.microsoft.Word", app_name = "Microsoft Word" }
+        app_switcher.switch_to_selection(entry, nil, { letter.id }, context, function() end)
+        expect.equal(shown, {
+            {
+                space_id = 8,
+                chosen_window = { bundle_id = "com.microsoft.Word", window_id = letter.id },
+            },
+        })
+    end,
+
     the_search_reaches_a_window_on_a_desktop_not_visited = function()
         local world = start_world()
         local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
@@ -1803,8 +2830,28 @@ return {
         expect.equal(world.read_search_panel().windows, { "selection Reading list | Safari" })
         world.press_key("return")
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+3" })
+        expect.equal(world.mission_control_actions, { "show 64" })
         expect.equal(world.focused_window_id, reading.id)
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown], "Showing desktop 3 of built-in… please wait")
+    end,
+
+    a_press_of_the_search_during_a_switch_is_refused = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.click("window:41")
+        world.advance(0)
+        expect.equal(world.alerts[#world.alerts], "Desktop Manager is still switching")
+        expect.equal(world.notifications, {})
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown], "Arranging Profile 1… please wait")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, {})
     end,
 
     a_window_found_after_the_panel_opened_joins_it = function()
@@ -1817,13 +2864,24 @@ return {
         expect.equal(world.read_search_panel().windows[3], "plain Reading list | Safari")
     end,
 
+    a_window_that_its_application_keeps_ordered_out_shows_in_no_list = function()
+        local world = start_world()
+        local closed = world.create_unseen_window("com.apple.Notes", "New Note", 64)
+        world.windows[closed.id].is_ordered_out = true
+        world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(SETTLE_SECONDS)
+        world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
+        world.advance(1)
+        expect.equal(#world.read_search_panel().windows, 3)
+        expect.equal(world.read_search_panel().windows[3], "plain Reading list | Safari")
+    end,
+
     the_numbered_list_holds_a_window_on_a_desktop_not_visited = function()
         local world = start_world({ list_layout = list_layout.ROWS })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
         world.advance(2 * SETTLE_SECONDS + 1)
-        world.key_strokes = {}
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["2"]()
         expect.equal(world.read_overlay(), {
@@ -1836,7 +2894,7 @@ return {
         world.app_hotkeys["2"]()
         world.release_modifiers()
         world.advance(SETTLE_SECONDS)
-        expect.equal(world.key_strokes, { "ctrl+alt+shift+cmd+3" })
+        expect.equal(world.mission_control_actions, { "show 64" })
         expect.equal(world.focused_window_id, reading.id)
     end,
 
@@ -1906,5 +2964,831 @@ return {
         local world = start_world()
         world.url_handlers["desktop-manager"]("desktop-manager", { action = "search-windows" })
         expect.equal(world.read_search_panel().line[2], "2 windows")
+    end,
+
+    a_second_monitor_change_during_a_restore_keeps_the_layout = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        local recorded_frame = find_record_of_profile_1(controller, 42).unit_frame
+        world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
+        world.screen_watchers[1]()
+        world.advance(3.1)
+        expect.equal(controller.is_busy, true)
+        world.screens[1].frame = BUILTIN_FRAME
+        world.screen_watchers[1]()
+        local is_message_shown_between = false
+        for _ = 1, 100 do
+            world.advance(0.05)
+            if not controller.is_busy and controller.screen_timer then
+                expect.equal(controller.are_saves_suspended, true)
+                is_message_shown_between = controller.busy_message_text
+                    == "Monitors changed, waiting for macOS… please wait"
+            end
+        end
+        world.advance(SETTLE_SECONDS)
+        expect.equal(is_message_shown_between, true)
+        expect.equal(find_record_of_profile_1(controller, 42).unit_frame, recorded_frame)
+        expect_frame_near(world.windows[42].frame, { x = 720, y = 25, w = 720, h = 875 })
+        expect.equal(controller.are_saves_suspended, false)
+    end,
+
+    a_deactivation_during_a_restore_is_refused_with_an_alert = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
+        world.screen_watchers[1]()
+        world.advance(3.1)
+        expect.equal(controller.is_busy, true)
+        world.hotkeys["0"]()
+        expect.equal(world.alerts[#world.alerts], "Desktop Manager is still switching")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 1)
+    end,
+
+    a_window_that_accessibility_does_not_reach_in_view_goes_back_and_is_reported = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.unreachable_window_ids[reading.id] = true
+        world.advance(65)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.window_moves, { reading.id .. " to 3", reading.id .. " to 64" })
+        expect.equal(world.windows[reading.id].space_id, 64)
+        expect.equal(world.notifications, {
+            'Safari window "Reading list" stays on desktop 3,'
+                .. " because accessibility did not reach it in view"
+                .. " (2 problems in the Hammerspoon console)",
+        })
+    end,
+
+    a_switch_that_the_watchdog_stopped_removes_no_desktop = function()
+        local timing = default_settings.create("/fake/state.json").timing
+        timing.busy_watchdog_seconds = 0.5
+        local world, controller = start_world({ timing = timing })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14, 64, 98, 99 }
+        world.advance(61)
+        world.mission_control_actions = {}
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.notifications, {
+            "Desktop Manager stopped a switch that did not finish within 0.5 seconds"
+                .. " (1 problems in the Hammerspoon console)",
+        })
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 98, 99 })
+        expect.equal(world.is_mission_control_open, false)
+        expect.equal(controller.is_busy, false)
+    end,
+
+    the_watchdog_closes_mission_control_after_a_step_that_raised_while_it_showed = function()
+        local world, controller = start_world()
+        world.displays[1].active_space_id = 14
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].active_space_id = 3
+        world.swallows_timer_errors = true
+        make_desktops_unreadable_once_mission_control_opens(world)
+        world.hotkeys["1"]()
+        world.advance(5)
+        expect.equal(world.is_mission_control_open, true)
+        expect.equal(#world.timer_errors > 0, true)
+        world.desktop_read_error = nil
+        world.advance(90)
+        expect.equal(world.is_mission_control_open, false)
+        expect.equal(controller.is_busy, false)
+        expect.equal(world.notifications, { WATCHDOG_MESSAGE })
+    end,
+
+    the_watchdog_resumes_the_saves_after_a_restore_that_raised = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.swallows_timer_errors = true
+        world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
+        world.screen_watchers[1]()
+        world.advance(3.1)
+        expect.equal(controller.is_busy, true)
+        world.desktop_read_error = "macOS stopped answering"
+        world.advance(91)
+        world.desktop_read_error = nil
+        expect.equal(#world.timer_errors > 0, true)
+        expect.equal(controller.is_busy, false)
+        expect.equal(controller.are_saves_suspended, false)
+        expect.equal(world.notifications, { WATCHDOG_MESSAGE })
+        world.windows[42].frame = { x = 100, y = 125, w = 600, h = 500 }
+        world.advance(61)
+        local unit_frame = find_record_of_profile_1(controller, 42).unit_frame
+        expect.equal(math.abs(unit_frame.x - 100 / 1512) < 0.001, true)
+    end,
+
+    the_watchdog_ends_a_press_that_never_called_back = function()
+        local world, controller = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.swallows_timer_errors = true
+        make_desktops_unreadable_once_mission_control_opens(world)
+        world.app_hotkeys["2"]()
+        world.advance(5)
+        expect.equal(controller.is_showing_desktop, true)
+        world.desktop_read_error = nil
+        world.advance(90)
+        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(world.is_mission_control_open, false)
+        expect.equal(world.notifications, { WATCHDOG_MESSAGE })
+        local _, visible_count = read_busy_messages(world)
+        expect.equal(visible_count, 0)
+    end,
+
+    a_save_while_the_monitors_settle_records_nothing = function()
+        local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.url_handlers["desktop-manager"]("desktop-manager", { action = "save" })
+        expect.equal(
+            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY),
+            nil
+        )
+        world.advance(SETTLE_SECONDS)
+        expect.equal(
+            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY) ~= nil,
+            true
+        )
+    end,
+
+    the_list_reaches_a_window_in_full_screen = function()
+        local world = start_world()
+        world.displays[1].full_screen_space_ids = { 500 }
+        world.windows[41].space_id = 500
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "5", app = "Safari" }
+        )
+        world.app_hotkeys["5"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 500" })
+        expect.equal(world.displays[1].active_space_id, 500)
+        expect.equal(world.focused_window_id, 41)
+        expect.equal(world.notifications, {})
+    end,
+
+    a_press_holds_its_message_until_accessibility_reaches_the_window = function()
+        local timing = default_settings.create("/fake/state.json").timing
+        timing.window_reach_timeout_seconds = 3
+        local world, controller = start_world({ list_layout = list_layout.ROWS, timing = timing })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(2 * SETTLE_SECONDS + 1)
+        world.reach_delay_seconds = 1.5
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["2"]()
+        world.app_hotkeys["2"]()
+        world.release_modifiers()
+        local was_released_before_the_focus = false
+        for _ = 1, 100 do
+            world.advance(0.05)
+            if world.focused_window_id == reading.id then
+                break
+            end
+            if #world.mission_control_actions > 0 and not controller.is_showing_desktop then
+                was_released_before_the_focus = true
+            end
+        end
+        expect.equal(world.mission_control_actions, { "show 64" })
+        expect.equal(world.focused_window_id, reading.id)
+        expect.equal(was_released_before_the_focus, false)
+        world.advance(1)
+        expect.equal(controller.is_showing_desktop, false)
+        local _, visible_count = read_busy_messages(world)
+        expect.equal(visible_count, 0)
+    end,
+
+    a_window_that_accessibility_does_not_reach_after_a_press_is_reported = function()
+        local world = start_world({ list_layout = list_layout.ROWS })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.unreachable_window_ids[reading.id] = true
+        world.advance(2 * SETTLE_SECONDS + 1)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["2"]()
+        world.app_hotkeys["2"]()
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 64" })
+        expect.equal(world.notifications, {
+            'Safari window "Reading list" did not appear within 1 seconds after its desktop'
+                .. " showed (1 problems in the Hammerspoon console)",
+        })
+        expect.equal(world.focused_window_id, nil)
+    end,
+
+    a_restore_after_a_change_of_monitors_leaves_a_window_in_full_screen_first = function()
+        local world = start_world()
+        world.displays[1].full_screen_space_ids = { 500 }
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.displays[1].active_space_id = 500
+        world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 3" })
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.frames_set_out_of_view, {})
+        expect_frame_near(world.windows[42].frame, { x = 756, y = 25, w = 756, h = 957 })
+        expect.equal(world.notifications, {})
+    end,
+
+    a_switch_gives_the_focus_to_a_window_when_the_press_leaves_the_focus = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.press_moves_focus = false
+        local notes = world.add_window_of("com.microsoft.Word", "Notes.docx", 14)
+        world.displays[1].active_space_id = 14
+        world.displays[2].active_space_id = 9
+        world.focused_display_uuid = BUILTIN_SCREEN.uuid
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].active_space_id = 3
+        world.displays[2].active_space_id = 7
+        world.focused_display_uuid = DELL_SCREEN.uuid
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "show 9", "show 14" })
+        expect.equal(world.focused_display_uuid, BUILTIN_SCREEN.uuid)
+        expect.equal(world.focused_window_id, notes.id)
+    end,
+
+    a_switch_waits_for_the_release_of_the_modifiers_before_mission_control_opens = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14 }
+        world.held_modifiers = { cmd = true, alt = true, shift = true }
+        world.hotkeys["1"]()
+        world.advance(1)
+        expect.equal(world.mission_control_openings, 0)
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, { "add 2000" })
+        expect.equal(world.displays[1].space_ids, { 3, 14, 2000 })
+        expect.equal(world.notifications, {})
+    end,
+
+    a_modifier_held_through_a_switch_keeps_mission_control_closed_and_is_reported = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14 }
+        world.held_modifiers = { cmd = true, alt = true, shift = true }
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.mission_control_openings, 0)
+        expect.equal(world.displays[1].space_ids, { 3, 14 })
+        expect.equal(#world.notifications, 1)
+        expect.equal(world.notifications[1]:match("^Release the modifier keys") ~= nil, true)
+    end,
+
+    the_first_record_of_a_configuration_holds_the_desktops_that_macos_moved_there = function()
+        local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        local arrangement =
+            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY)
+        expect.equal(arrangement.monitors[1].desktop_count, 5)
+        world.connect_screen(DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        world.advance(61)
+        world.disconnect_screen(DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(SETTLE_SECONDS)
+        local space_ids = world.displays[1].space_ids
+        expect.equal(#space_ids, 5)
+        expect.equal(world.windows[41].space_id, space_ids[4])
+        expect.equal(world.windows[43].space_id, space_ids[5])
+    end,
+
+    the_busy_message_shows_at_the_level_overlay = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        local levels = {}
+        for _, canvas in ipairs(world.canvases) do
+            if #canvas.elements == 2 and canvas.elements[2].type == "text" then
+                table.insert(levels, canvas.window_level)
+            end
+        end
+        expect.equal(levels, { world.window_levels.overlay })
+    end,
+
+    the_check_before_a_removal_walks_every_window_once = function()
+        local world, controller = start_world()
+        open_app_pool_window(world)
+        world.post_to_webview({
+            kind = "tick",
+            bundle_id = "com.microsoft.Word",
+            app_name = "Microsoft Word",
+            is_listed = true,
+        })
+        local first = world.add_window_of("com.microsoft.Word", "First.docx", 64)
+        local second = world.add_window_of("com.microsoft.Word", "Second.docx", 64)
+        world.applications["com.microsoft.Word"].is_dropped_by_filter_while_hidden = true
+        world.applications["com.microsoft.Word"].is_hidden = true
+        local calls_before = world.all_windows_calls
+        expect.equal(controller:find_window_that_keeps_desktop({ 42, first.id, second.id }), 42)
+        expect.equal(world.all_windows_calls - calls_before, 1)
+    end,
+
+    the_list_leaves_out_the_windows_of_hidden_applications_by_default = function()
+        expect.equal(
+            default_settings.create("/fake/state.json").hidden_application_windows,
+            hidden_application_windows.LEAVE_OUT
+        )
+        local world = start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        local reads_before = {
+            safari = world.application_window_reads["com.apple.Safari"] or 0,
+            word = world.application_window_reads["com.microsoft.Word"] or 0,
+        }
+        local hidden_reads_before = {
+            safari = world.hidden_reads["com.apple.Safari"] or 0,
+            word = world.hidden_reads["com.microsoft.Word"] or 0,
+        }
+        expect.equal(read_list_after_press(world, "1"), {
+            ">1   Microsoft Word",
+            " hidden, a press unhides it",
+            " 2   Safari",
+            " hidden, a press unhides it",
+        })
+        expect.equal(world.application_window_reads["com.apple.Safari"] or 0, reads_before.safari)
+        expect.equal(world.application_window_reads["com.microsoft.Word"] or 0, reads_before.word)
+        expect.equal(world.hidden_reads["com.apple.Safari"] or 0, hidden_reads_before.safari)
+        expect.equal(world.hidden_reads["com.microsoft.Word"] or 0, hidden_reads_before.word)
+    end,
+
+    the_search_leaves_out_the_windows_of_hidden_applications_by_default = function()
+        local world = start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        local hidden_reads_before = world.hidden_reads["com.microsoft.Word"] or 0
+        expect.equal(read_search_windows(world), {})
+        expect.equal(world.hidden_reads["com.microsoft.Word"] or 0, hidden_reads_before)
+    end,
+
+    the_list_shows_the_windows_of_hidden_applications_where_found = function()
+        local world =
+            start_world_with_hidden_applications(hidden_application_windows.LIST_WHERE_FOUND)
+        world.terminate_application("com.apple.Notes")
+        local hidden_reads_before = world.hidden_reads["com.apple.Safari"] or 0
+        expect.equal(read_list_after_press(world, "1"), {
+            ">1   Microsoft Word",
+            " Notes.docx",
+            " 2   Safari",
+            " Inbox",
+        })
+        expect.equal(world.hidden_reads["com.apple.Safari"] or 0, hidden_reads_before)
+    end,
+
+    the_search_shows_the_windows_of_hidden_applications_where_found = function()
+        local world, _, notes =
+            start_world_with_hidden_applications(hidden_application_windows.LIST_WHERE_FOUND)
+        expect.equal(read_search_windows(world), {
+            "selection Inbox | Safari",
+            "plain Notes.docx | Microsoft Word",
+        })
+        world.click("window:" .. notes.id)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
+        expect.equal(world.focused_window_id, notes.id)
+        expect.equal(world.displays[1].active_space_id, 64)
+    end,
+
+    the_list_shows_every_window_of_hidden_applications_and_a_choice_unhides = function()
+        local world = start_world_with_hidden_applications(hidden_application_windows.LIST_ALL)
+        expect.equal(read_list_after_press(world, "1"), {
+            " 1   Microsoft Word",
+            ">Draft.docx",
+            " Notes.docx",
+            " 2   Safari",
+            " Inbox",
+        })
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
+        expect.equal(world.focused_window_id, 42)
+    end,
+
+    the_search_shows_every_window_of_hidden_applications_and_a_choice_unhides = function()
+        local world, _, notes =
+            start_world_with_hidden_applications(hidden_application_windows.LIST_ALL)
+        expect.equal(read_search_windows(world), {
+            "selection Inbox | Safari",
+            "plain Draft.docx | Microsoft Word",
+            "plain Notes.docx | Microsoft Word",
+        })
+        world.click("window:" .. notes.id)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
+        expect.equal(world.focused_window_id, notes.id)
+        expect.equal(world.displays[1].active_space_id, 64)
+    end,
+
+    an_unknown_choice_for_hidden_application_windows_stops_the_start = function()
+        expect.raises(function()
+            start_world({ hidden_application_windows = "show_some" })
+        end, 'the setting hidden_application_windows is "show_some", which names no choice')
+    end,
+
+    every_window_of_hidden_applications_leaves_out_their_other_elements = function()
+        local world = start_world_with_hidden_applications(hidden_application_windows.LIST_ALL)
+        local sheet = world.add_window_of("com.microsoft.Word", "Save changes?", 3)
+        world.windows[sheet.id].role = "AXSheet"
+        expect.equal(read_list_after_press(world, "1")[4], " 2   Safari")
+        world.press_escape()
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(read_search_windows(world), {
+            "selection Inbox | Safari",
+            "plain Draft.docx | Microsoft Word",
+            "plain Notes.docx | Microsoft Word",
+        })
+    end,
+
+    the_search_reads_every_window_only_of_hidden_applications_with_a_dock_icon = function()
+        local world = start_world_with_hidden_applications(hidden_application_windows.LIST_ALL)
+        world.unhide_application("com.apple.Safari")
+        local notes_application = world.applications["com.apple.Notes"]
+        notes_application.is_running = true
+        notes_application.kind = 0
+        world.add_window_of("com.apple.Notes", "Shopping", 3)
+        notes_application.is_dropped_by_filter_while_hidden = true
+        world.hide_application("com.apple.Notes")
+        local reads_before = {}
+        local bundle_ids = { "com.apple.Safari", "com.microsoft.Word", "com.apple.Notes" }
+        for _, bundle_id in ipairs(bundle_ids) do
+            reads_before[bundle_id] = world.application_window_reads[bundle_id] or 0
+        end
+        expect.equal(read_search_windows(world), {
+            "selection Inbox | Safari",
+            "plain Draft.docx | Microsoft Word",
+            "plain Notes.docx | Microsoft Word",
+        })
+        local reads = {}
+        for bundle_id, count in pairs(reads_before) do
+            reads[bundle_id] = (world.application_window_reads[bundle_id] or 0) - count
+        end
+        expect.equal(
+            reads,
+            { ["com.apple.Safari"] = 0, ["com.microsoft.Word"] = 1, ["com.apple.Notes"] = 0 }
+        )
+    end,
+    the_list_asks_whether_an_application_is_hidden_once_and_then_follows_macos = function()
+        local world = start_world({
+            hidden_application_windows = hidden_application_windows.LEAVE_OUT,
+            list_layout = list_layout.ROWS,
+        })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        ---Opens the list, reads it and closes it.
+        ---@return string[] texts the texts of the list
+        ---@return integer hidden_reads the calls of isHidden while the list opened
+        local function read_list_and_close()
+            local reads_before = (world.hidden_reads["com.apple.Safari"] or 0)
+                + (world.hidden_reads["com.microsoft.Word"] or 0)
+            local texts = read_list_after_press(world, "2")
+            local hidden_reads = (world.hidden_reads["com.apple.Safari"] or 0)
+                + (world.hidden_reads["com.microsoft.Word"] or 0)
+                - reads_before
+            world.press_escape()
+            world.release_modifiers()
+            world.advance(SETTLE_SECONDS)
+            return texts, hidden_reads
+        end
+        local shown = { " 1   Microsoft Word", " Draft.docx", " 2   Safari", ">Inbox" }
+        local texts, hidden_reads = read_list_and_close()
+        expect.equal(texts, shown)
+        expect.equal(hidden_reads, 2)
+        texts, hidden_reads = read_list_and_close()
+        expect.equal(texts, shown)
+        expect.equal(hidden_reads, 0)
+        world.hide_application("com.apple.Safari")
+        texts, hidden_reads = read_list_and_close()
+        expect.equal(texts[4], " hidden, a press unhides it")
+        expect.equal(hidden_reads, 0)
+        world.unhide_application("com.apple.Safari")
+        texts, hidden_reads = read_list_and_close()
+        expect.equal(texts, shown)
+        expect.equal(hidden_reads, 0)
+        world.hide_application("com.apple.Safari")
+        world.terminate_application("com.apple.Notes")
+        world.applications["com.apple.Safari"].is_hidden = false
+        texts, hidden_reads = read_list_and_close()
+        expect.equal(texts, shown)
+        expect.equal(hidden_reads, 2)
+    end,
+
+    the_list_searches_no_window_for_a_numbered_application_that_is_closed = function()
+        local world = start_world({ list_layout = list_layout.ROWS })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.applications["com.apple.Safari"].is_running = false
+        local calls_before = world.all_windows_calls
+        read_list_after_press(world, "1")
+        expect.equal(world.all_windows_calls, calls_before)
+    end,
+
+    a_press_of_a_hidden_application_under_leave_out_shows_the_desktop_of_its_window = function()
+        local world = start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        read_list_after_press(world, "2")
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
+        expect.equal(world.focused_window_id, 41)
+        expect.equal(world.displays[1].active_space_id, 14)
+        expect.equal(world.menu_selections, {})
+        local shown, visible_count = read_busy_messages(world)
+        expect.equal({ shown[#shown - 1], shown[#shown] }, {
+            "Arranging Profile 1… please wait",
+            "Showing desktop 2 of built-in… please wait",
+        })
+        expect.equal(visible_count, 0)
+    end,
+
+    a_press_of_a_hidden_application_reaches_its_window_on_a_desktop_not_shown_yet = function()
+        local world = start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        world.windows[41].is_unseen = true
+        read_list_after_press(world, "2")
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
+        expect.equal(world.focused_window_id, 41)
+        expect.equal(world.displays[1].active_space_id, 14)
+        expect.equal(world.menu_selections, {})
+    end,
+
+    a_press_of_hidden_word_shows_the_desktop_of_its_only_window_before_the_unhide = function()
+        local world, controller, notes =
+            start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        world.close_window(42)
+        world.windows[notes.id].is_unseen = true
+        world.applications["com.microsoft.Word"].standard_delay_after_unhide_seconds = 0.5
+        local window_count = #world.window_order
+        read_list_after_press(world, "1")
+        world.release_modifiers()
+        world.advance(0.45)
+        expect.equal(world.displays[1].active_space_id, 64)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, true)
+        world.advance(0.35)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
+        expect.equal(world.focused_window_id == notes.id, false)
+        local shown, visible_while_waiting = read_busy_messages(world)
+        expect.equal(shown[#shown], "Showing desktop 3 of built-in… please wait")
+        expect.equal(visible_while_waiting, 1)
+        expect.equal(controller.is_showing_desktop, true)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, notes.id)
+        expect.equal(world.menu_selections, {})
+        expect.equal(#world.window_order, window_count)
+        local _, visible_count = read_busy_messages(world)
+        expect.equal(visible_count, 0)
+        expect.equal(controller.is_showing_desktop, false)
+    end,
+
+    a_window_on_another_desktop_without_a_standard_subrole_in_time_is_reported = function()
+        local world, _, notes =
+            start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        world.close_window(42)
+        world.windows[notes.id].is_unseen = true
+        world.applications["com.microsoft.Word"].standard_delay_after_unhide_seconds = 5
+        read_list_after_press(world, "1")
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(
+            world.alerts[#world.alerts],
+            "Microsoft Word showed no standard window in the 1-second wait"
+                .. " after its unhide (1 problems in the Hammerspoon console)"
+        )
+        expect.equal(world.focused_window_id == notes.id, false)
+        expect.equal(world.menu_selections, {})
+    end,
+
+    a_hidden_application_without_reached_windows_shows_a_recorded_desktop = function()
+        local world = start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        world.windows[41].is_unseen = true
+        world.unreachable_window_ids[41] = true
+        read_list_after_press(world, "2")
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.displays[1].active_space_id, 14)
+        expect.equal(world.menu_selections, { "com.apple.Safari New Window" })
+        expect.equal(world.focused_window_id, find_window_titled(world, "Start Page").id)
+    end,
+
+    a_press_of_hidden_word_under_leave_out_waits_for_a_standard_window_and_opens_none = function()
+        local world, controller =
+            start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        world.applications["com.microsoft.Word"].standard_delay_after_unhide_seconds = 0.5
+        local window_count = #world.window_order
+        read_list_after_press(world, "1")
+        world.release_modifiers()
+        world.advance(0.3)
+        expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
+        expect.equal(world.focused_window_id == 42, false)
+        local shown, visible_while_waiting = read_busy_messages(world)
+        expect.equal(shown[#shown], "Unhiding Microsoft Word… please wait")
+        expect.equal(visible_while_waiting, 1)
+        expect.equal(controller.is_showing_desktop, true)
+        world.advance(0.4)
+        expect.equal(world.focused_window_id, 42)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, 42)
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.menu_selections, {})
+        expect.equal(#world.window_order, window_count)
+        local _, visible_count = read_busy_messages(world)
+        expect.equal(visible_count, 0)
+        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(world.notifications, {})
+    end,
+
+    a_press_of_a_hidden_application_under_leave_out_prefers_its_main_window = function()
+        local world, _, notes =
+            start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        world.applications["com.microsoft.Word"].main_window_id = notes.id
+        world.applications["com.microsoft.Word"].standard_delay_after_unhide_seconds = 0.5
+        read_list_after_press(world, "1")
+        world.release_modifiers()
+        world.advance(0.3)
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown], "Showing desktop 3 of built-in… please wait")
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, notes.id)
+        expect.equal(world.displays[1].active_space_id, 64)
+        expect.equal(world.menu_selections, {})
+    end,
+
+    a_press_of_hidden_word_in_view_brings_its_minimized_main_window_after_the_wait = function()
+        local world, controller =
+            start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        local other = world.add_window_of("com.microsoft.Word", "Other.docx", 3)
+        world.windows[other.id].is_minimized = true
+        world.applications["com.microsoft.Word"].main_window_id = other.id
+        world.applications["com.microsoft.Word"].standard_delay_after_unhide_seconds = 0.5
+        read_list_after_press(world, "1")
+        world.release_modifiers()
+        world.advance(0.3)
+        expect.equal(world.focused_window_id == other.id, false)
+        local shown = read_busy_messages(world)
+        expect.equal(shown[#shown], "Unhiding Microsoft Word… please wait")
+        expect.equal(controller.is_showing_desktop, true)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.focused_window_id, other.id)
+        expect.equal(world.windows[other.id].is_minimized, false)
+        expect.equal(world.displays[1].active_space_id, 3)
+        expect.equal(world.menu_selections, {})
+    end,
+
+    a_hidden_application_without_a_standard_window_in_time_is_reported = function()
+        local world = start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)
+        world.applications["com.microsoft.Word"].standard_delay_after_unhide_seconds = 5
+        local window_count = #world.window_order
+        read_list_after_press(world, "1")
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(
+            world.alerts[#world.alerts],
+            "Microsoft Word showed no standard window in the 1-second wait"
+                .. " after its unhide (1 problems in the Hammerspoon console)"
+        )
+        expect.equal(world.menu_selections, {})
+        expect.equal(#world.window_order, window_count)
+    end,
+
+    a_hidden_application_without_any_window_gets_a_new_window = function()
+        local world = start_world({
+            hidden_application_windows = hidden_application_windows.LEAVE_OUT,
+            list_layout = list_layout.ROWS,
+        })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(41)
+        world.hide_application("com.apple.Safari")
+        expect.equal(read_list_after_press(world, "2"), {
+            " 1   Microsoft Word",
+            " Draft.docx",
+            ">2   Safari",
+            " hidden, a press unhides it",
+        })
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(world.menu_selections, { "com.apple.Safari New Window" })
+        expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
+        expect.equal(world.focused_window_id, find_window_titled(world, "Start Page").id)
+    end,
+
+    the_columns_mark_a_hidden_application_under_leave_out = function()
+        local world =
+            start_world({ hidden_application_windows = hidden_application_windows.LEAVE_OUT })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hide_application("com.apple.Safari")
+        expect.equal(read_list_after_press(world, "1"), {
+            " 1  Microsoft Word",
+            ">Draft.docx",
+            " 2  Safari",
+            " hidden, a press unhides it",
+        })
+    end,
+
+    a_hidden_application_without_windows_keeps_its_note_under_the_other_values = function()
+        for _, setting in ipairs({
+            hidden_application_windows.LIST_WHERE_FOUND,
+            hidden_application_windows.LIST_ALL,
+        }) do
+            local world = start_world({
+                hidden_application_windows = setting,
+                list_layout = list_layout.ROWS,
+            })
+            world.hotkeys["1"]()
+            world.advance(SETTLE_SECONDS)
+            world.close_window(41)
+            world.hide_application("com.apple.Safari")
+            expect.equal(read_list_after_press(world, "2")[4], " no window, a new one opens")
+        end
+    end,
+
+    every_window_of_hidden_applications_includes_those_accessibility_does_not_reach = function()
+        local world, _, notes =
+            start_world_with_hidden_applications(hidden_application_windows.LIST_ALL)
+        world.windows[notes.id].is_unseen = true
+        expect.equal(read_list_after_press(world, "1"), {
+            " 1   Microsoft Word",
+            ">Draft.docx",
+            " Notes.docx",
+            " 2   Safari",
+            " Inbox",
+        })
+        world.press_escape()
+        world.release_modifiers()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(read_search_windows(world), {
+            "selection Inbox | Safari",
+            "plain Draft.docx | Microsoft Word",
+            "plain Notes.docx | Microsoft Word",
+        })
+    end,
+
+    the_list_joins_a_standard_window_that_the_filter_misses_under_every_value = function()
+        for _, setting in ipairs({
+            hidden_application_windows.LEAVE_OUT,
+            hidden_application_windows.LIST_WHERE_FOUND,
+            hidden_application_windows.LIST_ALL,
+        }) do
+            local world = start_world({
+                hidden_application_windows = setting,
+                list_layout = list_layout.ROWS,
+            })
+            local missed = world.add_window_of("com.apple.Safari", "Reading List", 3)
+            world.windows[missed.id].is_missed_by_filter = true
+            world.hotkeys["1"]()
+            world.advance(SETTLE_SECONDS)
+            local panel = world.add_window_of("com.apple.Safari", "Downloads", 3)
+            world.windows[panel.id].is_missed_by_filter = true
+            world.windows[panel.id].is_standard = false
+            expect.equal(read_list_after_press(world, "2"), {
+                " 1   Microsoft Word",
+                " Draft.docx",
+                " 2   Safari",
+                ">Inbox",
+                " Reading List",
+            })
+        end
     end,
 }

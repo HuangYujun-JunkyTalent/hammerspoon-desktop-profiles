@@ -77,14 +77,15 @@ return {
         expect.equal(resolution.shortcut_by_id["tiling.fill"], nil)
     end,
 
-    control_with_a_digit_stays_with_the_desktop_switches_of_macos = function()
+    control_option_shift_command_with_a_digit_is_no_longer_reserved = function()
         local resolution = shortcut_registry.resolve(build_registry(), {
             ["tiling.fill"] = { modifiers = { "cmd", "shift", "alt", "ctrl" }, key = "3" },
         }, is_known_key)
-        expect.equal(resolution.problems, {
-            '"Fill the screen" has no shortcut, because Control-Option-Shift-Command-3'
-                .. " switches desktops in macOS",
-        })
+        expect.equal(resolution.problems, {})
+        expect.equal(
+            resolution.shortcut_by_id["tiling.fill"],
+            { modifiers = { "cmd", "shift", "alt", "ctrl" }, key = "3" }
+        )
     end,
 
     control_with_a_digit_alone_is_free_for_an_action = function()

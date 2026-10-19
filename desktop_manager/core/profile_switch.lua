@@ -20,16 +20,26 @@ local profile_switch = {}
 ---@field bundle_ids_to_hide string[]
 ---@field window_ids_to_minimize integer[]
 
----The profile entered keeps in sight the windows it recorded in sight.
----It also keeps a window that no profile recorded, such as a window opened while no profile was
----active, so that the window joins the profile at its next capture.
----Every other window goes out of sight: the profile entered recorded it out of sight, or another
----profile recorded it and the profile entered did not.
+---@param window OpenWindow
+---@param is_kept boolean
+---@return SwitchCandidate
+local function to_candidate(window, is_kept)
+    return {
+        window_id = window.window_id,
+        bundle_id = window.bundle_id,
+        is_in_sight = not window.is_minimized and not window.is_app_hidden,
+        is_kept = is_kept,
+    }
+end
+
+---A profile with a layout for the monitor configuration keeps in sight exactly the windows it
+---recorded in sight.
+---Every other window goes out of sight, also a window that no profile recorded, such as a window
+---opened while no profile was active.
 ---@param open_windows OpenWindow[]
 ---@param matches WindowMatch[] the records of the profile entered, matched to the open windows
----@param recorded table<integer, table<string, boolean>> the windows that some profile recorded
 ---@return SwitchCandidate[]
-function profile_switch.mark_kept_windows(open_windows, matches, recorded)
+function profile_switch.mark_kept_windows(open_windows, matches)
     local record_by_window_id = {}
     for _, match in ipairs(matches) do
         record_by_window_id[match.window_id] = match.record
@@ -37,20 +47,24 @@ function profile_switch.mark_kept_windows(open_windows, matches, recorded)
     local candidates = {}
     for _, window in ipairs(open_windows) do
         local record = record_by_window_id[window.window_id]
+        table.insert(candidates, to_candidate(window, record ~= nil and not record.is_out_of_sight))
+    end
+    return candidates
+end
+
+---A profile without a layout for the monitor configuration keeps in sight the windows that no
+---profile recorded, so that they join the profile at its next capture, and the first activation of
+---the first profile leaves every window in sight.
+---The windows that another profile recorded go out of sight.
+---@param open_windows OpenWindow[]
+---@param recorded table<integer, table<string, boolean>> the windows that some profile recorded
+---@return SwitchCandidate[]
+function profile_switch.mark_kept_windows_for_new_profile(open_windows, recorded)
+    local candidates = {}
+    for _, window in ipairs(open_windows) do
         local is_recorded = recorded[window.window_id] ~= nil
             and recorded[window.window_id][window.bundle_id] == true
-        local is_kept
-        if record then
-            is_kept = not record.is_out_of_sight
-        else
-            is_kept = not is_recorded
-        end
-        table.insert(candidates, {
-            window_id = window.window_id,
-            bundle_id = window.bundle_id,
-            is_in_sight = not window.is_minimized and not window.is_app_hidden,
-            is_kept = is_kept,
-        })
+        table.insert(candidates, to_candidate(window, not is_recorded))
     end
     return candidates
 end

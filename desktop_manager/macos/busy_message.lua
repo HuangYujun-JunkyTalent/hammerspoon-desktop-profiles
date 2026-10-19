@@ -1,7 +1,10 @@
----A message at the top of every screen while the desktop manager moves windows, so that the user
----waits before working with the windows.
----The message shows on every desktop, because a restore shows other desktops while it runs, and an
----hs.alert stays on the desktop where it appeared.
+---A message at the top of every screen during every operation of the desktop manager that takes
+---time, so that the user waits before working with the windows.
+---The operations are a switch, a restore, a change of monitors, an addition or a removal of
+---desktops, a press in Mission Control and the opening of a window, and the message also shows
+---while Mission Control shows.
+---The canvas joins every desktop, because Mission Control and the moves of windows change the
+---desktops in view while the message shows, and an hs.alert stays on the desktop where it appeared.
 local busy_message = {}
 
 local BACKGROUND_COLOR = { white = 0.12, alpha = 0.92 }

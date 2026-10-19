@@ -17,7 +17,6 @@ local WINDOW_SIZE = { w = 720, h = 720 }
 ---@field shortcut Shortcut
 ---@field holder table|nil the id and the title of the other action that has the shortcut
 ---@field macos MacosShortcut|nil the shortcut of macOS that is on with the same keys
----@field is_reserved boolean the shortcut of a desktop switch
 
 ---@class ShortcutWindowModel
 ---@field groups table[] each with a name and rows, a row being a ShortcutRow with the macOS
@@ -71,14 +70,13 @@ function shortcut_window.build_model(center, problems, pending, find_macos_confl
             text = shortcut_registry.describe(pending.shortcut),
             holder = pending.holder,
             macos = describe_macos(pending.macos),
-            is_reserved = pending.is_reserved,
         }
     end
     return { groups = groups, problems = problems, pending = pending_view }
 end
 
 local STYLE = [[
-:root { color-scheme: light dark; --accent: #0a84ff; --warn: #c27c0e; --bad: #d0362d;
+:root { color-scheme: light dark; --accent: #0a84ff; --warn: #c27c0e;
   --card: rgba(127, 127, 127, 0.08); --line: rgba(127, 127, 127, 0.18);
   font: 13px -apple-system, BlinkMacSystemFont, sans-serif; }
 body { margin: 0; }
@@ -113,7 +111,6 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; margin: 0 1px;
 .icon[hidden] { visibility: hidden; display: inline-block; }
 .note { margin: 0 12px 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
 .note.warn { background: rgba(194, 124, 14, 0.13); }
-.note.bad { background: rgba(208, 54, 45, 0.13); }
 .note .choices { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
 .note button, footer button { font: inherit; padding: 3px 12px; border-radius: 6px;
   border: 1px solid var(--line); background: Canvas; cursor: pointer; }
@@ -162,34 +159,26 @@ let recordingId = null;
 const pendingNote = (pending) => {
   const keys = keycaps(pending.shortcut);
   const parts = [];
-  let kind = "warn";
-  if (pending.is_reserved) {
-    kind = "bad";
-    parts.push(keys + " is the shortcut of a desktop switch, which switches desktops in"
-      + " macOS and in the desktop manager, so no action can take it.");
-  }
   if (pending.holder) parts.push(keys + " is the shortcut of “"
     + escapeHtml(pending.holder.title) + "”.");
   if (pending.macos) parts.push("macOS uses " + keys + " for “"
     + escapeHtml(pending.macos.name) + "”, and macOS may take the keys first.");
   const choices = [];
-  if (!pending.is_reserved) {
-    if (pending.holder && pending.macos) {
-      choices.push(["primary", "Move it here and turn off the macOS shortcut",
-        { remove_holder: true, turn_off_macos: true }]);
-      choices.push(["", "Move it here only", { remove_holder: true }]);
-    } else if (pending.holder) {
-      choices.push(["primary", "Move it here", { remove_holder: true }]);
-    } else if (pending.macos) {
-      choices.push(["primary", "Turn off the macOS shortcut and use it here",
-        { turn_off_macos: true }]);
-      choices.push(["", "Use it anyway", {}]);
-    }
+  if (pending.holder && pending.macos) {
+    choices.push(["primary", "Move it here and turn off the macOS shortcut",
+      { remove_holder: true, turn_off_macos: true }]);
+    choices.push(["", "Move it here only", { remove_holder: true }]);
+  } else if (pending.holder) {
+    choices.push(["primary", "Move it here", { remove_holder: true }]);
+  } else if (pending.macos) {
+    choices.push(["primary", "Turn off the macOS shortcut and use it here",
+      { turn_off_macos: true }]);
+    choices.push(["", "Use it anyway", {}]);
   }
   choices.push(["", "Cancel", { cancel: true }]);
   const buttons = choices.map(([cls, label, choice], index) =>
     "<button class='" + cls + "' data-choice='" + index + "'>" + escapeHtml(label) + "</button>");
-  return { html: "<div class='note " + kind + "'>" + parts.join(" ") + "<div class='choices'>"
+  return { html: "<div class='note warn'>" + parts.join(" ") + "<div class='choices'>"
     + buttons.join("") + "</div></div>", choices: choices.map((c) => c[2]) };
 };
 const render = (next) => {
@@ -347,9 +336,8 @@ local function record(window, id, shortcut)
         shortcut = shortcut,
         holder = holder and { id = holder.id, title = holder.title },
         macos = find_macos_conflict(shortcut),
-        is_reserved = shortcut_registry.is_reserved(shortcut),
     }
-    if not pending.holder and not pending.macos and not pending.is_reserved then
+    if not pending.holder and not pending.macos then
         change(window, id, shortcut)
         return
     end
@@ -362,7 +350,7 @@ end
 ---@param choice table the choice of the user: remove_holder, turn_off_macos or cancel
 local function resolve(window, choice)
     local pending = window.pending
-    if not pending or choice.cancel or pending.is_reserved then
+    if not pending or choice.cancel then
         window.pending = nil
         render(window, false)
         return

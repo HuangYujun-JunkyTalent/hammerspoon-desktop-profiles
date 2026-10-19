@@ -103,13 +103,89 @@ return {
         local arrangement = arrangement_capture.capture(CONFIGURATION, LAYOUT, { observation }, nil)
         expect.equal(arrangement.monitor_configuration_key, "built-in + 1 external")
         expect.equal(arrangement.monitors, {
-            { slot_key = "built-in", desktop_count = 3 },
-            { slot_key = "external 1", desktop_count = 2 },
+            { slot_key = "built-in", desktop_count = 3, shown_desktop_number = 1 },
+            { slot_key = "external 1", desktop_count = 2, shown_desktop_number = 1 },
         })
-        expect.equal(arrangement.focus, { slot_key = "external 1", desktop_number = 1 })
+        expect.equal(arrangement.focused_slot_key, "external 1")
         expect.equal(arrangement.windows[1].slot_key, "external 1")
         expect.equal(arrangement.windows[1].desktop_number, 2)
         expect.equal(arrangement.windows[1].unit_frame, { x = 0, y = 0, w = 0.5, h = 1 })
+    end,
+
+    a_screen_in_full_screen_keeps_its_previous_shown_desktop = function()
+        local layout = {
+            screens = {
+                {
+                    screen_uuid = "BUILTIN-UUID",
+                    screen_frame = BUILTIN_FRAME,
+                    space_ids = { 3, 14, 64 },
+                    active_space_id = 900,
+                },
+                {
+                    screen_uuid = "LG-UUID",
+                    screen_frame = LG_FRAME,
+                    space_ids = { 649, 614 },
+                    active_space_id = 614,
+                },
+            },
+            focused_space_id = 900,
+        }
+        local previous = {
+            monitor_configuration_key = "built-in + 1 external",
+            monitors = {
+                { slot_key = "built-in", desktop_count = 3, shown_desktop_number = 2 },
+                { slot_key = "external 1", desktop_count = 2, shown_desktop_number = 1 },
+            },
+            focused_slot_key = "external 1",
+            windows = {},
+        }
+        local arrangement = arrangement_capture.capture(CONFIGURATION, layout, {}, previous)
+        expect.equal(arrangement.monitors, {
+            { slot_key = "built-in", desktop_count = 3, shown_desktop_number = 2 },
+            { slot_key = "external 1", desktop_count = 2, shown_desktop_number = 2 },
+        })
+        expect.equal(arrangement.focused_slot_key, "built-in")
+    end,
+
+    a_screen_whose_desktops_macos_does_not_list_keeps_its_previous_record = function()
+        local layout = { screens = { LAYOUT.screens[1] }, focused_space_id = 3 }
+        local previous = {
+            monitor_configuration_key = "built-in + 1 external",
+            monitors = {
+                { slot_key = "built-in", desktop_count = 4, shown_desktop_number = 2 },
+                { slot_key = "external 1", desktop_count = 2, shown_desktop_number = 2 },
+            },
+            focused_slot_key = "built-in",
+            windows = {},
+        }
+        expect.equal(arrangement_capture.capture(CONFIGURATION, layout, {}, previous).monitors, {
+            { slot_key = "built-in", desktop_count = 3, shown_desktop_number = 1 },
+            { slot_key = "external 1", desktop_count = 2, shown_desktop_number = 2 },
+        })
+        expect.equal(arrangement_capture.capture(CONFIGURATION, layout, {}, nil).monitors, {
+            { slot_key = "built-in", desktop_count = 3, shown_desktop_number = 1 },
+        })
+    end,
+
+    a_focus_on_no_screen_keeps_the_previous_screen_of_the_focus = function()
+        local layout = {
+            screens = LAYOUT.screens,
+            focused_space_id = nil,
+        }
+        local previous = {
+            monitor_configuration_key = "built-in + 1 external",
+            monitors = {},
+            focused_slot_key = "built-in",
+            windows = {},
+        }
+        expect.equal(
+            arrangement_capture.capture(CONFIGURATION, layout, {}, previous).focused_slot_key,
+            "built-in"
+        )
+        expect.equal(
+            arrangement_capture.capture(CONFIGURATION, layout, {}, nil).focused_slot_key,
+            nil
+        )
     end,
 
     a_window_out_of_sight_keeps_its_previous_location = function()

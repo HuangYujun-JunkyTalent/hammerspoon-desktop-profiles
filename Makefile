@@ -4,7 +4,6 @@ LUA_FILES := $(shell find . -name '*.lua' -not -path './.git/*')
 HAMMERSPOON_LOADER := $(HOME)/.hammerspoon/init.lua
 
 .PHONY: check syntax lint format format-check test launcher-scripts check-launcher-scripts install-loader
-.PHONY: enable-desktop-shortcuts
 .PHONY: asyar-extension-settings check-asyar-extension-settings check-asyar-extension link-asyar-extension
 .PHONY: check-asyar-window-tiling link-asyar-window-tiling
 .PHONY: check-asyar-trash link-asyar-trash
@@ -36,7 +35,6 @@ check-launcher-scripts:
 	$(LUA) tools/write_launcher_scripts.lua "$$scratch" && diff -r launcher-scripts "$$scratch"; \
 	status=$$?; rm -rf "$$scratch"; \
 	if [ $$status -ne 0 ]; then echo "launcher-scripts differs from the generator: run make launcher-scripts"; exit 1; fi
-	bash -n tools/enable_desktop_shortcuts.sh
 	bash -n tools/disable_macos_shortcut.sh
 	@for file in launcher-scripts/*.sh; do \
 		[ -x "$$file" ] || { echo "$$file is not executable"; exit 1; }; \
@@ -83,6 +81,3 @@ install-loader:
 		printf 'dofile("%s/init.lua")\n' "$(CURDIR)" > "$(HAMMERSPOON_LOADER)"; \
 		echo "wrote $(HAMMERSPOON_LOADER)"; \
 	fi
-
-enable-desktop-shortcuts:
-	sh tools/enable_desktop_shortcuts.sh

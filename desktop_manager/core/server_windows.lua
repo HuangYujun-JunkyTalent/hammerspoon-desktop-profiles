@@ -3,6 +3,8 @@
 ---Accessibility reaches the windows of the desktops in view, the minimized windows and the windows
 ---of hidden applications, so a window of the window server on a desktop in view is a panel or an
 ---overlay that the window filter leaves out on purpose.
+---A window that yabai would not list on its desktop shows nowhere, such as a window that Tailscale
+---or Calendar keeps after it closed, although macOS still lists it there.
 local server_windows = {}
 
 ---A window smaller than this is no window that a user works in, such as the windows of one point
@@ -15,6 +17,8 @@ local MIN_HEIGHT = 50
 ---@field window_id integer
 ---@field pid integer the process id of the owner
 ---@field title string empty without the permission for Screen Recording
+---@field is_shown boolean|nil false for a window that yabai would not list on its desktop, and nil
+---when the script could not tell
 ---@field x number the left edge, in the coordinates of hs.screen, whose origin is the top left
 ---corner of the main screen
 ---@field y number the top edge
@@ -33,6 +37,16 @@ local MIN_HEIGHT = 50
 ---@class ServerApplication
 ---@field bundle_id string
 ---@field app_name string
+
+---A row without `is_shown` counts, so that a script that cannot read the window server leaves the
+---lists as they were.
+---The window server marks the windows of a hidden application by the same rule, as it did for
+---Activity Monitor on macOS 27.0.1.
+---@param row ServerWindowRow
+---@return boolean
+local function is_shown(row)
+    return row.is_shown ~= false
+end
 
 ---@param rows ServerWindowRow[]
 ---@param hidden_space_by_window_id table<integer, integer> the desktop of each window on a desktop
@@ -67,6 +81,7 @@ function server_windows.select_unreached_windows(
         if
             space_id
             and application
+            and is_shown(row)
             and not known_window_ids[row.window_id]
             and row.w >= MIN_WIDTH
             and row.h >= MIN_HEIGHT
@@ -84,33 +99,36 @@ function server_windows.select_unreached_windows(
     return windows
 end
 
----The desktops out of view that hold a window of an application with a Dock icon.
+---The one desktop out of view of each window of an application with a Dock icon, of the size of a
+---window that a user works in, that the window server shows.
 ---A window that macOS lists on several desktops, such as the window of an application assigned to
----all desktops, holds none of them.
+---all desktops, is on none of them.
 ---@param rows ServerWindowRow[]
 ---@param hidden_space_ids_by_window_id table<integer, integer[]> the desktops out of view that
 ---macOS lists for each window
 ---@param application_by_pid table<integer, ServerApplication> the applications with a Dock icon
----@return table<integer, boolean>
-function server_windows.find_occupied_space_ids(
+---@return table<integer, integer> the desktop of each window
+function server_windows.map_occupying_windows(
     rows,
     hidden_space_ids_by_window_id,
     application_by_pid
 )
-    local occupied = {}
+    local space_by_window_id = {}
     for _, row in ipairs(rows) do
         local space_ids = hidden_space_ids_by_window_id[row.window_id]
+        local application = application_by_pid[row.pid]
         if
             space_ids
             and #space_ids == 1
-            and application_by_pid[row.pid]
+            and application
+            and is_shown(row)
             and row.w >= MIN_WIDTH
             and row.h >= MIN_HEIGHT
         then
-            occupied[space_ids[1]] = true
+            space_by_window_id[row.window_id] = space_ids[1]
         end
     end
-    return occupied
+    return space_by_window_id
 end
 
 ---The windows of an earlier list that are still on a desktop out of view and still out of reach,

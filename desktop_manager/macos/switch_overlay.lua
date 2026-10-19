@@ -77,7 +77,6 @@ local MAX_LINE_COUNT = 2
 local REQUIRED_GAIN_OF_ANOTHER_LINE = 1.05
 local SCROLL_PAUSE_SECONDS = 1
 local SCROLL_STEP_SECONDS = 0.15
-local NO_WINDOW_NOTE = "no window, a new one opens"
 local BACKGROUND_COLOR = { white = 0.12, alpha = 0.92 }
 local SELECTION_COLOR = { red = 0.2, green = 0.45, blue = 0.95, alpha = 0.95 }
 local TEXT_COLOR = { white = 1, alpha = 1 }
@@ -386,7 +385,7 @@ local function draw_column_cells(elements, column, origin, context, metrics)
     if #column.cells == 0 then
         table.insert(
             elements,
-            build_text(switch_list.shorten(NO_WINDOW_NOTE, metrics.visible_count), {
+            build_text(switch_list.shorten(column.note or "", metrics.visible_count), {
                 x = origin.x + CELL_PADDING,
                 y = origin.y + CELL_PADDING,
                 w = metrics.title_width,

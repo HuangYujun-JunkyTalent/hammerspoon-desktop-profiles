@@ -1,0 +1,110 @@
+local expect = require("tests.expect")
+local fake_hammerspoon = require("tests.fake_hammerspoon")
+local track_windows = require("desktop_manager.macos.track_windows")
+
+---A world with two windows of Safari and one of Word on the desktop 14 of the built-in display,
+---which Hammerspoon has not seen.
+---@return table world
+local function start_world()
+    local windows = {}
+    local bundle_ids = { "com.apple.Safari", "com.microsoft.Word", "com.apple.Safari" }
+    for index, bundle_id in ipairs(bundle_ids) do
+        table.insert(windows, {
+            id = 40 + index,
+            bundle_id = bundle_id,
+            title = "Window " .. index,
+            space_id = 14,
+            frame = { x = 0, y = 25, w = 720, h = 875 },
+            is_unseen = true,
+        })
+    end
+    return fake_hammerspoon.install({
+        screens = {
+            {
+                id = 1,
+                uuid = "BUILTIN-UUID",
+                name = "Built-in Retina Display",
+                frame = { x = 0, y = 25, w = 1440, h = 875 },
+            },
+        },
+        displays = { { uuid = "BUILTIN-UUID", space_ids = { 3, 14 }, active_space_id = 3 } },
+        applications = {
+            { bundle_id = "com.apple.Safari", name = "Safari", is_running = true },
+            { bundle_id = "com.microsoft.Word", name = "Microsoft Word", is_running = true },
+        },
+        windows = windows,
+    })
+end
+
+---@param world table
+---@param window_id integer
+---@return ServerWindow
+local function server_window_of(world, window_id)
+    local window = world.windows[window_id]
+    return {
+        window_id = window_id,
+        bundle_id = window.bundle_id,
+        app_name = world.applications[window.bundle_id].name,
+        title = window.title,
+        space_id = window.space_id,
+        frame = window.frame,
+    }
+end
+
+---Lets accessibility reach the windows after the seconds, as macOS does once their desktop shows.
+---@param world table
+---@param window_ids integer[]
+---@param seconds number
+local function reach_after(world, window_ids, seconds)
+    world.schedule(seconds, function()
+        for _, window_id in ipairs(window_ids) do
+            world.windows[window_id].is_unseen = false
+        end
+    end)
+end
+
+---@param world table
+---@param window_ids integer[]
+---@param timeout_seconds number
+---@return table<integer, table>|nil reached nil while the wait goes on
+---@return number|nil seconds until the wait ended
+local function wait_and_settle(world, window_ids, timeout_seconds)
+    local windows = {}
+    for _, window_id in ipairs(window_ids) do
+        table.insert(windows, server_window_of(world, window_id))
+    end
+    local reached, finished_at = nil, nil
+    track_windows.wait_until_reached(windows, timeout_seconds, function(found)
+        reached, finished_at = found, world.clock
+    end)
+    world.advance(5)
+    return reached, finished_at
+end
+
+return {
+    a_window_that_accessibility_reaches_later_is_found_at_the_next_poll = function()
+        local world = start_world()
+        reach_after(world, { 41 }, 0.5)
+        local reached, seconds = wait_and_settle(world, { 41 }, 1)
+        expect.equal(reached[41] ~= nil, true)
+        expect.equal(math.abs(seconds - 0.6) < 0.01, true)
+    end,
+
+    a_window_that_stays_out_of_reach_is_missing_after_the_time_limit = function()
+        local world = start_world()
+        local reached, seconds = wait_and_settle(world, { 41 }, 1)
+        expect.equal(reached[41], nil)
+        expect.equal(seconds >= 1 and seconds < 1.2, true)
+    end,
+
+    each_poll_reads_the_windows_of_each_owning_application_once = function()
+        local world = start_world()
+        reach_after(world, { 41, 42, 43 }, 0.5)
+        local reached = wait_and_settle(world, { 41, 42, 43 }, 1)
+        expect.equal(reached[41] ~= nil and reached[42] ~= nil and reached[43] ~= nil, true)
+        expect.equal(world.application_window_reads, {
+            ["com.apple.Safari"] = 4,
+            ["com.microsoft.Word"] = 4,
+        })
+    end,
+}

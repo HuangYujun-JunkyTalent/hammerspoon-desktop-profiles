@@ -50,30 +50,40 @@ return {
     the_profile_entered_keeps_the_windows_it_recorded_in_sight = function()
         local candidates = profile_switch.mark_kept_windows(
             { open_window(41, "com.apple.Safari"), open_window(42, "com.apple.Safari") },
-            { match_of(41, false), match_of(42, true) },
-            { [41] = { ["com.apple.Safari"] = true }, [42] = { ["com.apple.Safari"] = true } }
+            { match_of(41, false), match_of(42, true) }
         )
         expect.equal(candidates[1].is_kept, true)
         expect.equal(candidates[2].is_kept, false)
     end,
 
     a_window_recorded_by_another_profile_alone_goes_out_of_sight = function()
-        local candidates = profile_switch.mark_kept_windows(
-            { open_window(43, "com.microsoft.Word") },
-            {},
-            { [43] = { ["com.microsoft.Word"] = true } }
+        local open_windows = { open_window(43, "com.microsoft.Word") }
+        expect.equal(profile_switch.mark_kept_windows(open_windows, {})[1].is_kept, false)
+        expect.equal(
+            profile_switch.mark_kept_windows_for_new_profile(
+                open_windows,
+                { [43] = { ["com.microsoft.Word"] = true } }
+            )[1].is_kept,
+            false
         )
-        expect.equal(candidates[1].is_kept, false)
     end,
 
-    a_window_that_no_profile_recorded_stays = function()
+    a_profile_without_a_layout_keeps_a_window_that_no_profile_recorded = function()
         local recorded_for_another_application = { [44] = { ["com.apple.Safari"] = true } }
-        local candidates = profile_switch.mark_kept_windows(
+        local candidates = profile_switch.mark_kept_windows_for_new_profile(
             { open_window(44, "com.apple.Notes") },
-            {},
             recorded_for_another_application
         )
         expect.equal(candidates[1].is_kept, true)
+        expect.equal(candidates[1].is_in_sight, true)
+    end,
+
+    a_profile_with_a_layout_conceals_a_window_that_no_profile_recorded = function()
+        local candidates = profile_switch.mark_kept_windows(
+            { open_window(44, "com.apple.Notes") },
+            {}
+        )
+        expect.equal(candidates[1].is_kept, false)
         expect.equal(candidates[1].is_in_sight, true)
     end,
 

@@ -14,6 +14,8 @@ local switch_list = {}
 ---@field app_name string
 ---@field windows SwitchWindow[]
 ---@field first_window_index integer the window that the first press selects, 0 without windows
+---@field is_hidden boolean|nil true for a hidden application of which the list shows no window, so
+---that a press unhides it
 
 ---The selected window, or the application itself when it has no window.
 ---@class SwitchSelection
@@ -40,6 +42,7 @@ local switch_list = {}
 ---@field bundle_id string
 ---@field is_selected boolean whether the application itself is selected, because it has no window
 ---@field cells SwitchCell[]
+---@field note string|nil the note that the column shows in the place of windows
 
 ---The columns of one display, or of no display for the windows elsewhere and the applications
 ---without windows.
@@ -54,6 +57,8 @@ local switch_list = {}
 local ELLIPSIS = "…"
 local UNTITLED = "untitled window"
 local WINDOW_INDENT = "      "
+local NO_WINDOW_NOTE = "no window, a new one opens"
+local HIDDEN_NOTE = "hidden, a press unhides it"
 
 ---@param applications SwitchApplication[]
 ---@param number integer
@@ -65,6 +70,16 @@ function switch_list.find_application(applications, number)
         end
     end
     return nil
+end
+
+---The note that the list shows in the place of the windows of an application without windows.
+---@param application SwitchApplication
+---@return string|nil nil when the list shows windows of the application
+function switch_list.describe_note(application)
+    if #application.windows > 0 then
+        return nil
+    end
+    return application.is_hidden and HIDDEN_NOTE or NO_WINDOW_NOTE
 end
 
 ---Moves the selection for a press of the number.
@@ -167,9 +182,10 @@ function switch_list.describe_lines(applications, selection, max_title_length)
             is_selected = is_selected_application and selection.window_index == 0,
             bundle_id = application.bundle_id,
         })
-        if #application.windows == 0 then
+        local note = switch_list.describe_note(application)
+        if note then
             table.insert(lines, {
-                text = WINDOW_INDENT .. "no window, a new one opens",
+                text = WINDOW_INDENT .. note,
                 is_application = false,
                 is_selected = false,
                 bundle_id = application.bundle_id,
@@ -211,6 +227,7 @@ local function build_column(application, selection, is_in_column)
         bundle_id = application.bundle_id,
         is_selected = is_selected_application and selection.window_index == 0,
         cells = cells,
+        note = switch_list.describe_note(application),
     }
 end
 

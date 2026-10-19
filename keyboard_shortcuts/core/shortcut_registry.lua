@@ -116,20 +116,6 @@ function shortcut_registry.is_same_combination(first, second)
     return combination_key(first) == combination_key(second)
 end
 
----Control-Option-Shift-Command with a digit is "Switch to Desktop N" of macOS, which the desktop
----manager presses.
-local RESERVED_MODIFIERS = { "ctrl", "alt", "shift", "cmd" }
-
----@param shortcut Shortcut
----@return boolean
-function shortcut_registry.is_reserved(shortcut)
-    return shortcut.key:match("^%d$") ~= nil
-        and shortcut_registry.is_same_combination(
-            shortcut,
-            { modifiers = RESERVED_MODIFIERS, key = shortcut.key }
-        )
-end
-
 ---@param shortcut Shortcut
 ---@return string such as "Control-Option-Command-Space"
 function shortcut_registry.describe(shortcut)
@@ -150,8 +136,7 @@ end
 ---Gives each action its default shortcut, or the shortcut of its override.
 ---An override `false` leaves the action without a shortcut.
 ---An override that is no shortcut, or names a key that `is_known_key` rejects, leaves the default.
----A shortcut that an earlier action holds, or that switches desktops, leaves the action
----without a shortcut.
+---A shortcut that an earlier action holds leaves the action without a shortcut.
 ---@param registry ShortcutRegistry
 ---@param overrides table<string, Shortcut|false>
 ---@param is_known_key fun(key: string): boolean
@@ -188,17 +173,6 @@ function shortcut_registry.resolve(registry, overrides, is_known_key)
             else
                 shortcut = override
             end
-        end
-        if shortcut and shortcut_registry.is_reserved(shortcut) then
-            table.insert(
-                problems,
-                string.format(
-                    "%q has no shortcut, because %s switches desktops in macOS",
-                    action.title,
-                    shortcut_registry.describe(shortcut)
-                )
-            )
-            shortcut = nil
         end
         if shortcut then
             local combination = combination_key(shortcut)

@@ -19,8 +19,8 @@ local REGULAR_APPLICATION_KIND = 1
 
 ---@class WindowInventory
 ---@field windows ServerWindow[] the windows out of reach at the last refresh
----@field occupied_space_ids table<integer, boolean> the desktops out of view that held a window of
----an application with a Dock icon at the last refresh
+---@field occupying_windows table<integer, integer> the desktop out of view of each window of an
+---application with a Dock icon at the last refresh, which may keep the desktop from a removal
 ---@field is_refreshing boolean
 ---@field waiting fun()[] the calls that wait for the refresh that runs
 ---@field next_waiting fun()[] the calls that wait for a refresh that starts after the one that runs
@@ -29,7 +29,7 @@ local REGULAR_APPLICATION_KIND = 1
 function window_inventory.new()
     return {
         windows = {},
-        occupied_space_ids = {},
+        occupying_windows = {},
         is_refreshing = false,
         waiting = {},
         next_waiting = {},
@@ -109,8 +109,8 @@ local function start_refresh(inventory, list_known_window_ids)
                 application_by_pid,
                 list_known_window_ids()
             )
-            inventory.occupied_space_ids =
-                server_windows.find_occupied_space_ids(rows, hidden_space_lists, application_by_pid)
+            inventory.occupying_windows =
+                server_windows.map_occupying_windows(rows, hidden_space_lists, application_by_pid)
         end
         local finished = inventory.waiting
         inventory.waiting, inventory.next_waiting = inventory.next_waiting, {}

@@ -43,12 +43,53 @@ return {
 
     a_desktop_holds_the_windows_that_macos_lists_on_it_alone = function()
         expect.equal(
-            server_windows.find_occupied_space_ids(
+            server_windows.map_occupying_windows(
                 build_rows(),
                 { [1] = { 14 }, [2] = { 15 }, [3] = { 16 }, [4] = { 17, 18 }, [5] = { 64 } },
                 { [70] = CODE }
             ),
-            { [14] = true, [64] = true }
+            { [1] = 14, [5] = 64 }
+        )
+    end,
+
+    a_window_that_the_window_server_orders_out_shows_nowhere_and_keeps_no_desktop = function()
+        local rows = {
+            {
+                window_id = 1,
+                pid = 70,
+                title = "",
+                x = 274,
+                y = 88,
+                w = 890,
+                h = 566,
+                is_shown = false,
+            },
+            {
+                window_id = 4,
+                pid = 70,
+                title = "main.lua",
+                x = 0,
+                y = 25,
+                w = 1440,
+                h = 786,
+                is_shown = true,
+            },
+        }
+        local windows = server_windows.select_unreached_windows(
+            rows,
+            { [1] = 14, [4] = 14 },
+            { [70] = CODE },
+            {}
+        )
+        expect.equal(#windows, 1)
+        expect.equal(windows[1].window_id, 4)
+        expect.equal(
+            server_windows.map_occupying_windows(
+                rows,
+                { [1] = { 14 }, [4] = { 64 } },
+                { [70] = CODE }
+            ),
+            { [4] = 64 }
         )
     end,
 

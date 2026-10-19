@@ -25,7 +25,12 @@ local profile_state = {}
 ---@field highlight_colors table<string, table> the colors of the search that the window of the
 ---colors chose, by the names of highlight_colors, over the setting `search_highlight_colors`
 
-profile_state.FORMAT_VERSION = 1
+---Version 2 records the shown desktop of each screen and the screen of the focus, where version 1
+---recorded the desktop in front, and records the number of desktops that each screen had.
+profile_state.FORMAT_VERSION = 2
+
+---A state of this version is read through a migration.
+local FIRST_FORMAT_VERSION = 1
 
 ---Profile 0 holds the application numbers that the shortcuts reach while no profile is active.
 ---It records no windows, because a window that a profile records goes out of sight when another
@@ -324,9 +329,62 @@ local function decode_window_records(raw_records)
     return records
 end
 
+---@param value any
+---@return integer|nil a desktop number of 1 or more
+local function to_desktop_number(value)
+    local number = to_integer(value)
+    return number and number >= 1 and number or nil
+end
+
+---@param records WindowRecord[]
+---@param slot_key string
+---@return integer the highest desktop number of a record on the slot, or 0
+local function find_highest_desktop_number(records, slot_key)
+    local highest = 0
+    for _, record in ipairs(records) do
+        if record.slot_key == slot_key and record.desktop_number then
+            highest = math.max(highest, record.desktop_number)
+        end
+    end
+    return highest
+end
+
+---Version 1 recorded the kept number of desktops of a slot or the raw number, which holds the
+---desktops that macOS moved from a display that disconnected.
+---Each number becomes at most the larger of the kept number of its slot and the highest desktop of
+---a record on the slot, and a slot without a kept number keeps its number.
+---The desktop in front becomes the shown desktop of its screen and the screen of the focus.
+---@param arrangement Arrangement
+---@param raw_focus any the field `focus` of version 1
+---@param kept_counts table<string, integer>
+local function migrate_first_version(arrangement, raw_focus, kept_counts)
+    for _, monitor in ipairs(arrangement.monitors) do
+        local kept_count = kept_counts[monitor.slot_key]
+        if kept_count then
+            local needed_count = math.max(
+                kept_count,
+                find_highest_desktop_number(arrangement.windows, monitor.slot_key)
+            )
+            monitor.desktop_count = math.min(monitor.desktop_count, needed_count)
+        end
+    end
+    local focus_number = type(raw_focus) == "table" and to_desktop_number(raw_focus.desktop_number)
+    if not focus_number or type(raw_focus.slot_key) ~= "string" then
+        return
+    end
+    for _, monitor in ipairs(arrangement.monitors) do
+        if monitor.slot_key == raw_focus.slot_key then
+            monitor.shown_desktop_number = focus_number
+            arrangement.focused_slot_key = raw_focus.slot_key
+        end
+    end
+end
+
 ---@param raw any
+---@param format_version integer
+---@param kept_counts table<string, integer> the kept numbers of desktops, for the migration
 ---@return Arrangement|nil
-local function decode_arrangement(raw)
+local function decode_arrangement(raw, format_version, kept_counts)
     if type(raw) ~= "table" or type(raw.monitor_configuration_key) ~= "string" then
         return nil
     end
@@ -334,24 +392,23 @@ local function decode_arrangement(raw)
     for _, raw_monitor in ipairs(type(raw.monitors) == "table" and raw.monitors or {}) do
         local desktop_count = to_integer(raw_monitor.desktop_count)
         if type(raw_monitor.slot_key) == "string" and desktop_count then
-            table.insert(
-                monitors,
-                { slot_key = raw_monitor.slot_key, desktop_count = desktop_count }
-            )
+            table.insert(monitors, {
+                slot_key = raw_monitor.slot_key,
+                desktop_count = desktop_count,
+                shown_desktop_number = to_desktop_number(raw_monitor.shown_desktop_number),
+            })
         end
     end
-    local focus = nil
-    if type(raw.focus) == "table" and type(raw.focus.slot_key) == "string" then
-        local desktop_number = to_integer(raw.focus.desktop_number)
-        focus = desktop_number
-            and { slot_key = raw.focus.slot_key, desktop_number = desktop_number }
-    end
-    return {
+    local arrangement = {
         monitor_configuration_key = raw.monitor_configuration_key,
         monitors = monitors,
-        focus = focus,
+        focused_slot_key = type(raw.focused_slot_key) == "string" and raw.focused_slot_key or nil,
         windows = decode_window_records(raw.windows),
     }
+    if format_version == FIRST_FORMAT_VERSION then
+        migrate_first_version(arrangement, raw.focus, kept_counts)
+    end
+    return arrangement
 end
 
 ---@param raw_entries any
@@ -373,8 +430,10 @@ local function decode_app_numbers(raw_entries)
 end
 
 ---@param raw any
+---@param format_version integer
+---@param kept_counts table<string, integer>
 ---@return Profile|nil
-local function decode_profile(raw)
+local function decode_profile(raw, format_version, kept_counts)
     local number = type(raw) == "table" and to_integer(raw.number)
     if not number or number < 0 then
         return nil
@@ -389,7 +448,7 @@ local function decode_profile(raw)
     end
     local raw_arrangements = type(raw.arrangements) == "table" and raw.arrangements or {}
     for key, raw_arrangement in pairs(raw_arrangements) do
-        local arrangement = decode_arrangement(raw_arrangement)
+        local arrangement = decode_arrangement(raw_arrangement, format_version, kept_counts)
         if arrangement and arrangement.monitor_configuration_key == key then
             profile.arrangements[key] = arrangement
         end
@@ -429,6 +488,7 @@ local function decode_desktop_counts(raw)
 end
 
 ---Reads a state decoded from JSON, and drops the parts that do not have the expected shape.
+---A state of format version 1 is migrated, as `migrate_first_version` says.
 ---@param raw any
 ---@return State|nil state
 ---@return string|nil error_message
@@ -436,11 +496,16 @@ function profile_state.decode(raw)
     if type(raw) ~= "table" then
         return nil, string.format("the saved state is a %s, and a table was expected", type(raw))
     end
-    if to_integer(raw.format_version) ~= profile_state.FORMAT_VERSION then
+    local format_version = to_integer(raw.format_version) or 0
+    if
+        format_version ~= profile_state.FORMAT_VERSION
+        and format_version ~= FIRST_FORMAT_VERSION
+    then
         return nil,
             string.format(
-                "the saved state has format version %s, and this version reads %d",
+                "the saved state has format version %s, and this version reads %d to %d",
                 tostring(raw.format_version),
+                FIRST_FORMAT_VERSION,
                 profile_state.FORMAT_VERSION
             )
     end
@@ -452,8 +517,9 @@ function profile_state.decode(raw)
             )
     end
     local state = profile_state.new_state(raw.monitor_matching)
+    state.desktop_counts = decode_desktop_counts(raw.desktop_counts)
     for _, raw_profile in pairs(type(raw.profiles) == "table" and raw.profiles or {}) do
-        local profile = decode_profile(raw_profile)
+        local profile = decode_profile(raw_profile, format_version, state.desktop_counts.kept)
         if profile then
             state.profiles[key_of(profile.number)] = profile
         end
@@ -463,7 +529,6 @@ function profile_state.decode(raw)
         state.active_profile_number = active_number
     end
     state.app_pool = app_pool.decode(raw.app_pool, raw.managed_applications)
-    state.desktop_counts = decode_desktop_counts(raw.desktop_counts)
     state.highlight_colors = highlight_colors.decode(raw.highlight_colors)
     return state, nil
 end

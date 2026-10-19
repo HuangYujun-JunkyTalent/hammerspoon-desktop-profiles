@@ -122,7 +122,8 @@ end
 ---The window is one that a launch in this session opened and no record took, or else one that the
 ---menu item for a new window opens, or else the main window that a reopen of the application
 ---shows, as a click on its icon in the Dock does.
----A window opens on the desktop that shows, so the caller shows the recorded desktop first.
+---A window opens on the desktop that shows, and the restore moves it to its recorded desktop by its
+---frame and its id.
 ---@param record WindowRecord
 ---@param on_done fun(window: table|nil, error_message: string|nil)
 function NewWindowSession:provide_window(record, on_done)

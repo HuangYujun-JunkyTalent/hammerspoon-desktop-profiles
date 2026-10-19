@@ -5,8 +5,8 @@ local profile_state = require("desktop_manager.core.profile_state")
 
 local ARRANGEMENT = {
     monitor_configuration_key = "built-in",
-    monitors = { { slot_key = "built-in", desktop_count = 2 } },
-    focus = { slot_key = "built-in", desktop_number = 1 },
+    monitors = { { slot_key = "built-in", desktop_count = 2, shown_desktop_number = 1 } },
+    focused_slot_key = "built-in",
     windows = {
         {
             window_id = 41,
@@ -47,7 +47,6 @@ return {
         state = profile_state.with_arrangement(state, 4, {
             monitor_configuration_key = "built-in + 1 external",
             monitors = {},
-            focus = nil,
             windows = {
                 {
                     window_id = 77,
@@ -254,8 +253,119 @@ return {
 
     decode_rejects_another_format_version = function()
         local state, message =
-            profile_state.decode({ format_version = 2, monitor_matching = "by_count" })
+            profile_state.decode({ format_version = 3, monitor_matching = "by_count" })
         expect.equal(state, nil)
-        expect.equal(message, "the saved state has format version 2, and this version reads 1")
+        expect.equal(message, "the saved state has format version 3, and this version reads 1 to 2")
+    end,
+
+    a_saved_focus_becomes_the_desktop_shown_of_its_screen = function()
+        local state = profile_state.decode({
+            format_version = 1,
+            monitor_matching = "by_count",
+            profiles = {
+                ["1"] = {
+                    number = 1,
+                    arrangements = {
+                        ["built-in + 1 external"] = {
+                            monitor_configuration_key = "built-in + 1 external",
+                            monitors = {
+                                { slot_key = "built-in", desktop_count = 3 },
+                                { slot_key = "external 1", desktop_count = 2 },
+                            },
+                            focus = { slot_key = "external 1", desktop_number = 2.0 },
+                            windows = {},
+                        },
+                    },
+                },
+            },
+        })
+        local arrangement = profile_state.find_arrangement(state, 1, "built-in + 1 external")
+        expect.equal(arrangement.monitors, {
+            { slot_key = "built-in", desktop_count = 3 },
+            { slot_key = "external 1", desktop_count = 2, shown_desktop_number = 2 },
+        })
+        expect.equal(arrangement.focused_slot_key, "external 1")
+        expect.equal(arrangement.focus, nil)
+        expect.equal(state.format_version, profile_state.FORMAT_VERSION)
+    end,
+
+    a_shown_desktop_below_1_is_dropped = function()
+        local function decode_arrangement(format_version, raw_arrangement)
+            raw_arrangement.monitor_configuration_key = "built-in"
+            raw_arrangement.windows = {}
+            local state = profile_state.decode({
+                format_version = format_version,
+                monitor_matching = "by_count",
+                profiles = {
+                    ["1"] = { number = 1, arrangements = { ["built-in"] = raw_arrangement } },
+                },
+            })
+            return profile_state.find_arrangement(state, 1, "built-in")
+        end
+        local current = decode_arrangement(2, {
+            monitors = { { slot_key = "built-in", desktop_count = 2, shown_desktop_number = 0 } },
+            focused_slot_key = 7,
+        })
+        expect.equal(current.monitors, { { slot_key = "built-in", desktop_count = 2 } })
+        expect.equal(current.focused_slot_key, nil)
+        local migrated = decode_arrangement(1, {
+            monitors = { { slot_key = "built-in", desktop_count = 2 } },
+            focus = { slot_key = "built-in", desktop_number = 0 },
+        })
+        expect.equal(migrated.monitors, { { slot_key = "built-in", desktop_count = 2 } })
+        expect.equal(migrated.focused_slot_key, nil)
+    end,
+
+    an_old_desktop_count_is_limited_to_the_kept_count_and_the_recorded_windows = function()
+        local function record_on(window_id, slot_key, desktop_number)
+            return {
+                window_id = window_id,
+                bundle_id = "com.apple.Safari",
+                slot_key = slot_key,
+                desktop_number = desktop_number,
+                is_out_of_sight = false,
+            }
+        end
+        local state = profile_state.decode({
+            format_version = 1,
+            monitor_matching = "by_count",
+            desktop_counts = { kept = { ["built-in"] = 3, ["external 1"] = 4 } },
+            profiles = {
+                ["1"] = {
+                    number = 1,
+                    arrangements = {
+                        ["built-in + 1 external"] = {
+                            monitor_configuration_key = "built-in + 1 external",
+                            monitors = {
+                                { slot_key = "built-in", desktop_count = 7 },
+                                { slot_key = "external 1", desktop_count = 2 },
+                                { slot_key = "external 2", desktop_count = 5 },
+                            },
+                            windows = {
+                                record_on(41, "built-in", 5),
+                                record_on(42, "built-in", 2),
+                                record_on(43, "external 1", 2),
+                            },
+                        },
+                        ["built-in"] = {
+                            monitor_configuration_key = "built-in",
+                            monitors = { { slot_key = "built-in", desktop_count = 6 } },
+                            windows = { record_on(44, "built-in", 1) },
+                        },
+                    },
+                },
+            },
+        })
+        expect.equal(profile_state.find_arrangement(state, 1, "built-in + 1 external").monitors, {
+            { slot_key = "built-in", desktop_count = 5 },
+            { slot_key = "external 1", desktop_count = 2 },
+            { slot_key = "external 2", desktop_count = 5 },
+        })
+        expect.equal(
+            profile_state.find_arrangement(state, 1, "built-in").monitors,
+            { { slot_key = "built-in", desktop_count = 3 } }
+        )
+        local current = profile_state.decode(state)
+        expect.equal(current, state)
     end,
 }

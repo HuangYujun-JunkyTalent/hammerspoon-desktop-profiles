@@ -1,4 +1,5 @@
 local concealment_method = require("desktop_manager.core.concealment_method")
+local hidden_application_windows = require("desktop_manager.core.hidden_application_windows")
 local list_layout = require("desktop_manager.core.list_layout")
 local list_sizing = require("desktop_manager.core.list_sizing")
 local match_windows_by = require("desktop_manager.core.match_windows_by")
@@ -12,13 +13,27 @@ local default_settings = {}
 ---@class Timing
 ---@field poll_interval_seconds number
 ---@field modifier_release_timeout_seconds number
----@field desktop_switch_timeout_seconds number
+---@field desktop_show_timeout_seconds number the wait after the last press on the thumbnail of a
+---desktop in Mission Control, the first press or the press of the second opening, until its screen
+---reports the desktop and Mission Control has closed
+---@field desktop_press_retry_seconds number the time after the first press on a thumbnail at which
+---the thumbnail is pressed a second time when the desktop is not active and Mission Control shows,
+---or Mission Control opens a second time when it has closed
 ---@field desktop_settle_seconds number
 ---@field minimize_timeout_seconds number
 ---@field window_settle_seconds number
+---@field window_move_timeout_seconds number the wait for each window that moves by its id to
+---another desktop of its screen
+---@field window_reach_timeout_seconds number the wait until accessibility reaches a window that
+---Hammerspoon had not seen, after its move into view or after a press of the list or the search
+---showed its desktop
+---@field busy_watchdog_seconds number the longest switch, restore, or press of the list or the
+---search, after which the desktop manager stops it and reports a failure
 ---@field mission_control_timeout_seconds number
 ---@field mission_control_press_gap_seconds number
 ---@field application_launch_timeout_seconds number
+---@field application_focus_timeout_seconds number the wait after the focus before a press of the
+---list or the search until the application of the chosen window is the frontmost application
 ---@field save_delay_seconds number
 ---@field periodic_save_seconds number
 ---@field screen_settle_seconds number
@@ -33,6 +48,7 @@ local default_settings = {}
 ---@field concealment_method string a value of concealment_method
 ---@field match_windows_by string a value of match_windows_by
 ---@field missing_window_policy string a value of missing_window_policy
+---@field hidden_application_windows string a value of hidden_application_windows
 ---@field search_highlight_colors table|nil the colors of highlight_colors that replace the
 ---defaults, by name, such as `{ selection = { hex = "#2E8B57", alpha = 0.9 } }`
 ---@field preview_method string a value of preview_method
@@ -60,6 +76,7 @@ function default_settings.create(state_file_path)
         concealment_method = concealment_method.MINIMIZE_WINDOWS,
         match_windows_by = match_windows_by.TITLE,
         missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW,
+        hidden_application_windows = hidden_application_windows.LEAVE_OUT,
         preview_method = preview_method.BLURRED_SNAPSHOTS,
         preview_blur = 1,
         preview_size = { w = 0.1, h = 0.1 },
@@ -72,13 +89,18 @@ function default_settings.create(state_file_path)
         timing = {
             poll_interval_seconds = 0.05,
             modifier_release_timeout_seconds = 3,
-            desktop_switch_timeout_seconds = 2,
+            desktop_show_timeout_seconds = 5,
+            desktop_press_retry_seconds = 2,
             desktop_settle_seconds = 0.1,
             minimize_timeout_seconds = 2,
             window_settle_seconds = 0.3,
+            window_move_timeout_seconds = 1,
+            window_reach_timeout_seconds = 1,
+            busy_watchdog_seconds = 90,
             mission_control_timeout_seconds = 3,
             mission_control_press_gap_seconds = 0.4,
             application_launch_timeout_seconds = 10,
+            application_focus_timeout_seconds = 1,
             save_delay_seconds = 2,
             periodic_save_seconds = 60,
             screen_settle_seconds = 3,

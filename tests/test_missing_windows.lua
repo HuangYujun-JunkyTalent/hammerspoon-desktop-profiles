@@ -53,35 +53,34 @@ local function record_on(window_id, slot_key, desktop_number)
 end
 
 return {
-    missing_windows_are_grouped_by_screen_and_desktop = function()
-        local plan = missing_windows.plan_visits({
+    missing_windows_are_ordered_by_screen_and_desktop = function()
+        local plan = missing_windows.plan({
             record_on(41, "external 1", 2),
             record_on(42, "built-in", 2),
             record_on(43, "external 1", 2),
             record_on(44, "built-in", 1),
         }, CONFIGURATION, LAYOUT)
-        expect.equal(#plan.visits, 3)
-        expect.equal(plan.visits[1].screen_uuid, "BUILTIN-UUID")
-        expect.equal(plan.visits[1].desktop_number, 1)
-        expect.equal(plan.visits[2].desktop_number, 2)
-        expect.equal(plan.visits[3].screen_uuid, "EXTERNAL-UUID")
-        expect.equal(#plan.visits[3].missing_windows, 2)
-        expect.equal(plan.visits[3].missing_windows[2].record.window_id, 43)
+        local order = {}
+        for _, missing_window in ipairs(plan.missing_windows) do
+            table.insert(order, missing_window.record.window_id)
+        end
+        expect.equal(order, { 44, 42, 41, 43 })
+        expect.equal(plan.missing_windows[3].placement.screen_uuid, "EXTERNAL-UUID")
+        expect.equal(plan.missing_windows[3].placement.slot_key, "external 1")
         expect.equal(plan.unplaced_records, {})
     end,
 
     a_desktop_beyond_the_screen_becomes_its_last_desktop = function()
-        local plan =
-            missing_windows.plan_visits({ record_on(41, "built-in", 5) }, CONFIGURATION, LAYOUT)
-        expect.equal(plan.visits[1].desktop_number, 2)
+        local plan = missing_windows.plan({ record_on(41, "built-in", 5) }, CONFIGURATION, LAYOUT)
+        expect.equal(plan.missing_windows[1].placement.desktop_number, 2)
     end,
 
     a_record_without_a_place_is_left_unplaced = function()
-        local plan = missing_windows.plan_visits({
+        local plan = missing_windows.plan({
             record_on(41, nil, nil),
             record_on(42, "external 2", 1),
         }, CONFIGURATION, LAYOUT)
-        expect.equal(plan.visits, {})
+        expect.equal(plan.missing_windows, {})
         expect.equal(#plan.unplaced_records, 2)
     end,
 
