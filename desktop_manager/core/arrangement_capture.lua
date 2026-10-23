@@ -85,6 +85,39 @@ function arrangement_capture.find_monitor(arrangement, slot_key)
     return nil
 end
 
+---An observation of a window that the window server lists and that Hammerspoon has not seen.
+---@param window ServerWindow
+---@param previous_record WindowRecord|nil
+---@return WindowObservation
+function arrangement_capture.observe_server_window(window, previous_record)
+    return {
+        window_id = window.window_id,
+        bundle_id = window.bundle_id,
+        app_name = window.app_name,
+        title = (window.title == "" and previous_record) and previous_record.title or window.title,
+        space_id = window.space_id,
+        frame = window.frame,
+        is_out_of_sight = false,
+    }
+end
+
+---An observation of a recorded window that neither Hammerspoon nor the window server lists, and
+---that sits on a desktop.
+---@param record WindowRecord
+---@param space_id integer the desktop that macOS lists for the window
+---@return WindowObservation
+function arrangement_capture.observe_unlisted_record(record, space_id)
+    return {
+        window_id = record.window_id,
+        bundle_id = record.bundle_id,
+        app_name = record.app_name,
+        title = record.title,
+        space_id = space_id,
+        frame = nil,
+        is_out_of_sight = record.is_out_of_sight,
+    }
+end
+
 ---@param screen ScreenDesktops
 ---@param space_id integer
 ---@return boolean whether the space is a desktop of the screen or the space that it shows

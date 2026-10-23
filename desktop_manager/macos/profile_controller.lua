@@ -419,32 +419,20 @@ function ProfileController:capture_active_arrangement()
     for _, window in ipairs(self:list_unreached_managed_windows(known_windows)) do
         if not observed_ids[window.window_id] then
             observed_ids[window.window_id] = true
-            local previous_record = previous_by_id[window.window_id]
-            table.insert(observations, {
-                window_id = window.window_id,
-                bundle_id = window.bundle_id,
-                app_name = window.app_name,
-                title = (window.title == "" and previous_record) and previous_record.title
-                    or window.title,
-                space_id = window.space_id,
-                frame = window.frame,
-                is_out_of_sight = false,
-            })
+            table.insert(
+                observations,
+                arrangement_capture.observe_server_window(window, previous_by_id[window.window_id])
+            )
         end
     end
     for _, record in ipairs(previous_records) do
         if record.window_id and not observed_ids[record.window_id] then
             local space_id = read_desktops.find_window_space_id(record.window_id)
             if space_id then
-                table.insert(observations, {
-                    window_id = record.window_id,
-                    bundle_id = record.bundle_id,
-                    app_name = record.app_name,
-                    title = record.title,
-                    space_id = space_id,
-                    frame = nil,
-                    is_out_of_sight = record.is_out_of_sight,
-                })
+                table.insert(
+                    observations,
+                    arrangement_capture.observe_unlisted_record(record, space_id)
+                )
             end
         end
     end
