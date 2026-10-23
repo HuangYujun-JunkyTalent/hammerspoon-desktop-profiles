@@ -9,6 +9,7 @@ local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
+local locate_desktops = require("desktop_manager.core.locate_desktops")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_layout = require("desktop_manager.core.list_layout")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
@@ -841,18 +842,6 @@ function ProfileController:open_missing_windows(number, unmatched_records, on_do
     open_next(1)
 end
 
----@param screen ScreenDesktops
----@return integer|nil the desktop that the screen shows, or nil while it shows a space in full
----screen
-local function find_view_space_id(screen)
-    for _, space_id in ipairs(screen.space_ids) do
-        if space_id == screen.active_space_id then
-            return space_id
-        end
-    end
-    return nil
-end
-
 ---Moves a window that came into view and that accessibility did not reach there back to its
 ---desktop by its id, because the switch can neither minimize it nor set its frame, and reports it.
 ---@param windows ServerWindow[] the windows that accessibility did not reach
@@ -927,8 +916,11 @@ function ProfileController:reach_windows(windows, on_done)
     local failures, moves, window_by_id, desktop_numbers = {}, {}, {}, {}
     for _, window in ipairs(windows) do
         window_by_id[window.window_id] = window
-        local location = arrangement_capture.locate_space(desktop_layout, window.space_id)
-        local view_space_id = location and find_view_space_id(location.screen)
+        local location = locate_desktops.locate_space(desktop_layout, window.space_id)
+        local shown_desktop_number = location
+            and locate_desktops.find_shown_desktop_number(location.screen)
+        local view_space_id = shown_desktop_number
+            and location.screen.space_ids[shown_desktop_number]
         if view_space_id then
             desktop_numbers[window.window_id] = location.desktop_number
             table.insert(moves, { window_id = window.window_id, space_id = view_space_id })
@@ -1936,7 +1928,7 @@ function ProfileController:show_space(space_id, after_shown, on_done, chosen_win
         return
     end
     local configuration = self:read_monitor_configuration()
-    local location = arrangement_capture.locate_space(read_desktops.read_desktop_layout(), space_id)
+    local location = locate_desktops.locate_space(read_desktops.read_desktop_layout(), space_id)
     local slot = location
         and monitor_configuration.find_slot_of_screen(configuration, location.screen.screen_uuid)
     local text = slot and describe_showing(location.desktop_number, slot.slot_key)
@@ -2211,12 +2203,8 @@ function ProfileController:shows_extra_desktop(screen_uuid, count_by_slot)
     if not screen or not count then
         return false
     end
-    for position, space_id in ipairs(screen.space_ids) do
-        if space_id == screen.active_space_id then
-            return position > count
-        end
-    end
-    return false
+    local shown_desktop_number = locate_desktops.find_shown_desktop_number(screen)
+    return shown_desktop_number ~= nil and shown_desktop_number > count
 end
 
 ---@param edits DesktopEdit[]

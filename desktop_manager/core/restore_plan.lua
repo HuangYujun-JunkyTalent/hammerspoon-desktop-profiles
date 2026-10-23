@@ -1,3 +1,5 @@
+local arrangement_capture = require("desktop_manager.core.arrangement_capture")
+local locate_desktops = require("desktop_manager.core.locate_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 
 local restore_plan = {}
@@ -34,42 +36,6 @@ local restore_plan = {}
 ---@field shown_desktops ScreenDesktop[] the desktops to show at the end, in the order of the slots,
 ---the slot of the focus last
 
----@param desktop_layout DesktopLayout
----@param screen_uuid string
----@return ScreenDesktops|nil
-local function find_screen(desktop_layout, screen_uuid)
-    for _, screen in ipairs(desktop_layout.screens) do
-        if screen.screen_uuid == screen_uuid then
-            return screen
-        end
-    end
-    return nil
-end
-
----@param arrangement Arrangement
----@param slot_key string
----@return MonitorDesktops|nil
-local function find_monitor(arrangement, slot_key)
-    for _, monitor in ipairs(arrangement.monitors) do
-        if monitor.slot_key == slot_key then
-            return monitor
-        end
-    end
-    return nil
-end
-
----@param screen ScreenDesktops
----@return integer|nil the position of the desktop that the screen shows, nil for a space in full
----screen
-local function find_shown_position(screen)
-    for position, space_id in ipairs(screen.space_ids) do
-        if space_id == screen.active_space_id then
-            return position
-        end
-    end
-    return nil
-end
-
 ---Plans the desktops to add at the end of each screen, up to the number that the arrangement
 ---holds, so the desktops that exist keep their numbers.
 ---The desktops beyond the number go after the windows are in place, as the controller does.
@@ -82,7 +48,7 @@ local function plan_desktop_additions(arrangement, configuration, desktop_layout
     local additions, target_counts = {}, {}
     for _, monitor in ipairs(arrangement.monitors) do
         local slot = monitor_configuration.find_slot(configuration, monitor.slot_key)
-        local screen = slot and find_screen(desktop_layout, slot.screen_uuid)
+        local screen = slot and locate_desktops.find_screen(desktop_layout, slot.screen_uuid)
         if screen then
             local current_count = #screen.space_ids
             local recorded_count = math.max(monitor.desktop_count, 1)
@@ -110,11 +76,11 @@ end
 function restore_plan.plan_shown_desktops(arrangement, configuration, desktop_layout)
     local shown_desktops, desktop_of_focus = {}, nil
     for _, slot in ipairs(configuration.slots) do
-        local monitor = find_monitor(arrangement, slot.slot_key)
-        local screen = find_screen(desktop_layout, slot.screen_uuid)
+        local monitor = arrangement_capture.find_monitor(arrangement, slot.slot_key)
+        local screen = locate_desktops.find_screen(desktop_layout, slot.screen_uuid)
         local count = monitor and math.max(monitor.desktop_count, 1)
         local desktop_number = monitor and monitor.shown_desktop_number
-        local shown_position = screen and find_shown_position(screen)
+        local shown_position = screen and locate_desktops.find_shown_desktop_number(screen)
         if count and not desktop_number and shown_position and shown_position > count then
             desktop_number = count
         end
@@ -147,9 +113,14 @@ end
 function restore_plan.plan_exits_from_full_screen(arrangement, configuration, desktop_layout)
     local exits = {}
     for _, slot in ipairs(configuration.slots) do
-        local screen = find_screen(desktop_layout, slot.screen_uuid)
-        if screen and #screen.space_ids > 0 and not find_shown_position(screen) then
-            local monitor = arrangement and find_monitor(arrangement, slot.slot_key)
+        local screen = locate_desktops.find_screen(desktop_layout, slot.screen_uuid)
+        if
+            screen
+            and #screen.space_ids > 0
+            and not locate_desktops.find_shown_desktop_number(screen)
+        then
+            local monitor = arrangement
+                and arrangement_capture.find_monitor(arrangement, slot.slot_key)
             local desktop_number = monitor and monitor.shown_desktop_number or 1
             table.insert(exits, {
                 screen_uuid = slot.screen_uuid,

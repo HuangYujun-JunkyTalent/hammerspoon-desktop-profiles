@@ -1,3 +1,4 @@
+local locate_desktops = require("desktop_manager.core.locate_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 
 local missing_windows = {}
@@ -12,18 +13,6 @@ local missing_windows = {}
 ---desktop
 ---@field unplaced_records WindowRecord[] records whose screen or desktop the configuration lacks
 
----@param desktop_layout DesktopLayout
----@param screen_uuid string
----@return integer the number of desktops of the screen, or 0 when the screen is absent
-local function count_desktops(desktop_layout, screen_uuid)
-    for _, screen in ipairs(desktop_layout.screens) do
-        if screen.screen_uuid == screen_uuid then
-            return #screen.space_ids
-        end
-    end
-    return 0
-end
-
 ---Orders the missing windows by the place of their new windows.
 ---A new window opens on the desktop that shows, and the restore moves it to its desktop by its
 ---frame and its id, so the order is the one in which the windows open.
@@ -36,7 +25,8 @@ function missing_windows.plan(records, configuration, desktop_layout)
     for _, record in ipairs(records) do
         local slot = record.slot_key
             and monitor_configuration.find_slot(configuration, record.slot_key)
-        local desktop_count = slot and count_desktops(desktop_layout, slot.screen_uuid) or 0
+        local screen = slot and locate_desktops.find_screen(desktop_layout, slot.screen_uuid)
+        local desktop_count = screen and #screen.space_ids or 0
         if not slot or not record.desktop_number or desktop_count == 0 then
             table.insert(unplaced_records, record)
         else

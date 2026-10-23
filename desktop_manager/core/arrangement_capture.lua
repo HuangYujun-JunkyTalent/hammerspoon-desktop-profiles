@@ -1,4 +1,5 @@
 local deep_copy = require("desktop_manager.core.deep_copy")
+local locate_desktops = require("desktop_manager.core.locate_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 
 local arrangement_capture = {}
@@ -14,16 +15,6 @@ local arrangement_capture = {}
 ---@field space_id integer|nil
 ---@field frame Rect|nil
 ---@field is_out_of_sight boolean
-
----@class ScreenDesktops
----@field screen_uuid string
----@field screen_frame Rect
----@field space_ids integer[] the user desktops of the screen, in Mission Control order
----@field active_space_id integer|nil
-
----@class DesktopLayout
----@field screens ScreenDesktops[]
----@field focused_space_id integer|nil
 
 ---@class MonitorDesktops
 ---@field slot_key string
@@ -82,55 +73,10 @@ function arrangement_capture.from_unit_frame(unit_frame, screen_frame)
     }
 end
 
----@class SpaceLocation
----@field screen ScreenDesktops
----@field desktop_number integer
-
----@param desktop_layout DesktopLayout
----@param space_id integer|nil
----@return SpaceLocation|nil
-function arrangement_capture.locate_space(desktop_layout, space_id)
-    if space_id == nil then
-        return nil
-    end
-    for _, screen in ipairs(desktop_layout.screens) do
-        for desktop_number, candidate in ipairs(screen.space_ids) do
-            if candidate == space_id then
-                return { screen = screen, desktop_number = desktop_number }
-            end
-        end
-    end
-    return nil
-end
-
----@param screen ScreenDesktops
----@return integer|nil the position of the desktop that the screen shows, nil for a space in full
----screen, which is no user desktop
-local function find_shown_desktop_number(screen)
-    for desktop_number, space_id in ipairs(screen.space_ids) do
-        if space_id == screen.active_space_id then
-            return desktop_number
-        end
-    end
-    return nil
-end
-
----@param desktop_layout DesktopLayout
----@param screen_uuid string
----@return ScreenDesktops|nil
-local function find_screen(desktop_layout, screen_uuid)
-    for _, screen in ipairs(desktop_layout.screens) do
-        if screen.screen_uuid == screen_uuid then
-            return screen
-        end
-    end
-    return nil
-end
-
 ---@param arrangement Arrangement|nil
 ---@param slot_key string
 ---@return MonitorDesktops|nil
-local function find_monitor(arrangement, slot_key)
+function arrangement_capture.find_monitor(arrangement, slot_key)
     for _, monitor in ipairs(arrangement and arrangement.monitors or {}) do
         if monitor.slot_key == slot_key then
             return monitor
@@ -197,7 +143,7 @@ local function record_window(configuration, desktop_layout, observation, previou
         title = observation.title,
         is_out_of_sight = observation.is_out_of_sight,
     }
-    local location = arrangement_capture.locate_space(desktop_layout, observation.space_id)
+    local location = locate_desktops.locate_space(desktop_layout, observation.space_id)
     local slot = location
         and monitor_configuration.find_slot_of_screen(configuration, location.screen.screen_uuid)
     if location and slot then
@@ -237,13 +183,14 @@ function arrangement_capture.capture(
 )
     local monitors = {}
     for _, slot in ipairs(configuration.slots) do
-        local screen = find_screen(desktop_layout, slot.screen_uuid)
-        local previous_monitor = find_monitor(previous_arrangement, slot.slot_key)
+        local screen = locate_desktops.find_screen(desktop_layout, slot.screen_uuid)
+        local previous_monitor =
+            arrangement_capture.find_monitor(previous_arrangement, slot.slot_key)
         if screen then
             table.insert(monitors, {
                 slot_key = slot.slot_key,
                 desktop_count = #screen.space_ids,
-                shown_desktop_number = find_shown_desktop_number(screen)
+                shown_desktop_number = locate_desktops.find_shown_desktop_number(screen)
                     or previous_monitor and previous_monitor.shown_desktop_number
                     or nil,
             })

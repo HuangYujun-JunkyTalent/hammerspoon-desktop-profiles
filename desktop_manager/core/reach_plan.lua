@@ -1,4 +1,5 @@
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
+local locate_desktops = require("desktop_manager.core.locate_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local profile_switch = require("desktop_manager.core.profile_switch")
 local window_routes = require("desktop_manager.core.window_routes")
@@ -26,7 +27,7 @@ end
 ---@return boolean whether the restore would move the window or set its frame
 local function is_misplaced(record, window, configuration, desktop_layout)
     local slot = monitor_configuration.find_slot(configuration, record.slot_key)
-    local location = arrangement_capture.locate_space(desktop_layout, window.space_id)
+    local location = locate_desktops.locate_space(desktop_layout, window.space_id)
     if not slot or not location then
         return false
     end
