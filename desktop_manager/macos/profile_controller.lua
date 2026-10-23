@@ -5,16 +5,12 @@ local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local busy_message = require("desktop_manager.macos.busy_message")
 local color_window = require("desktop_manager.macos.color_window")
-local concealment_method = require("desktop_manager.core.concealment_method")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
-local hidden_application_windows = require("desktop_manager.core.hidden_application_windows")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_layout = require("desktop_manager.core.list_layout")
-local list_sizing = require("desktop_manager.core.list_sizing")
-local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local missing_windows = require("desktop_manager.core.missing_windows")
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
@@ -32,13 +28,13 @@ local restore_plan = require("desktop_manager.core.restore_plan")
 local restore_windows = require("desktop_manager.macos.restore_windows")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local search_windows = require("desktop_manager.macos.search_windows")
+local settings_check = require("desktop_manager.core.settings_check")
 local shortcut_center = require("keyboard_shortcuts.macos.shortcut_center")
 local shortcut_window = require("keyboard_shortcuts.macos.shortcut_window")
 local state_file = require("desktop_manager.macos.state_file")
 local status_menu = require("desktop_manager.macos.status_menu")
 local switch_list = require("desktop_manager.core.switch_list")
 local switch_overlay = require("desktop_manager.macos.switch_overlay")
-local title_overflow = require("desktop_manager.core.title_overflow")
 local track_windows = require("desktop_manager.macos.track_windows")
 local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 local url_command = require("desktop_manager.core.url_command")
@@ -2772,144 +2768,14 @@ function ProfileController:start_watchers()
     )
 end
 
----@param settings Settings
+---@param unchecked_settings Settings
 ---@param shortcuts ShortcutCenter|nil the center of the shortcuts of every utility, or nil for a
 ---center of this tool alone
 ---@return ProfileController
-function profile_controller.start(settings, shortcuts)
-    local preview_size = settings.preview_size
-    if
-        type(preview_size) ~= "table"
-        or type(preview_size.w) ~= "number"
-        or type(preview_size.h) ~= "number"
-        or preview_size.w <= 0
-        or preview_size.h <= 0
-        or preview_size.w > 1
-        or preview_size.h > 1
-    then
-        error(
-            "the setting preview_size must give w and h as fractions of the screen,"
-                .. " above 0 and at most 1",
-            2
-        )
-    end
-    if
-        type(settings.list_font_size) ~= "number"
-        or settings.list_font_size <= 0
-        or settings.list_font_size > 0.1
-    then
-        error(
-            string.format(
-                "the setting list_font_size is %s, and it must be a fraction of the height of the"
-                    .. " screen, above 0 and at most 0.1",
-                tostring(settings.list_font_size)
-            ),
-            2
-        )
-    end
-    if not title_overflow.is_valid(settings.title_overflow) then
-        error(
-            string.format(
-                "the setting title_overflow is %q, which names no way",
-                tostring(settings.title_overflow)
-            ),
-            2
-        )
-    end
-    if math.type(settings.title_line_count) ~= "integer" or settings.title_line_count < 1 then
-        error(
-            string.format(
-                "the setting title_line_count is %s, and it must be a whole number of 1 or more",
-                tostring(settings.title_line_count)
-            ),
-            2
-        )
-    end
-    if not list_sizing.is_valid(settings.list_sizing) then
-        error(
-            string.format(
-                "the setting list_sizing is %q, which names no sizing",
-                tostring(settings.list_sizing)
-            ),
-            2
-        )
-    end
-    if not list_layout.is_valid(settings.list_layout) then
-        error(
-            string.format(
-                "the setting list_layout is %q, which names no layout",
-                tostring(settings.list_layout)
-            ),
-            2
-        )
-    end
-    if type(settings.preview_blur) ~= "number" or settings.preview_blur < 1 then
-        error(
-            string.format(
-                "the setting preview_blur is %s, and it must be a number of 1 or more",
-                tostring(settings.preview_blur)
-            ),
-            2
-        )
-    end
-    if not preview_method.is_valid(settings.preview_method) then
-        error(
-            string.format(
-                "the setting preview_method is %q, which names no method",
-                tostring(settings.preview_method)
-            ),
-            2
-        )
-    end
-    local colors, colors_error = highlight_colors.complete(settings.search_highlight_colors)
-    if not colors then
-        error(colors_error, 2)
-    end
-    settings.search_highlight_colors = colors
-    if not match_windows_by.is_valid(settings.match_windows_by) then
-        error(
-            string.format(
-                "the setting match_windows_by is %q, which names no way to match windows",
-                tostring(settings.match_windows_by)
-            ),
-            2
-        )
-    end
-    if not missing_window_policy.is_valid(settings.missing_window_policy) then
-        error(
-            string.format(
-                "the setting missing_window_policy is %q, which names no policy",
-                tostring(settings.missing_window_policy)
-            ),
-            2
-        )
-    end
-    if not unmatched_window_action.is_valid(settings.unmatched_window_action) then
-        error(
-            string.format(
-                "the setting unmatched_window_action is %q, which names no action",
-                tostring(settings.unmatched_window_action)
-            ),
-            2
-        )
-    end
-    if not hidden_application_windows.is_valid(settings.hidden_application_windows) then
-        error(
-            string.format(
-                "the setting hidden_application_windows is %q, which names no choice",
-                tostring(settings.hidden_application_windows)
-            ),
-            2
-        )
-    end
-    if not concealment_method.is_valid(settings.concealment_method) then
-        error(
-            string.format(
-                "the setting concealment_method is %q, which names no concealment method",
-                tostring(settings.concealment_method)
-            ),
-            2
-        )
+function profile_controller.start(unchecked_settings, shortcuts)
+    local settings, message = settings_check.check(unchecked_settings)
+    if not settings then
+        error(message, 2)
     end
     local controller = setmetatable({
         settings = settings,
