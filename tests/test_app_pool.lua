@@ -49,6 +49,19 @@ return {
         local records = { { bundle_id = FIREFOX.bundle_id }, { bundle_id = SLACK.bundle_id } }
         expect.equal(app_pool.keep_managed(pool, records), { { bundle_id = FIREFOX.bundle_id } })
         expect.equal(app_pool.keep_managed(app_pool.new(), records), records)
+        local windows = { { app = FIREFOX.bundle_id }, { app = SLACK.bundle_id } }
+        expect.equal(
+            app_pool.keep_managed_by(pool, windows, function(window)
+                return window.app
+            end),
+            { { app = FIREFOX.bundle_id } }
+        )
+        local arrangement = { monitor_configuration_key = "built-in", windows = records }
+        expect.equal(app_pool.keep_managed_records(pool, arrangement), {
+            monitor_configuration_key = "built-in",
+            windows = { { bundle_id = FIREFOX.bundle_id } },
+        })
+        expect.equal(#arrangement.windows, 2)
     end,
 
     choices_list_each_application_once_by_name_with_the_ticks_of_the_mode = function()

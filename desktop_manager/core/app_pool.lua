@@ -140,20 +140,45 @@ function app_pool.with_listed(pool, bundle_id, app_name, is_listed)
     return updated
 end
 
----@generic T : { bundle_id: string }
+---@generic T
 ---@param pool AppPool
----@param items T[] records or windows, each with a bundle id
----@return T[] the items of managed applications, in their order
-function app_pool.keep_managed(pool, items)
+---@param items T[]
+---@param read_bundle_id fun(item: T): string|nil
+---@return T[] the items of managed applications, in their order, and `items` itself when the pool
+---holds every application
+function app_pool.keep_managed_by(pool, items, read_bundle_id)
     if app_pool.holds_every_application(pool) then
         return items
     end
     local kept = {}
     for _, item in ipairs(items) do
-        if app_pool.is_managed(pool, item.bundle_id) then
+        if app_pool.is_managed(pool, read_bundle_id(item)) then
             table.insert(kept, item)
         end
     end
+    return kept
+end
+
+---@generic T : { bundle_id: string }
+---@param pool AppPool
+---@param items T[] records or windows, each with a bundle id
+---@return T[] the items of managed applications, in their order
+function app_pool.keep_managed(pool, items)
+    return app_pool.keep_managed_by(pool, items, function(item)
+        return item.bundle_id
+    end)
+end
+
+---@param pool AppPool
+---@param arrangement Arrangement
+---@return Arrangement a copy without the records of the applications that the desktop manager
+---leaves to macOS
+function app_pool.keep_managed_records(pool, arrangement)
+    local kept = {}
+    for key, value in pairs(arrangement) do
+        kept[key] = value
+    end
+    kept.windows = app_pool.keep_managed(pool, arrangement.windows)
     return kept
 end
 

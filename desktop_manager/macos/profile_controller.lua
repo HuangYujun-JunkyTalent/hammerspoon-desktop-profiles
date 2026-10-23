@@ -236,29 +236,9 @@ end
 ---@param windows table[] hs.window objects
 ---@return table[] the windows of the applications that the desktop manager manages
 function ProfileController:keep_managed_windows(windows)
-    local pool = self.state.app_pool
-    if app_pool.holds_every_application(pool) then
-        return windows
-    end
-    local kept = {}
-    for _, window in ipairs(windows) do
-        if app_pool.is_managed(pool, track_windows.bundle_id_of(window:application())) then
-            table.insert(kept, window)
-        end
-    end
-    return kept
-end
-
----@param arrangement Arrangement
----@return Arrangement a copy without the records of the applications that the desktop manager
----leaves to macOS
-function ProfileController:keep_managed_records(arrangement)
-    local kept = {}
-    for key, value in pairs(arrangement) do
-        kept[key] = value
-    end
-    kept.windows = app_pool.keep_managed(self.state.app_pool, arrangement.windows)
-    return kept
+    return app_pool.keep_managed_by(self.state.app_pool, windows, function(window)
+        return track_windows.bundle_id_of(window:application())
+    end)
 end
 
 ---The windows of the managed applications that the tool knows.
@@ -387,20 +367,13 @@ end
 ---@param known_windows table[] hs.window objects
 ---@return ServerWindow[]
 function ProfileController:list_unreached_managed_windows(known_windows)
-    local unreached = {}
-    for _, window in
-        ipairs(
-            window_inventory.list_unreached_windows(
-                self.window_inventory,
-                track_windows.index_ids(known_windows)
-            )
+    return app_pool.keep_managed(
+        self.state.app_pool,
+        window_inventory.list_unreached_windows(
+            self.window_inventory,
+            track_windows.index_ids(known_windows)
         )
-    do
-        if app_pool.is_managed(self.state.app_pool, window.bundle_id) then
-            table.insert(unreached, window)
-        end
-    end
-    return unreached
+    )
 end
 
 ---@param window_id integer
@@ -733,7 +706,7 @@ end
 ---@param busy_text string
 ---@param on_done fun(failures: string[], unmatched: WindowRecord[], desktops: ScreenDesktop[])
 function ProfileController:restore_open_windows(number, saved_arrangement, busy_text, on_done)
-    local arrangement = self:keep_managed_records(saved_arrangement)
+    local arrangement = app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
     local windows = self:list_known_windows(list_recorded_window_ids(arrangement))
     local match_result =
         self:match_with_unseen(arrangement, windows, self:list_unreached_managed_windows(windows))
@@ -1125,7 +1098,8 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
     ---@return WindowMatchResult match_result
     ---@return SwitchCandidate[] candidates
     local function mark_windows(known_windows, unreached)
-        local arrangement = self:keep_managed_records(
+        local arrangement = app_pool.keep_managed_records(
+            self.state.app_pool,
             read_arrangement()
                 or { monitor_configuration_key = configuration.key, monitors = {}, windows = {} }
         )
@@ -2447,7 +2421,8 @@ function ProfileController:restore_after_screens_changed()
             return track_windows.index_ids(self.window_filter:getWindows())
         end,
         self:continue_work(function()
-            local arrangement = self:keep_managed_records(saved_arrangement)
+            local arrangement =
+                app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
             local windows = self:list_known_windows(list_recorded_window_ids(arrangement))
             local unreached = self:list_unreached_managed_windows(windows)
             local match_result = self:match_with_unseen(arrangement, windows, unreached)
