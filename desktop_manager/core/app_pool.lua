@@ -143,7 +143,7 @@ end
 ---@generic T
 ---@param pool AppPool
 ---@param items T[]
----@param read_bundle_id fun(item: T): string|nil
+---@param read_bundle_id fun(item: T): string
 ---@return T[] the items of managed applications, in their order, and `items` itself when the pool
 ---holds every application
 function app_pool.keep_managed_by(pool, items, read_bundle_id)

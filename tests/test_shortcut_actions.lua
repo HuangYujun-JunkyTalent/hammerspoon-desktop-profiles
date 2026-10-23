@@ -1,17 +1,15 @@
 local expect = require("tests.expect")
 local shortcut_actions = require("desktop_manager.core.shortcut_actions")
 
+local BINDING = { shortcut = { modifiers = { "ctrl", "alt" }, key = "1" }, hotkey = {} }
+
 ---@return ShortcutHandlers handlers that record each call
----@return string[] calls the calls of the handlers, in order
+---@return table[] calls the name and the arguments of each call of a handler, in order
 local function record_handler_calls()
     local calls = {}
     local function record(name)
         return function(...)
-            local arguments = { name }
-            for index = 1, select("#", ...) do
-                table.insert(arguments, tostring(select(index, ...)))
-            end
-            table.insert(calls, table.concat(arguments, " "))
+            table.insert(calls, { name, ... })
         end
     end
     return {
@@ -53,7 +51,7 @@ return {
                 defaults,
                 table.concat(action.default.modifiers, "+") .. " " .. action.default.key
             )
-            action.on_press("the binding")
+            action.on_press(BINDING)
         end
         expect.equal(defaults, {
             "cmd+alt+shift 1",
@@ -64,12 +62,12 @@ return {
             "ctrl+alt+cmd space",
         })
         expect.equal(calls, {
-            "toggle_profile 1",
-            "deactivate_profile",
-            "clear_profile 1",
-            "press_app_number 1 the binding",
-            "reset_app_numbers",
-            "toggle_window_search",
+            { "toggle_profile", 1 },
+            { "deactivate_profile" },
+            { "clear_profile", 1 },
+            { "press_app_number", 1, BINDING },
+            { "reset_app_numbers" },
+            { "toggle_window_search" },
         })
     end,
 }

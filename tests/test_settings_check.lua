@@ -9,7 +9,9 @@ return {
         local settings = default_settings.create("/fake/state.json")
         settings.search_highlight_colors = { hover = { white = 0.5 } }
         local checked, message = settings_check.check(settings)
-        expect.equal(message, nil)
+        if not checked then
+            error(message, 0)
+        end
         expect.equal(checked.search_highlight_colors.hover, { white = 0.5 })
         expect.equal(
             checked.search_highlight_colors.selection,

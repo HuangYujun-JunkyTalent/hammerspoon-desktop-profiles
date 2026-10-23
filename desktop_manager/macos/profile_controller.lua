@@ -849,7 +849,8 @@ function ProfileController:reach_windows(windows, on_done)
         local location = locate_desktops.locate_space(desktop_layout, window.space_id)
         local shown_desktop_number = location
             and locate_desktops.find_shown_desktop_number(location.screen)
-        local view_space_id = shown_desktop_number
+        local view_space_id = location
+            and shown_desktop_number
             and location.screen.space_ids[shown_desktop_number]
         if view_space_id then
             desktop_numbers[window.window_id] = location.desktop_number
