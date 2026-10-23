@@ -353,6 +353,16 @@ local function start_world_with_hidden_applications(setting)
     return world, controller, notes
 end
 
+---Runs an action and returns the lines that the tools wrote to the console during it.
+---@param world table
+---@param action fun()
+---@return string[]
+local function record_log_lines(world, action)
+    local first_index = #world.log_lines + 1
+    action()
+    return { table.unpack(world.log_lines, first_index) }
+end
+
 ---Holds Control and Option, presses the number and reads the list.
 ---@param world table
 ---@param number string
@@ -3813,5 +3823,199 @@ return {
                 " Reading List",
             })
         end
+    end,
+
+    the_console_names_the_empty_desktops_that_stay_and_the_desktops_removed = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        leave_notes_to_macos(world)
+        world.displays[1].space_ids = { 3, 14, 64, 97, 98, 99 }
+        world.add_window_of("com.apple.Notes", "Shopping", 98)
+        world.advance(61)
+        local lines = record_log_lines(world, function()
+            world.hotkeys["1"]()
+            world.advance(SETTLE_SECONDS)
+        end)
+        expect.equal(lines, {
+            "switching to profile 1: 2 of 2 saved windows open, concealing <inspected>",
+            "restoring profile 1: 2 of 2 saved windows open, plan <inspected>",
+            "built-in keeps 2 desktops beyond its 3, because they show or hold a window, or lie"
+                .. " below one that does, as the empty desktops 97",
+            "removing the empty desktops 99 beyond desktop 3 of built-in",
+            "0.00 seconds for the release of the modifiers, 0.00 seconds until Mission Control"
+                .. " showed",
+            "profile 1 is active after 2.3 seconds, with 0 problems",
+        })
+    end,
+
+    the_console_gives_the_plan_and_the_duration_of_a_switch = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        local lines = record_log_lines(world, function()
+            world.hotkeys["1"]()
+            world.advance(SETTLE_SECONDS)
+        end)
+        expect.equal(lines, {
+            "switching to profile 1: 2 of 2 saved windows open, concealing <inspected>",
+            "restoring profile 1: 2 of 2 saved windows open, plan <inspected>",
+            "profile 1 is active after 1.1 seconds, with 0 problems",
+        })
+    end,
+
+    the_console_names_the_window_that_the_profile_forgets = function()
+        local world = start_world({ unmatched_window_action = unmatched_window_action.FORGET })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(41)
+        local lines = record_log_lines(world, function()
+            world.hotkeys["1"]()
+            world.advance(SETTLE_SECONDS)
+        end)
+        expect.equal(lines, {
+            "switching to profile 1: 1 of 2 saved windows open, concealing <inspected>",
+            'profile 1: Safari window "Inbox" is gone, and the profile forgets it',
+            "restoring profile 1: 1 of 2 saved windows open, plan <inspected>",
+            "profile 1 is active after 1.1 seconds, with 0 problems",
+        })
+    end,
+
+    the_console_names_the_gone_and_unseen_records_in_their_order = function()
+        local world = start_world()
+        world.add_window_of("com.apple.Safari", "Reading List", 3)
+        local notes = world.add_window_of("com.microsoft.Word", "Notes.docx", 3)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.minimize_window(41)
+        world.minimize_window(notes.id)
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(41)
+        world.close_window(notes.id)
+        world.windows[42].is_minimized = false
+        world.windows[42].space_id = 64
+        world.windows[42].is_unseen = true
+        world.windows[42].is_ordered_out = true
+        local lines = record_log_lines(world, function()
+            world.hotkeys["1"]()
+            world.advance(SETTLE_SECONDS)
+        end)
+        expect.equal(lines, {
+            "switching to profile 1: 1 of 4 saved windows open, concealing <inspected>",
+            'Safari window "Inbox" is recorded out of sight and gone',
+            'Microsoft Word window "Draft.docx" stays on desktop 64, where Hammerspoon has not'
+                .. " seen it",
+            'Microsoft Word window "Notes.docx" is recorded out of sight and gone',
+            "restoring profile 1: 1 of 4 saved windows open, plan <inspected>",
+            "profile 1 is active after 1.1 seconds, with 0 problems",
+        })
+    end,
+
+    the_console_names_a_reopened_window_with_its_new_id = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(42)
+        local lines = record_log_lines(world, function()
+            world.create_window("com.microsoft.Word", "Draft.docx")
+            world.advance(SETTLE_SECONDS)
+        end)
+        expect.equal(lines, {
+            'Microsoft Word window "Draft.docx" was reopened as window 1001, which was 42',
+        })
+    end,
+
+    the_console_counts_the_windows_that_a_switch_moves_into_view = function()
+        local world = start_world()
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(61)
+        local lines = record_log_lines(world, function()
+            world.hotkeys["2"]()
+            world.advance(SETTLE_SECONDS)
+        end)
+        expect.equal(lines, {
+            "moving 1 windows into view to reach them",
+            "switching to profile 2: 0 of 0 saved windows open, concealing <inspected>",
+            "profile 2 is active after 0.1 seconds, with 0 problems",
+        })
+    end,
+
+    the_console_says_why_a_slow_snapshot_stops_the_snapshots = function()
+        local world = start_world({ preview_method = preview_method.BLURRED_SNAPSHOTS })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.snapshot_seconds = 2
+        local lines = record_log_lines(world, function()
+            world.held_modifiers = { ctrl = true, alt = true }
+            world.app_hotkeys["1"]()
+            world.advance(1)
+        end)
+        expect.equal(lines, {
+            "a snapshot took 2.0 seconds, so the list shows icons until the next reload",
+        })
+    end,
+
+    the_diagnostics_print_every_screen_desktop_number_and_window_of_two_screens = function()
+        local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(61)
+        local printed, original_print = {}, print
+        _G.print = function(text) -- luacheck: ignore 122
+            table.insert(printed, text)
+        end
+        local is_printed, error_message =
+            pcall(find_menu_item(world, "Print diagnostics to the console").fn)
+        _G.print = original_print -- luacheck: ignore 122
+        if not is_printed then
+            error(error_message, 0)
+        end
+        local lines = {}
+        for line in table.concat(printed, "\n"):gmatch("[^\n]+") do
+            table.insert(lines, line)
+        end
+        expect.equal(lines[3]:match("^running timers: %d+$") ~= nil, true)
+        lines[3] = "running timers"
+        expect.equal(lines, {
+            "Hammerspoon 8cde946",
+            "accessibility permission: true",
+            "running timers",
+            "monitor matching: by_count",
+            "application pool: every application except none",
+            "monitor configuration: built-in + 1 external",
+            '  screen BUILTIN-UUID "Built-in Retina Display" built-in=true slot=built-in',
+            '  screen DELL-UUID "DELL S2725DS" built-in=false slot=external 1',
+            "  desktops of BUILTIN-UUID (built-in): 1=3 2=14 3=64, shown 1",
+            "  desktops of DELL-UUID (external 1): 1=7 2=8 3=9 4=10, shown 1",
+            "focused desktop: 3",
+            "desktops kept per display: built-in 3, external 1 4",
+            "active profile: 1",
+            "profile 1 holds 3 desktops on built-in and shows desktop 1",
+            "profile 1 holds 4 desktops on external 1 and shows desktop 1",
+            "profile 1 had the focus on built-in",
+            "application numbers of Profile 1:",
+            "  app number 1: Microsoft Word com.microsoft.Word",
+            "  app number 2: Safari com.apple.Safari",
+            "windows out of reach: 1",
+            '  window 41 com.apple.Safari "Inbox" desktop=8 out-of-sight=false in-filter=true'
+                .. " recorded=1 in sight",
+            '  window 42 com.microsoft.Word "Draft.docx" desktop=3 out-of-sight=false'
+                .. " in-filter=true recorded=1 in sight",
+            '  window 43 com.microsoft.Word "Report.docx" desktop=9 out-of-sight=false'
+                .. " in-filter=true recorded=1 in sight",
+        })
     end,
 }
