@@ -363,6 +363,22 @@ local function record_log_lines(world, action)
     return { table.unpack(world.log_lines, first_index) }
 end
 
+---Starts the world with faulty settings and returns the message with which the start stops,
+---after it checks that the message names the call of `profile_controller.start` in `start_world`
+---as the place of the fault.
+---@param setting_changes table settings that replace the defaults
+---@return string the message without its place
+local function read_start_failure(setting_changes)
+    local is_started, message = pcall(start_world, setting_changes)
+    expect.equal(is_started, false)
+    local file, line_number, text = tostring(message):match("^(.-):(%d+): (.*)$")
+    local start_world_source = debug.getinfo(start_world, "S")
+    expect.equal(file, start_world_source.short_src)
+    expect.equal(tonumber(line_number) > start_world_source.linedefined, true)
+    expect.equal(tonumber(line_number) < start_world_source.lastlinedefined, true)
+    return text
+end
+
 ---Holds Control and Option, presses the number and reads the list.
 ---@param world table
 ---@param number string
@@ -1320,6 +1336,80 @@ return {
         expect.raises(function()
             start_world({ match_windows_by = "guess" })
         end, 'the setting match_windows_by is "guess", which names no way to match windows')
+    end,
+
+    each_faulty_setting_stops_the_start_with_its_own_message = function()
+        local faults = {
+            {
+                { preview_size = { w = 0, h = 0.1 } },
+                "the setting preview_size must give w and h as fractions of the screen, above 0"
+                    .. " and at most 1",
+            },
+            {
+                { list_font_size = 0.2 },
+                "the setting list_font_size is 0.2, and it must be a fraction of the height of the"
+                    .. " screen, above 0 and at most 0.1",
+            },
+            {
+                { title_overflow = "fade" },
+                'the setting title_overflow is "fade", which names no way',
+            },
+            {
+                { title_line_count = 1.5 },
+                "the setting title_line_count is 1.5, and it must be a whole number of 1 or more",
+            },
+            {
+                { list_sizing = "grow" },
+                'the setting list_sizing is "grow", which names no sizing',
+            },
+            {
+                { list_layout = "grid" },
+                'the setting list_layout is "grid", which names no layout',
+            },
+            {
+                { preview_blur = 0.5 },
+                "the setting preview_blur is 0.5, and it must be a number of 1 or more",
+            },
+            {
+                { preview_method = "thumbnails" },
+                'the setting preview_method is "thumbnails", which names no method',
+            },
+            {
+                { search_highlight_colors = { selected = { white = 1 } } },
+                'the setting search_highlight_colors names "selected", which is none of selection,'
+                    .. " hover, strong_match, medium_match, weak_match",
+            },
+            {
+                { match_windows_by = "guess" },
+                'the setting match_windows_by is "guess", which names no way to match windows',
+            },
+            {
+                { missing_window_policy = "wait" },
+                'the setting missing_window_policy is "wait", which names no policy',
+            },
+            {
+                { unmatched_window_action = "drop" },
+                'the setting unmatched_window_action is "drop", which names no action',
+            },
+            {
+                { hidden_application_windows = "show_some" },
+                'the setting hidden_application_windows is "show_some", which names no choice',
+            },
+            {
+                { concealment_method = "close" },
+                'the setting concealment_method is "close", which names no concealment method',
+            },
+        }
+        for _, fault in ipairs(faults) do
+            expect.equal(read_start_failure(fault[1]), fault[2])
+        end
+    end,
+
+    of_two_faulty_settings_the_one_checked_first_stops_the_start = function()
+        expect.equal(
+            read_start_failure({ preview_blur = 0.5, concealment_method = "close" }),
+            "the setting preview_blur is 0.5, and it must be a number of 1 or more"
+        )
     end,
 
     the_first_profile_records_the_open_windows = function()
