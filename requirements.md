@@ -63,6 +63,10 @@ Under option b, the tool also treats an unrecorded window as the reopened copy o
 
 When a saved window belongs to an application that is not running, the new window comes from a launch of the application.
 
+A third setting chooses, under both ways of pairing, what a record in sight gets when no open window matches it.
+By default the tool opens a new window, as above.
+The other choice opens no window, and the profile forgets the record.
+
 ## Multiple monitor behavior
 
 Each profile manages the desktops and windows on all monitor setups that have been seen.

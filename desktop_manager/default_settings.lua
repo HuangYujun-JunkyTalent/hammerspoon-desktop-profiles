@@ -6,6 +6,7 @@ local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
 local title_overflow = require("desktop_manager.core.title_overflow")
+local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 
 local default_settings = {}
@@ -48,6 +49,7 @@ local default_settings = {}
 ---@field concealment_method string a value of concealment_method
 ---@field match_windows_by string a value of match_windows_by
 ---@field missing_window_policy string a value of missing_window_policy
+---@field unmatched_window_action string a value of unmatched_window_action
 ---@field hidden_application_windows string a value of hidden_application_windows
 ---@field search_highlight_colors table|nil the colors of highlight_colors that replace the
 ---defaults, by name, such as `{ selection = { hex = "#2E8B57", alpha = 0.9 } }`
@@ -76,6 +78,7 @@ function default_settings.create(state_file_path)
         concealment_method = concealment_method.MINIMIZE_WINDOWS,
         match_windows_by = match_windows_by.TITLE,
         missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW,
+        unmatched_window_action = unmatched_window_action.OPEN_NEW_WINDOW,
         hidden_application_windows = hidden_application_windows.LEAVE_OUT,
         preview_method = preview_method.BLURRED_SNAPSHOTS,
         preview_blur = 1,

@@ -394,6 +394,7 @@ The file writes each choice through its module, such as `list_layout.ROWS` for `
 | `concealment_method` | `minimize_windows` | how a window goes out of sight: `minimize_windows` minimizes it, and `hide_applications` hides its application once all the windows of the application go out of sight |
 | `match_windows_by` | `title` | how a switch pairs a record with an open window: `title` by the title and then the window id, and `id` by the window id, as [the section on switches](#a-switch-changes-only-the-windows-that-differ-from-the-record) explains |
 | `missing_window_policy` | `match_title_or_open_new_window` | under `match_windows_by` `id`, what replaces a recorded window that no longer exists, as the same section explains |
+| `unmatched_window_action` | `open_new_window` | what a switch does for a record in sight that no open window matches: `open_new_window` opens a new window of the same application, and `forget` opens none and drops the record from the profile, as the same section explains |
 | `hidden_application_windows` | `leave_out` | which windows of hidden applications the list of Control-Option and the search show |
 | `list_layout` | `columns` | how the list arranges the applications |
 | `list_sizing` | `fill_screen` | how the list uses the screen |
@@ -582,6 +583,16 @@ Under `id`, macOS gives a window that its application reopens a new window id, s
 Under the default, the desktop manager also treats an unrecorded window as the reopened copy of a closed recorded window of the same application with the same title.
 Position and size play no part, because the desktop manager sets them on the window it takes, and because macOS opens a new window at the place of the last closed one.
 A reopened window whose title changed, such as a browser window on another tab, counts as a new window.
+
+`unmatched_window_action` chooses what a record in sight gets when no open window matches it, under either value of `match_windows_by`.
+
+| Value of `unmatched_window_action` | The switch |
+|---|---|
+| `open_new_window`, the default | opens a new window of the same application, as the rest of this section says |
+| `forget` | opens no window, and the profile drops the record at the update at the end of the switch, so the record does not come back at a later switch |
+
+Under `forget`, the console of Hammerspoon names each window that the profile forgets.
+A record out of sight that no window matches is dropped under both values.
 
 The new window comes from the first of three sources that gives one:
 

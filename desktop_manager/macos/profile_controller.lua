@@ -40,6 +40,7 @@ local switch_list = require("desktop_manager.core.switch_list")
 local switch_overlay = require("desktop_manager.macos.switch_overlay")
 local title_overflow = require("desktop_manager.core.title_overflow")
 local track_windows = require("desktop_manager.macos.track_windows")
+local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 local url_command = require("desktop_manager.core.url_command")
 local window_matching = require("desktop_manager.core.window_matching")
 local window_inventory = require("desktop_manager.macos.window_inventory")
@@ -754,6 +755,8 @@ end
 ---writes the new window ids into the records of every profile.
 ---A new window opens on the desktop that shows, and the restore moves it to its recorded desktop
 ---by its frame and its id, through the new matches that `on_done` receives.
+---Under `unmatched_window_action.FORGET`, no window opens, and the update after the switch drops
+---the records.
 ---A record whose window sits on a desktop that Hammerspoon has not seen keeps that window.
 ---@param number integer
 ---@param unmatched_records WindowRecord[]
@@ -778,6 +781,18 @@ function ProfileController:open_missing_windows(number, unmatched_records, on_do
         else
             table.insert(missing_records, record)
         end
+    end
+    if self.settings.unmatched_window_action == unmatched_window_action.FORGET then
+        for _, record in ipairs(missing_records) do
+            self.log.f(
+                "profile %d: %s window %q is gone, and the profile forgets it",
+                number,
+                record.app_name,
+                record.title
+            )
+        end
+        on_done({}, {})
+        return
     end
     local plan = missing_windows.plan(
         missing_records,
@@ -2865,6 +2880,15 @@ function profile_controller.start(settings, shortcuts)
             string.format(
                 "the setting missing_window_policy is %q, which names no policy",
                 tostring(settings.missing_window_policy)
+            ),
+            2
+        )
+    end
+    if not unmatched_window_action.is_valid(settings.unmatched_window_action) then
+        error(
+            string.format(
+                "the setting unmatched_window_action is %q, which names no action",
+                tostring(settings.unmatched_window_action)
             ),
             2
         )

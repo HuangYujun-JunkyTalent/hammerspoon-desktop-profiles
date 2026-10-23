@@ -7,6 +7,7 @@ local list_sizing = require("desktop_manager.core.list_sizing")
 local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local preview_method = require("desktop_manager.core.preview_method")
+local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
@@ -1600,6 +1601,28 @@ return {
         expect.equal(world.mission_control_openings, 0)
         expect.equal(recorded_sight(controller, 1, opened.id), "in sight")
         expect.equal(world.notifications, {})
+    end,
+
+    a_closed_window_is_forgotten_under_the_action_that_forgets = function()
+        local world, controller =
+            start_world({ unmatched_window_action = unmatched_window_action.FORGET })
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(SETTLE_SECONDS)
+        world.close_window(41)
+        world.hotkeys["1"]()
+        world.advance(SETTLE_SECONDS)
+        expect.equal(find_window_titled(world, "Start Page"), nil)
+        expect.equal(world.menu_selections, {})
+        expect.equal(recorded_sight(controller, 1, 41), nil)
+        expect.equal(recorded_sight(controller, 1, 42), "in sight")
+        expect.equal(world.notifications, {})
+    end,
+
+    an_unknown_action_for_an_unmatched_window_stops_the_start = function()
+        local is_started = pcall(start_world, { unmatched_window_action = "drop" })
+        expect.equal(is_started, false)
     end,
 
     a_window_with_the_recorded_title_is_taken_and_no_window_opens = function()

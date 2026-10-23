@@ -3,6 +3,7 @@ local missing_window_policy = require("desktop_manager.core.missing_window_polic
 local missing_windows = require("desktop_manager.core.missing_windows")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
+local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 
 local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
 local EXTERNAL_FRAME = { x = 1440, y = 0, w = 1920, h = 1080 }
@@ -91,5 +92,14 @@ return {
             true
         )
         expect.equal(missing_window_policy.is_valid("guess"), false)
+    end,
+
+    the_action_for_an_unmatched_window_names_two_values = function()
+        expect.equal(
+            unmatched_window_action.is_valid(unmatched_window_action.OPEN_NEW_WINDOW),
+            true
+        )
+        expect.equal(unmatched_window_action.is_valid(unmatched_window_action.FORGET), true)
+        expect.equal(unmatched_window_action.is_valid("drop"), false)
     end,
 }
