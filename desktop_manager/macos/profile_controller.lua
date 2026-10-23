@@ -213,18 +213,6 @@ local function describe_open_windows(windows)
     return open_windows, live_windows
 end
 
----@param arrangement Arrangement|nil
----@return integer[] the window ids that the arrangement records
-local function list_recorded_window_ids(arrangement)
-    local window_ids = {}
-    for _, record in ipairs(arrangement and arrangement.windows or {}) do
-        if record.window_id then
-            table.insert(window_ids, record.window_id)
-        end
-    end
-    return window_ids
-end
-
 ---Some windows of macOS report the window id 0, such as one of Control Center.
 ---@param window table an hs.window
 ---@return boolean
@@ -345,11 +333,7 @@ function ProfileController:rename_reopened_windows(windows)
     end
     local renames = {}
     for _, match in ipairs(match_result.matches) do
-        table.insert(renames, {
-            bundle_id = match.record.bundle_id,
-            old_window_id = match.record.window_id,
-            new_window_id = match.window_id,
-        })
+        table.insert(renames, profile_state.rename_of(match.record, match.window_id))
         self.log.f(
             "%s window %q was reopened as window %d, which was %d",
             match.record.app_name,
@@ -417,7 +401,7 @@ function ProfileController:capture_active_arrangement()
     end
     local configuration = self:read_monitor_configuration()
     local known_windows = self:list_known_windows(
-        list_recorded_window_ids(
+        profile_state.list_recorded_window_ids(
             profile_state.find_arrangement(self.state, number, configuration.key)
         )
     )
@@ -471,15 +455,12 @@ function ProfileController:capture_active_arrangement()
         previous
     )
     self.state = profile_state.with_arrangement(self.state, number, arrangement)
-    self.state = profile_state.with_app_numbers(
+    self.state = profile_state.with_default_app_numbers(
         self.state,
         number,
-        app_numbers.update_defaults(
-            profile_state.profile_or_default(self.state, number).app_numbers,
-            arrangement,
-            configuration,
-            self.settings.app_number_count
-        )
+        arrangement,
+        configuration,
+        self.settings.app_number_count
     )
     self:write_state()
 end
@@ -495,16 +476,12 @@ function ProfileController:update_numbers_of_profile_0()
         observations,
         nil
     )
-    local number = profile_state.NO_PROFILE_NUMBER
-    self.state = profile_state.with_app_numbers(
+    self.state = profile_state.with_default_app_numbers(
         self.state,
-        number,
-        app_numbers.update_defaults(
-            profile_state.profile_or_default(self.state, number).app_numbers,
-            open_windows,
-            configuration,
-            self.settings.app_number_count
-        )
+        profile_state.NO_PROFILE_NUMBER,
+        open_windows,
+        configuration,
+        self.settings.app_number_count
     )
     self:write_state()
 end
@@ -707,7 +684,7 @@ end
 ---@param on_done fun(failures: string[], unmatched: WindowRecord[], desktops: ScreenDesktop[])
 function ProfileController:restore_open_windows(number, saved_arrangement, busy_text, on_done)
     local arrangement = app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
-    local windows = self:list_known_windows(list_recorded_window_ids(arrangement))
+    local windows = self:list_known_windows(profile_state.list_recorded_window_ids(arrangement))
     local match_result =
         self:match_with_unseen(arrangement, windows, self:list_unreached_managed_windows(windows))
     self:restore_matched_windows(
@@ -801,11 +778,7 @@ function ProfileController:open_missing_windows(number, unmatched_records, on_do
                     )
                     table.insert(new_matches, { window_id = window:id(), record = record })
                     if record.window_id then
-                        table.insert(renames, {
-                            bundle_id = record.bundle_id,
-                            old_window_id = record.window_id,
-                            new_window_id = window:id(),
-                        })
+                        table.insert(renames, profile_state.rename_of(record, window:id()))
                     end
                 end
                 open_next(index + 1)
@@ -1087,7 +1060,8 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         return profile_state.find_arrangement(self.state, number, configuration.key)
     end
     local function list_windows()
-        local windows = self:list_known_windows(list_recorded_window_ids(read_arrangement()))
+        local windows =
+            self:list_known_windows(profile_state.list_recorded_window_ids(read_arrangement()))
         self:rename_reopened_windows(windows)
         return windows
     end
@@ -2423,7 +2397,8 @@ function ProfileController:restore_after_screens_changed()
         self:continue_work(function()
             local arrangement =
                 app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
-            local windows = self:list_known_windows(list_recorded_window_ids(arrangement))
+            local windows =
+                self:list_known_windows(profile_state.list_recorded_window_ids(arrangement))
             local unreached = self:list_unreached_managed_windows(windows)
             local match_result = self:match_with_unseen(arrangement, windows, unreached)
             local windows_to_reach = keep_windows_of_ids(
@@ -2562,7 +2537,8 @@ function ProfileController:print_diagnostics()
             self.state.active_profile_number,
             configuration.key
         )
-    local known_windows = self:list_known_windows(list_recorded_window_ids(active_arrangement))
+    local known_windows =
+        self:list_known_windows(profile_state.list_recorded_window_ids(active_arrangement))
     add("windows out of reach: %d", #self:list_unreached_managed_windows(known_windows))
     for _, window in ipairs(known_windows) do
         local observation = track_windows.observe(window)

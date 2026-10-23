@@ -1,3 +1,4 @@
+local app_numbers = require("desktop_manager.core.app_numbers")
 local app_pool = require("desktop_manager.core.app_pool")
 local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
@@ -245,6 +246,17 @@ end
 ---@field old_window_id integer
 ---@field new_window_id integer
 
+---@param record WindowRecord
+---@param new_window_id integer
+---@return WindowRename the rename of the window of the record to the new window id
+function profile_state.rename_of(record, new_window_id)
+    return {
+        bundle_id = record.bundle_id,
+        old_window_id = record.window_id,
+        new_window_id = new_window_id,
+    }
+end
+
 ---Writes the new window ids into the records of every profile.
 ---@param state State
 ---@param renames WindowRename[]
@@ -291,6 +303,32 @@ function profile_state.with_app_numbers(state, number, entries)
     return profile_state.with_profile(state, profile)
 end
 
+---Updates the default application numbers of the profile from the windows of an arrangement.
+---@param state State
+---@param number integer
+---@param arrangement Arrangement
+---@param configuration MonitorConfiguration
+---@param app_number_count integer
+---@return State
+function profile_state.with_default_app_numbers(
+    state,
+    number,
+    arrangement,
+    configuration,
+    app_number_count
+)
+    return profile_state.with_app_numbers(
+        state,
+        number,
+        app_numbers.update_defaults(
+            profile_state.profile_or_default(state, number).app_numbers,
+            arrangement,
+            configuration,
+            app_number_count
+        )
+    )
+end
+
 ---@param state State
 ---@param number integer
 ---@param monitor_configuration_key string
@@ -299,6 +337,18 @@ function profile_state.find_arrangement(state, number, monitor_configuration_key
     local profile = state.profiles[key_of(number)]
     local arrangement = profile and profile.arrangements[monitor_configuration_key]
     return arrangement and deep_copy.copy(arrangement) or nil
+end
+
+---@param arrangement Arrangement|nil
+---@return integer[] the window ids that the arrangement records
+function profile_state.list_recorded_window_ids(arrangement)
+    local window_ids = {}
+    for _, record in ipairs(arrangement and arrangement.windows or {}) do
+        if record.window_id then
+            table.insert(window_ids, record.window_id)
+        end
+    end
+    return window_ids
 end
 
 ---Whole numbers decoded from JSON may arrive as floats, such as 3.0, and a float key would miss.

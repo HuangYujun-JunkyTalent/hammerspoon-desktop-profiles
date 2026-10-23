@@ -1,5 +1,6 @@
 local app_pool = require("desktop_manager.core.app_pool")
 local expect = require("tests.expect")
+local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 local profile_state = require("desktop_manager.core.profile_state")
 
@@ -80,6 +81,10 @@ return {
         )
         expect.equal(profile_state.find_arrangement(state, 3, "built-in").windows[1].window_id, 41)
         expect.equal(#profile_state.list_all_records(renamed), 2)
+        expect.equal(
+            profile_state.rename_of(ARRANGEMENT.windows[1], 90),
+            { bundle_id = "com.apple.Safari", old_window_id = 41, new_window_id = 90 }
+        )
     end,
 
     an_arrangement_is_kept_per_monitor_configuration = function()
@@ -87,6 +92,8 @@ return {
         state = profile_state.with_arrangement(state, 3, ARRANGEMENT)
         expect.equal(profile_state.find_arrangement(state, 3, "built-in"), ARRANGEMENT)
         expect.equal(profile_state.find_arrangement(state, 3, "built-in + 1 external"), nil)
+        expect.equal(profile_state.list_recorded_window_ids(ARRANGEMENT), { 41 })
+        expect.equal(profile_state.list_recorded_window_ids(nil), {})
     end,
 
     profile_numbers_must_be_whole_numbers_of_0_or_more = function()
@@ -108,6 +115,51 @@ return {
         })
         expect.equal(profile_state.profile_or_default(state, 0).app_numbers[1].number, 2)
         expect.equal(profile_state.profile_or_default(state, 0).name, "Profile 0")
+        local configuration = monitor_configuration.describe({
+            {
+                uuid = "BUILTIN-UUID",
+                name = "Built-in Retina Display",
+                is_builtin = true,
+                frame = { x = 0, y = 25, w = 1440, h = 875 },
+            },
+        }, monitor_matching.BY_COUNT)
+        local notes_arrangement = {
+            monitor_configuration_key = "built-in",
+            monitors = {},
+            windows = {
+                {
+                    window_id = 77,
+                    bundle_id = "com.apple.Notes",
+                    app_name = "Notes",
+                    title = "Shopping",
+                    slot_key = "built-in",
+                    desktop_number = 1,
+                    unit_frame = { x = 0, y = 0, w = 0.5, h = 1 },
+                    is_out_of_sight = false,
+                },
+            },
+        }
+        local numbered = profile_state.with_default_app_numbers(
+            state,
+            profile_state.NO_PROFILE_NUMBER,
+            notes_arrangement,
+            configuration,
+            9
+        )
+        expect.equal(profile_state.profile_or_default(numbered, 0).app_numbers, {
+            {
+                number = 1,
+                bundle_id = "com.apple.Notes",
+                app_name = "Notes",
+                is_chosen_by_user = false,
+            },
+            {
+                number = 2,
+                bundle_id = "com.apple.Safari",
+                app_name = "Safari",
+                is_chosen_by_user = true,
+            },
+        })
         expect.raises(function()
             profile_state.with_arrangement(state, 0, ARRANGEMENT)
         end, "profile 0 records no windows")
