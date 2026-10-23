@@ -119,6 +119,32 @@ function window_matching.match_records_to_open_windows(match_key, policy, record
     return match_by_criteria(criteria, records, live_windows)
 end
 
+---The records of windows that no longer exist, each window once per application, in the order of
+---the records.
+---`is_gone` reads macOS, so it runs only for a record with a window id that no open window has and
+---that is not listed yet.
+---@param records WindowRecord[]
+---@param is_open fun(window_id: integer): boolean
+---@param is_gone fun(window_id: integer): boolean
+---@return WindowRecord[]
+function window_matching.list_closed_records(records, is_open, is_gone)
+    local closed_records, is_listed = {}, {}
+    for _, record in ipairs(records) do
+        local window_id = record.window_id
+        if
+            window_id
+            and not (is_listed[window_id] and is_listed[window_id][record.bundle_id])
+            and not is_open(window_id)
+            and is_gone(window_id)
+        then
+            is_listed[window_id] = is_listed[window_id] or {}
+            is_listed[window_id][record.bundle_id] = true
+            table.insert(closed_records, record)
+        end
+    end
+    return closed_records
+end
+
 ---Matches the records of windows that no longer exist to open windows that no profile recorded.
 ---macOS gives a window that its application reopens a new id, so the title decides.
 ---The place is left out, because macOS opens a new window at the place of the last closed one.

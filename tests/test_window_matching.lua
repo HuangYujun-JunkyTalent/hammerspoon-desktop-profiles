@@ -74,6 +74,23 @@ return {
         }
         local result = window_matching.match_records_to_reopened_windows(records, live)
         expect.equal(result.matches[1].window_id, 90)
+        local recorded = {
+            record(42, "com.apple.TextEdit", "Untitled"),
+            record(42, "com.apple.TextEdit", "Untitled"),
+            record(42, "com.apple.Safari", "Inbox"),
+            record(43, "com.apple.TextEdit", "Open"),
+            record(nil, "com.apple.TextEdit", "Never shown"),
+            record(44, "com.apple.TextEdit", "On a desktop"),
+        }
+        local gone_reads = {}
+        local closed = window_matching.list_closed_records(recorded, function(window_id)
+            return window_id == 43
+        end, function(window_id)
+            table.insert(gone_reads, window_id)
+            return window_id ~= 44
+        end)
+        expect.equal(closed, { recorded[1], recorded[3] })
+        expect.equal(gone_reads, { 42, 42, 44 })
     end,
 
     a_reopened_window_needs_more_than_the_same_application = function()

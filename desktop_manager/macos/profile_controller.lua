@@ -313,19 +313,15 @@ function ProfileController:rename_reopened_windows(windows)
         return
     end
     local open_ids = track_windows.index_by_id(windows)
-    local closed_records, is_listed = {}, {}
-    for _, record in ipairs(profile_state.list_all_records(self.state)) do
-        local key = string.format("%s#%s", record.bundle_id, tostring(record.window_id))
-        if
-            record.window_id
-            and not is_listed[key]
-            and not open_ids[record.window_id]
-            and not read_desktops.find_window_space_id(record.window_id)
-        then
-            is_listed[key] = true
-            table.insert(closed_records, record)
+    local closed_records = window_matching.list_closed_records(
+        profile_state.list_all_records(self.state),
+        function(window_id)
+            return open_ids[window_id] ~= nil
+        end,
+        function(window_id)
+            return not read_desktops.find_window_space_id(window_id)
         end
-    end
+    )
     local match_result =
         window_matching.match_records_to_reopened_windows(closed_records, unrecorded_windows)
     if #match_result.matches == 0 then
