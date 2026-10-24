@@ -43,6 +43,7 @@ local url_command = require("desktop_manager.core.url_command")
 local window_matching = require("desktop_manager.core.window_matching")
 local window_inventory = require("desktop_manager.macos.window_inventory")
 local window_previews = require("desktop_manager.macos.window_previews")
+local work_watchdog = require("desktop_manager.macos.work_watchdog")
 
 local profile_controller = {}
 
@@ -65,9 +66,8 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---@field watchers table[]
 ---@field is_busy boolean
 ---@field is_showing_desktop boolean
----@field work_number integer the number of the last switch, restore or press, which a watchdog
----that stops it changes, so that its later steps end nothing
----@field watchdog_timer table|nil
+---@field watchdog WorkWatchdog the numbers of the switches, the restores and the presses, and the
+---timer that stops the one that does not end
 ---@field busy_message BusyMessage|nil the message on the screens while a switch, a restore or a
 ---press of the list or the search runs
 ---@field busy_message_text string|nil the text of the message
@@ -618,12 +618,12 @@ function ProfileController:restore_matched_windows(
             return window and track_windows.describe(window)
                 or string.format("window %d", window_id)
         end,
-        is_current = self:watch_current_work(),
+        is_current = self.watchdog:watch_current(),
     }
     restore_windows.apply(
         plan,
         context,
-        self:continue_work(function(failures)
+        self.watchdog:continue(function(failures)
             on_done(failures, plan.shown_desktops)
         end)
     )
@@ -749,7 +749,7 @@ function ProfileController:open_missing_windows(number, unmatched_records, on_do
         local record = missing_window.record
         session:provide_window(
             record,
-            self:continue_work(function(window, error_message)
+            self.watchdog:continue(function(window, error_message)
                 if not window then
                     table.insert(failures, error_message)
                 else
@@ -790,7 +790,7 @@ function ProfileController:move_unreached_windows_back(windows, desktop_numbers,
     move_windows.move_all(
         moves,
         self.settings.timing,
-        self:continue_work(function(move_failures)
+        self.watchdog:continue(function(move_failures)
             local back_failures = {}
             for _, failure in ipairs(move_failures) do
                 back_failures[failure.window_id] = failure.message
@@ -869,7 +869,7 @@ function ProfileController:reach_windows(windows, on_done)
     move_windows.move_all(
         moves,
         timing,
-        self:continue_work(function(move_failures)
+        self.watchdog:continue(function(move_failures)
             local has_failed = {}
             for _, failure in ipairs(move_failures) do
                 local window = window_by_id[failure.window_id]
@@ -893,7 +893,7 @@ function ProfileController:reach_windows(windows, on_done)
             track_windows.wait_until_reached(
                 moved,
                 timing.window_reach_timeout_seconds,
-                self:continue_work(function(reached)
+                self.watchdog:continue(function(reached)
                     local unreached = {}
                     for _, window in ipairs(moved) do
                         if reached[window.window_id] then
@@ -947,60 +947,10 @@ function ProfileController:leave_full_screen(arrangement, on_done)
     )
 end
 
----Starts the watchdog of a switch, a restore or a press in Mission Control, which stops the work
----when it has not ended after `busy_watchdog_seconds`, as after an error in a timer of a step.
----@return integer the number of the work, which `stop_watchdog` takes
-function ProfileController:start_watchdog()
-    self.work_number = self.work_number + 1
-    retained_timers.stop(self.watchdog_timer)
-    self.watchdog_timer = retained_timers.after(
-        self.settings.timing.busy_watchdog_seconds,
-        function()
-            self.watchdog_timer = nil
-            self:stop_unfinished_work()
-        end
-    )
-    return self.work_number
-end
-
----@return fun(): boolean whether the switch, the restore or the press that runs now still runs, and
----the watchdog has not stopped it
-function ProfileController:watch_current_work()
-    local work_number = self.work_number
-    return function()
-        return work_number == self.work_number
-    end
-end
-
----Wraps a callback of a step of the work that runs now, so that the callback does nothing once the
----watchdog has stopped that work.
----@param callback function
----@return function
-function ProfileController:continue_work(callback)
-    local is_current = self:watch_current_work()
-    return function(...)
-        if is_current() then
-            callback(...)
-        end
-    end
-end
-
----@param work_number integer
----@return boolean whether the work still runs, and the watchdog has not stopped it
-function ProfileController:stop_watchdog(work_number)
-    if work_number ~= self.work_number then
-        return false
-    end
-    retained_timers.stop(self.watchdog_timer)
-    self.watchdog_timer = nil
-    return true
-end
-
 ---Ends a switch, a restore or a press that did not finish, so that the next one can start.
 ---The steps that still run act no further, because the number of the work has changed and the
 ---openings of Mission Control have stopped.
 function ProfileController:stop_unfinished_work()
-    self.work_number = self.work_number + 1
     local message = string.format(
         "Desktop Manager stopped a switch that did not finish within %g seconds",
         self.settings.timing.busy_watchdog_seconds
@@ -1025,7 +975,7 @@ function ProfileController:activate_profile(number)
     local started_at = hs.timer.secondsSinceEpoch()
     self:capture_active_arrangement()
     self.is_busy = true
-    local work_number = self:start_watchdog()
+    local work_number = self.watchdog:start()
     retained_timers.stop(self.save_timer)
     local name = profile_state.profile_or_default(self.state, number).name
     self:show_busy_message(string.format("Arranging %s… please wait", name))
@@ -1073,7 +1023,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         return arrangement, match_result, candidates
     end
     local function finish(failures)
-        if not self:stop_watchdog(work_number) then
+        if not self.watchdog:stop(work_number) then
             return
         end
         self.is_busy = false
@@ -1120,7 +1070,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         end
         retained_timers.after(
             self.settings.timing.window_settle_seconds,
-            self:continue_work(function()
+            self.watchdog:continue(function()
                 self:open_missing_windows(
                     number,
                     match_result.unmatched_records,
@@ -1790,10 +1740,10 @@ function ProfileController:run_press(text, press, on_done)
         return
     end
     self.is_showing_desktop = true
-    local work_number = self:start_watchdog()
+    local work_number = self.watchdog:start()
     self:show_busy_message(text)
     press(function(error_message)
-        if not self:stop_watchdog(work_number) then
+        if not self.watchdog:stop(work_number) then
             return
         end
         self.is_showing_desktop = false
@@ -2114,7 +2064,7 @@ function ProfileController:show_desktops(desktops, on_done)
         mission_control_desktops.show_space(
             space_id,
             self.settings.timing,
-            self:continue_work(function(error_message)
+            self.watchdog:continue(function(error_message)
                 if error_message then
                     table.insert(failures, error_message)
                 end
@@ -2184,7 +2134,7 @@ function ProfileController:remove_extra_desktops(count_by_slot, desktop_of_focus
             function()
                 return track_windows.index_ids(self.window_filter:getWindows())
             end,
-            self:continue_work(function()
+            self.watchdog:continue(function()
                 local removals = desktop_counts.plan_removals(
                     count_by_slot,
                     self:read_monitor_configuration(),
@@ -2223,7 +2173,7 @@ function ProfileController:remove_extra_desktops(count_by_slot, desktop_of_focus
                 if message then
                     self:show_busy_message(message)
                 end
-                local finish = self:continue_work(function(edit_failures)
+                local finish = self.watchdog:continue(function(edit_failures)
                     on_done(concatenate(failures, edit_failures))
                 end)
                 local space_id = desktop_of_focus and find_space_id_of(desktop_of_focus)
@@ -2350,9 +2300,9 @@ function ProfileController:restore_after_screens_changed()
     local configuration = self:read_monitor_configuration()
     local saved_arrangement = profile_state.find_arrangement(self.state, number, configuration.key)
     self.is_busy = true
-    local work_number = self:start_watchdog()
+    local work_number = self.watchdog:start()
     local function finish(failures)
-        if not self:stop_watchdog(work_number) then
+        if not self.watchdog:stop(work_number) then
             return
         end
         self.is_busy = false
@@ -2379,7 +2329,7 @@ function ProfileController:restore_after_screens_changed()
         function()
             return track_windows.index_ids(self.window_filter:getWindows())
         end,
-        self:continue_work(function()
+        self.watchdog:continue(function()
             local arrangement =
                 app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
             local windows =
@@ -2647,7 +2597,6 @@ function profile_controller.start(unchecked_settings, shortcuts)
         watchers = {},
         is_busy = false,
         is_showing_desktop = false,
-        work_number = 0,
         are_saves_suspended = false,
         window_ids_out_of_sight = {},
         are_snapshots_stopped = false,
@@ -2655,6 +2604,9 @@ function profile_controller.start(unchecked_settings, shortcuts)
         reached_windows = {},
         hidden_states = {},
     }, ProfileController)
+    controller.watchdog = work_watchdog.new(settings.timing, function()
+        controller:stop_unfinished_work()
+    end)
     local state, warning =
         state_file.read(settings.state_file_path, settings.initial_monitor_matching)
     controller.state = state
