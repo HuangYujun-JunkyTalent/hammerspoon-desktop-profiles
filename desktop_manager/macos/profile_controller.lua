@@ -119,6 +119,12 @@ local function describe_showing(desktop_number, slot_key)
     return string.format("Showing desktop %d of %s… please wait", desktop_number, slot_key)
 end
 
+---@param name string the name of the profile
+---@return string the busy message of a switch to the profile
+local function describe_arranging(name)
+    return string.format("Arranging %s… please wait", name)
+end
+
 function ProfileController:write_state()
     if not state_file.write(self.settings.state_file_path, self.state) then
         self.log.e("the state could not be written to " .. self.settings.state_file_path)
@@ -544,12 +550,11 @@ function ProfileController:match_with_unseen(arrangement, managed_windows, unrea
     return match_result, open_windows
 end
 
----Restores the open windows of an arrangement, and returns the records that found no window and
----the recorded desktops to show.
+---Restores the open windows of an arrangement, and returns the recorded desktops to show.
 ---@param number integer
 ---@param saved_arrangement Arrangement
 ---@param busy_text string
----@param on_done fun(failures: string[], unmatched: WindowRecord[], desktops: ScreenDesktop[])
+---@param on_done fun(failures: string[], desktops: ScreenDesktop[])
 function ProfileController:restore_open_windows(number, saved_arrangement, busy_text, on_done)
     local arrangement = app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
     local windows =
@@ -565,9 +570,7 @@ function ProfileController:restore_open_windows(number, saved_arrangement, busy_
         match_result.matches,
         track_windows.index_by_id(windows),
         busy_text,
-        function(failures, desktops_to_show)
-            on_done(failures, match_result.unmatched_records, desktops_to_show)
-        end
+        on_done
     )
 end
 
@@ -639,6 +642,32 @@ function ProfileController:leave_full_screen(arrangement, on_done)
     )
 end
 
+---Brings the unseen windows that a switch or a restore acts on into view by their ids, after the
+---screens that show a space in full screen show a desktop, as `leave_full_screen` says.
+---@param arrangement Arrangement|nil
+---@param windows_to_reach ServerWindow[]
+---@param on_done fun(failures: string[])
+function ProfileController:bring_into_view(arrangement, windows_to_reach, on_done)
+    self:leave_full_screen(arrangement, function(exit_failures)
+        reach_windows.reach(windows_to_reach, self:reach_context(), function(reach_failures)
+            on_done(concatenate_lists.concatenate(exit_failures, reach_failures))
+        end)
+    end)
+end
+
+---Ends the work of a switch or a restore: stops its watchdog, lets the next work start, and closes
+---its message.
+---@param work_number integer
+---@return boolean whether the work still ran, and the watchdog had not stopped it
+function ProfileController:end_switch_work(work_number)
+    if not self.watchdog:stop(work_number) then
+        return false
+    end
+    self.is_busy = false
+    self:end_busy_message()
+    return true
+end
+
 ---Ends a switch, a restore or a press that did not finish, so that the next one can start.
 ---The steps that still run act no further, because the number of the work has changed and the
 ---openings of Mission Control have stopped.
@@ -670,19 +699,19 @@ function ProfileController:activate_profile(number)
     local work_number = self.watchdog:start()
     retained_timers.stop(self.save_timer)
     local name = profile_state.profile_or_default(self.state, number).name
-    self:show_busy_message(string.format("Arranging %s… please wait", name))
-    self:switch_to_profile(number, started_at, work_number)
+    self:show_busy_message(describe_arranging(name))
+    self:switch_to_profile(number, name, started_at, work_number)
 end
 
 ---Conceals the windows that the profile does not keep, and restores the windows it records.
 ---The unseen windows that the switch acts on come into view by their ids first.
 ---@param number integer
+---@param name string the name of the profile
 ---@param started_at number
 ---@param work_number integer
-function ProfileController:switch_to_profile(number, started_at, work_number)
+function ProfileController:switch_to_profile(number, name, started_at, work_number)
     local configuration = self:read_monitor_configuration()
-    local name = profile_state.profile_or_default(self.state, number).name
-    local busy_text = string.format("Arranging %s… please wait", name)
+    local busy_text = describe_arranging(name)
     local function read_arrangement()
         return profile_state.find_arrangement(self.state, number, configuration.key)
     end
@@ -716,11 +745,9 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         return arrangement, match_result, candidates
     end
     local function finish(failures)
-        if not self.watchdog:stop(work_number) then
+        if not self:end_switch_work(work_number) then
             return
         end
-        self.is_busy = false
-        self:end_busy_message()
         self:schedule_save()
         self.log.f(
             "profile %d is active after %.1f seconds, with %d problems",
@@ -819,11 +846,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         conceal_and_restore({})
         return
     end
-    self:leave_full_screen(arrangement, function(exit_failures)
-        reach_windows.reach(windows_to_reach, self:reach_context(), function(reach_failures)
-            conceal_and_restore(concatenate_lists.concatenate(exit_failures, reach_failures))
-        end)
-    end)
+    self:bring_into_view(arrangement, windows_to_reach, conceal_and_restore)
 end
 
 function ProfileController:deactivate_profile()
@@ -1999,11 +2022,9 @@ function ProfileController:restore_after_screens_changed()
     self.is_busy = true
     local work_number = self.watchdog:start()
     local function finish(failures)
-        if not self.watchdog:stop(work_number) then
+        if not self:end_switch_work(work_number) then
             return
         end
-        self.is_busy = false
-        self:end_busy_message()
         self:report_failures(failures)
         self:resume_saves()
     end
@@ -2042,31 +2063,28 @@ function ProfileController:restore_after_screens_changed()
                     read_desktops.read_desktop_layout()
                 )
             )
-            self:leave_full_screen(arrangement, function(exit_failures)
-                reach_windows.reach(windows_to_reach, self:reach_context(), function(reach_failures)
-                    self:show_busy_message(busy_text)
-                    self:restore_open_windows(
-                        number,
-                        saved_arrangement,
-                        busy_text,
-                        function(restore_failures, _, desktops_to_show)
-                            self:show_desktops_and_remove_extra_ones(
-                                arrangement,
-                                desktops_to_show,
-                                function(desktop_failures)
-                                    finish(
-                                        concatenate_lists.concatenate(
-                                            exit_failures,
-                                            reach_failures,
-                                            restore_failures,
-                                            desktop_failures
-                                        )
+            self:bring_into_view(arrangement, windows_to_reach, function(into_view_failures)
+                self:show_busy_message(busy_text)
+                self:restore_open_windows(
+                    number,
+                    saved_arrangement,
+                    busy_text,
+                    function(restore_failures, desktops_to_show)
+                        self:show_desktops_and_remove_extra_ones(
+                            arrangement,
+                            desktops_to_show,
+                            function(desktop_failures)
+                                finish(
+                                    concatenate_lists.concatenate(
+                                        into_view_failures,
+                                        restore_failures,
+                                        desktop_failures
                                     )
-                                end
-                            )
-                        end
-                    )
-                end)
+                                )
+                            end
+                        )
+                    end
+                )
             end)
         end)
     )
