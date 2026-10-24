@@ -1113,6 +1113,26 @@ function ProfileController:set_monitor_matching(matching)
     hs.alert.show("Same monitor configuration by " .. monitor_matching.label_of(matching):lower())
 end
 
+---@return Profile the active profile, or profile 0 while no profile is active, whose application
+---numbers hold
+function ProfileController:read_numbering_profile()
+    return profile_state.profile_or_default(
+        self.state,
+        profile_state.find_numbering_profile_number(self.state)
+    )
+end
+
+---Gives the default numbers again after a change of the application numbers.
+---While a switch runs, the state is written alone, because the update at the end of the switch
+---gives the defaults.
+function ProfileController:apply_numbers_change()
+    if self.is_busy then
+        self:write_state()
+    else
+        self:capture_numbering_profile()
+    end
+end
+
 ---Gives the number to the application in the active profile, or in profile 0 while no profile is
 ---active, as the user chose.
 ---@param app_number integer
@@ -1141,12 +1161,7 @@ function ProfileController:release_app_number(app_number)
         number,
         app_numbers.release(profile.app_numbers, app_number)
     )
-    if self.is_busy then
-        -- The update at the end of the switch gives the defaults.
-        self:write_state()
-    else
-        self:capture_numbering_profile()
-    end
+    self:apply_numbers_change()
 end
 
 ---Drops every number of the active profile, or of profile 0 while no profile is active, also the
@@ -1158,12 +1173,7 @@ function ProfileController:reset_app_numbers()
     end
     local number = profile_state.find_numbering_profile_number(self.state)
     self.state = profile_state.with_app_numbers(self.state, number, {})
-    if self.is_busy then
-        -- The update at the end of the switch gives the defaults.
-        self:write_state()
-    else
-        self:capture_numbering_profile()
-    end
+    self:apply_numbers_change()
     local name = profile_state.profile_or_default(self.state, number).name
     hs.alert.show(name .. " has the default application numbers")
 end
@@ -1252,10 +1262,7 @@ function ProfileController:press_app_number(app_number, binding)
         end
         return
     end
-    local entries = profile_state.profile_or_default(
-        self.state,
-        profile_state.find_numbering_profile_number(self.state)
-    ).app_numbers
+    local entries = self:read_numbering_profile().app_numbers
     if not app_numbers.find_by_number(entries, app_number) then
         binding.hotkey:disable()
         hs.eventtap.keyStroke(binding.shortcut.modifiers, binding.shortcut.key, 0)
@@ -1626,11 +1633,16 @@ function ProfileController:switcher_context()
     }
 end
 
+---@return table<integer, boolean> the ids of the windows that the window filter lists now
+function ProfileController:list_filter_window_ids()
+    return track_windows.index_ids(self.window_filter:getWindows())
+end
+
 ---Lists the windows that accessibility does not reach again, in the background.
 ---@param on_done fun()|nil
 function ProfileController:refresh_window_inventory(on_done)
     window_inventory.refresh(self.window_inventory, function()
-        return track_windows.index_ids(self.window_filter:getWindows())
+        return self:list_filter_window_ids()
     end, on_done)
 end
 
@@ -1648,7 +1660,7 @@ function ProfileController:open_window_search()
             hidden,
             window_inventory.list_unreached_windows(
                 self.window_inventory,
-                track_windows.index_ids(self.window_filter:getWindows())
+                self:list_filter_window_ids()
             )
         )
     end
@@ -1660,10 +1672,7 @@ function ProfileController:open_window_search()
                 on_done(list_unreached_windows())
             end)
         end,
-        app_numbers = profile_state.profile_or_default(
-            self.state,
-            profile_state.find_numbering_profile_number(self.state)
-        ).app_numbers,
+        app_numbers = self:read_numbering_profile().app_numbers,
         overlay_settings = {
             font_size = self.settings.list_font_size,
             preview_size = self.settings.preview_size,
@@ -1912,7 +1921,7 @@ function ProfileController:remove_extra_desktops(count_by_slot, desktop_of_focus
         window_inventory.refresh_from_now(
             self.window_inventory,
             function()
-                return track_windows.index_ids(self.window_filter:getWindows())
+                return self:list_filter_window_ids()
             end,
             self.watchdog:continue(function()
                 local removals = desktop_counts.plan_removals(
@@ -2105,7 +2114,7 @@ function ProfileController:restore_after_screens_changed()
     window_inventory.refresh_from_now(
         self.window_inventory,
         function()
-            return track_windows.index_ids(self.window_filter:getWindows())
+            return self:list_filter_window_ids()
         end,
         self.watchdog:continue(function()
             local arrangement =
@@ -2218,10 +2227,7 @@ function ProfileController:print_diagnostics()
     if active_layout and active_layout.focused_slot_key then
         add("profile %d had the focus on %s", active_number, active_layout.focused_slot_key)
     end
-    local numbering_profile = profile_state.profile_or_default(
-        self.state,
-        profile_state.find_numbering_profile_number(self.state)
-    )
+    local numbering_profile = self:read_numbering_profile()
     add("application numbers of %s:", numbering_profile.name)
     for _, entry in ipairs(numbering_profile.app_numbers) do
         add(
