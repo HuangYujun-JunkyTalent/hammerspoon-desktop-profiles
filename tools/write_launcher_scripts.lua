@@ -46,30 +46,55 @@ local function number_dropdown_data(count)
     return "[" .. table.concat(items, ", ") .. "]"
 end
 
+---@param asyar_name string the name of the argument in Asyar, such as "profile"
+---@param raycast_placeholder string the placeholder of the argument in Raycast, such as "Profile"
+---@param count integer
+---@return string raycast_argument the JSON of a dropdown of the numbers from 1 to the count
+---@return string asyar_argument the JSON of the same dropdown, required, with 1 by default
+local function number_dropdown_arguments(asyar_name, raycast_placeholder, count)
+    local data = number_dropdown_data(count)
+    local raycast_argument = string.format(
+        '{ "type": "dropdown", "placeholder": "%s", "data": %s }',
+        raycast_placeholder,
+        data
+    )
+    local asyar_argument = string.format(
+        '{ "name": "%s", "type": "dropdown", "default": "1", "required": true, "data": %s }',
+        asyar_name,
+        data
+    )
+    return raycast_argument, asyar_argument
+end
+
+---@param variable string the shell variable that takes the encoded argument
+---@param position integer the position of the argument, such as 2 for `$2`
+---@return string the line of shell that encodes the argument as a part of a URL into the variable
+local function encode_argument_line(variable, position)
+    return string.format(
+        "%s=$(osascript -l JavaScript"
+            .. " -e 'function run(argv) { return encodeURIComponent(argv[0]) }' \"$%d\")",
+        variable,
+        position
+    )
+end
+
 ---Asyar refuses a required argument after an optional one, and then registers no script of the
 ---folder, so both arguments are required.
 ---@param profile_count integer
 ---@return LauncherScript
 local function rename_script(profile_count)
-    local data = number_dropdown_data(profile_count)
+    local raycast_profile, asyar_profile =
+        number_dropdown_arguments("profile", "Profile", profile_count)
     return {
         file_name = "rename-profile.sh",
         title = "Rename Profile",
-        raycast_arguments = {
-            string.format('{ "type": "dropdown", "placeholder": "Profile", "data": %s }', data),
-            '{ "type": "text", "placeholder": "New name" }',
-        },
+        raycast_arguments = { raycast_profile, '{ "type": "text", "placeholder": "New name" }' },
         asyar_arguments = {
-            string.format(
-                '{ "name": "profile", "type": "dropdown", "default": "1", "required": true,'
-                    .. ' "data": %s }',
-                data
-            ),
+            asyar_profile,
             '{ "name": "name", "type": "text", "placeholder": "New name", "required": true }',
         },
         body = {
-            "encoded_name=$(osascript -l JavaScript"
-                .. " -e 'function run(argv) { return encodeURIComponent(argv[0]) }' \"$2\")",
+            encode_argument_line("encoded_name", 2),
             'open -g "' .. URL_PREFIX .. 'action=rename&profile=$1&name=$encoded_name"',
         },
     }
@@ -78,25 +103,18 @@ end
 ---@param app_number_count integer
 ---@return LauncherScript
 local function number_app_script(app_number_count)
-    local data = number_dropdown_data(app_number_count)
+    local raycast_number, asyar_number =
+        number_dropdown_arguments("number", "Number", app_number_count)
     return {
         file_name = "number-app.sh",
         title = "Number App",
-        raycast_arguments = {
-            string.format('{ "type": "dropdown", "placeholder": "Number", "data": %s }', data),
-            '{ "type": "text", "placeholder": "Running app" }',
-        },
+        raycast_arguments = { raycast_number, '{ "type": "text", "placeholder": "Running app" }' },
         asyar_arguments = {
-            string.format(
-                '{ "name": "number", "type": "dropdown", "default": "1", "required": true,'
-                    .. ' "data": %s }',
-                data
-            ),
+            asyar_number,
             '{ "name": "app", "type": "text", "placeholder": "Running app", "required": true }',
         },
         body = {
-            "encoded_app=$(osascript -l JavaScript"
-                .. " -e 'function run(argv) { return encodeURIComponent(argv[0]) }' \"$2\")",
+            encode_argument_line("encoded_app", 2),
             'open -g "' .. URL_PREFIX .. 'action=number-app&number=$1&app=$encoded_app"',
         },
     }
@@ -105,20 +123,13 @@ end
 ---@param app_number_count integer
 ---@return LauncherScript
 local function release_app_number_script(app_number_count)
-    local data = number_dropdown_data(app_number_count)
+    local raycast_number, asyar_number =
+        number_dropdown_arguments("number", "Number", app_number_count)
     return {
         file_name = "release-app-number.sh",
         title = "Release App Number",
-        raycast_arguments = {
-            string.format('{ "type": "dropdown", "placeholder": "Number", "data": %s }', data),
-        },
-        asyar_arguments = {
-            string.format(
-                '{ "name": "number", "type": "dropdown", "default": "1", "required": true,'
-                    .. ' "data": %s }',
-                data
-            ),
-        },
+        raycast_arguments = { raycast_number },
+        asyar_arguments = { asyar_number },
         body = { 'open -g "' .. URL_PREFIX .. 'action=release-app-number&number=$1"' },
     }
 end
@@ -172,7 +183,7 @@ end
 ---headers from any comment line.
 ---@param script LauncherScript
 ---@return string
-local function render(script)
+local function build_script_text(script)
     local lines = {
         "#!/bin/bash",
         "# @raycast.schemaVersion 1",
@@ -207,7 +218,7 @@ local function write_script(folder, script)
     if not file then
         error(string.format("%s cannot be written: %s", path, tostring(open_error)), 0)
     end
-    file:write(render(script))
+    file:write(build_script_text(script))
     file:close()
     if not os.execute(string.format("chmod +x '%s'", path)) then
         error(string.format("%s could not be made executable", path), 0)

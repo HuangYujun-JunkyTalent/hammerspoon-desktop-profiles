@@ -129,11 +129,11 @@ local function count_occurrences(text, piece)
 end
 
 ---@param path string
----@return string
+---@return string|nil content the content of the file, or nil when the file cannot be opened
 local function read_file(path)
-    local file, open_error = io.open(path, "rb")
+    local file = io.open(path, "rb")
     if not file then
-        error(string.format("%s cannot be read: %s", path, tostring(open_error)), 0)
+        return nil
     end
     local content = file:read("a")
     file:close()
@@ -200,12 +200,10 @@ end
 local function apply_rule(rule, folder)
     for _, edit in ipairs(rule.edits) do
         local path = folder .. "/" .. edit.path
-        local file = io.open(path, "rb")
-        if not file then
+        local content = read_file(path)
+        if not content then
             return string.format("the file %s does not exist", edit.path)
         end
-        file:close()
-        local content = read_file(path)
         local count = count_occurrences(content, edit.old)
         if count ~= 1 then
             return string.format("the old text is found %d times in %s, not once", count, edit.path)
