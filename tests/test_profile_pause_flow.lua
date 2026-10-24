@@ -23,12 +23,10 @@ end
 ---@return table saved the state file that the start found
 local function start_after_login(setting_changes)
     local saved = record_profile_1()
-    local world, controller = controller_world.start_world(
-        setting_changes,
-        saved,
-        SECONDS_AFTER_LOGIN,
-        MACOS_START_TIME_AFTER_RESTART
-    )
+    local world, controller = controller_world.start_world(setting_changes, saved, {
+        seconds_since_macos_start = SECONDS_AFTER_LOGIN,
+        macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+    })
     return world, controller, saved
 end
 
@@ -65,14 +63,19 @@ return {
 
     a_start_at_the_setting_or_with_the_setting_0_pauses_nothing = function()
         local saved = record_profile_1()
-        local _, at_setting =
-            controller_world.start_world(nil, saved, 300, MACOS_START_TIME_AFTER_RESTART)
+        local _, at_setting = controller_world.start_world(
+            nil,
+            saved,
+            { seconds_since_macos_start = 300, macos_start_time = MACOS_START_TIME_AFTER_RESTART }
+        )
         expect.equal(at_setting.state.is_active_profile_paused, false)
         local _, turned_off = controller_world.start_world(
             { pause_after_macos_start_seconds = 0 },
             saved,
-            SECONDS_AFTER_LOGIN,
-            MACOS_START_TIME_AFTER_RESTART
+            {
+                seconds_since_macos_start = SECONDS_AFTER_LOGIN,
+                macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+            }
         )
         expect.equal(turned_off.state.is_active_profile_paused, false)
     end,
@@ -82,8 +85,7 @@ return {
         local world, controller = controller_world.start_world(
             { pause_after_macos_start_seconds = 0 },
             first_world.saved_json,
-            nil,
-            MACOS_START_TIME_AFTER_RESTART
+            { macos_start_time = MACOS_START_TIME_AFTER_RESTART }
         )
         expect.equal(controller.state.is_active_profile_paused, true)
         expect.equal(
@@ -111,12 +113,10 @@ return {
             local first_world = start_after_login()
             route(first_world)
             first_world.advance(controller_world.SETTLE_SECONDS)
-            local world, controller = controller_world.start_world(
-                nil,
-                first_world.saved_json,
-                200,
-                MACOS_START_TIME_AFTER_RESTART
-            )
+            local world, controller = controller_world.start_world(nil, first_world.saved_json, {
+                seconds_since_macos_start = 200,
+                macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+            })
             expect.present(controller.state.active_profile_number, "an active profile")
             expect.equal(controller.state.is_active_profile_paused, false)
             expect.equal(has_pause_line(world), false)
@@ -127,12 +127,10 @@ return {
         local first_world = start_after_login()
         first_world.hotkeys["2"]()
         first_world.advance(controller_world.SETTLE_SECONDS)
-        local _, controller = controller_world.start_world(
-            nil,
-            first_world.saved_json,
-            SECONDS_AFTER_LOGIN,
-            MACOS_START_TIME_AFTER_RESTART + 3600
-        )
+        local _, controller = controller_world.start_world(nil, first_world.saved_json, {
+            seconds_since_macos_start = SECONDS_AFTER_LOGIN,
+            macos_start_time = MACOS_START_TIME_AFTER_RESTART + 3600,
+        })
         expect.equal(controller.state.active_profile_number, 2)
         expect.equal(controller.state.is_active_profile_paused, true)
     end,
@@ -141,14 +139,17 @@ return {
         local first_world = start_after_login()
         first_world.hotkeys["1"]()
         first_world.advance(controller_world.SETTLE_SECONDS)
-        local unread_world = controller_world.start_world(nil, first_world.saved_json, 120, false)
+        local unread_world = controller_world.start_world(
+            nil,
+            first_world.saved_json,
+            { seconds_since_macos_start = 120, macos_start_time = false }
+        )
         unread_world.hotkeys["1"]()
         unread_world.advance(controller_world.SETTLE_SECONDS)
         local _, controller = controller_world.start_world(
             nil,
             unread_world.saved_json,
-            200,
-            MACOS_START_TIME_AFTER_RESTART
+            { seconds_since_macos_start = 200, macos_start_time = MACOS_START_TIME_AFTER_RESTART }
         )
         expect.equal(controller.state.is_active_profile_paused, false)
     end,
@@ -335,12 +336,10 @@ return {
         first_world.advance(controller_world.SETTLE_SECONDS)
         first_world.hotkeys["1"]()
         first_world.advance(controller_world.SETTLE_SECONDS)
-        local world, controller = controller_world.start_world(
-            nil,
-            first_world.saved_json,
-            SECONDS_AFTER_LOGIN,
-            MACOS_START_TIME_AFTER_RESTART
-        )
+        local world, controller = controller_world.start_world(nil, first_world.saved_json, {
+            seconds_since_macos_start = SECONDS_AFTER_LOGIN,
+            macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+        })
         world.alert_button = "Clear"
         world.hotkey_by_shortcut["ctrl+alt+cmd 2"]()
         expect.equal(controller.state.is_active_profile_paused, true)

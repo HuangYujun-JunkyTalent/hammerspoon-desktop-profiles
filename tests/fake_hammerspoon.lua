@@ -118,6 +118,26 @@ local SYMBOLIC_HOTKEYS_EXPORT = "defaults export com.apple.symbolichotkeys -"
 local MACOS_START_TIME_COMMAND = "/usr/sbin/sysctl -n kern.boottime"
 local DEFAULT_MACOS_START_TIME = 1729500000
 
+---The answer of the fake of `hs.execute` to each command that it runs, as the output and whether
+---the command succeeded.
+---@type table<string, fun(world: table): (string, boolean|nil)>
+local COMMAND_ANSWERS = {
+    [MACOS_START_TIME_COMMAND] = function(world)
+        if world.macos_start_time == false then
+            return "", nil
+        end
+        return string.format(
+            "{ sec = %d, usec = 0 } Mon Oct 21 10:40:00 2024\n",
+            world.macos_start_time
+        ),
+            true
+    end,
+    [SYMBOLIC_HOTKEYS_EXPORT] = function(world)
+        world.execute_calls = world.execute_calls + 1
+        return SYMBOLIC_HOTKEYS_EXPORT, true
+    end,
+}
+
 ---The world of the last install, where the loggers write, because a module keeps the logger that
 ---it made under an earlier install.
 local current_world = nil
@@ -1662,25 +1682,11 @@ function fake_hammerspoon.install(spec)
             watcher = watcher_factory(),
         },
         execute = function(command)
-            if command == MACOS_START_TIME_COMMAND and world.macos_start_time == false then
-                return "", nil
+            local answer = COMMAND_ANSWERS[command]
+            if not answer then
+                error("the fake runs no command " .. command)
             end
-            if command == MACOS_START_TIME_COMMAND then
-                return string.format(
-                    "{ sec = %d, usec = 0 } Mon Oct 21 10:40:00 2024\n",
-                    world.macos_start_time
-                ),
-                    true
-            end
-            if command ~= SYMBOLIC_HOTKEYS_EXPORT then
-                error(
-                    "the fake runs no command but the export of the shortcuts and the start of"
-                        .. " macOS: "
-                        .. command
-                )
-            end
-            world.execute_calls = world.execute_calls + 1
-            return SYMBOLIC_HOTKEYS_EXPORT, true
+            return answer(world)
         end,
         webview = {
             usercontent = {
