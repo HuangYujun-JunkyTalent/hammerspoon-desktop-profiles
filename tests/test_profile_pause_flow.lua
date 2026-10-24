@@ -350,6 +350,7 @@ return {
             profile_state.profile_or_default(controller.state, 1).app_numbers,
             saved.profiles["1"].app_numbers
         )
+        expect.equal(world.saved_json.profiles["1"].app_numbers, saved.profiles["1"].app_numbers)
         world.url_handlers["desktop-manager"](
             "desktop-manager",
             { action = "number-app", number = "3", app = "Microsoft Word" }
