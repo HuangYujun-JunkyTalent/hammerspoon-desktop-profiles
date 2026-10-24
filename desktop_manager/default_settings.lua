@@ -50,8 +50,8 @@ local default_settings = {}
 ---numbers until the update, such as after a window opens, closes, moves, minimizes or changes its
 ---title, after a change of desktop, after a switch or a restore, and at each tick of
 ---periodic_save_seconds, and a request within the wait starts the wait again
----@field periodic_save_seconds number the time between two updates of the record of the active
----profile and two readings of the list of all windows of macOS that no event starts
+---@field periodic_save_seconds number the time between two requests of an update of the records
+---and the numbers and two readings of the list of all windows of macOS that no event starts
 ---@field screen_settle_seconds number the wait after a change of the monitors for macOS to move
 ---the windows, before the restore of the active profile
 ---@field snapshot_time_limit_seconds number a slower capture of a preview stops the previews until
