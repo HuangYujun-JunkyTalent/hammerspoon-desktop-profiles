@@ -172,6 +172,5 @@ return {
         expect.equal(switch_list.scroll_title("Abcdef", 10, 4), " Abc")
         expect.equal(switch_list.scroll_title("Abcdef", 11, 4), "Abcd")
         expect.equal(switch_list.scroll_title("Ünï—x", 1, 3), "nï—")
-        expect.equal(switch_list.count_characters("Ünï—x"), 5)
     end,
 }

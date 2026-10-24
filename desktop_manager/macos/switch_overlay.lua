@@ -2,6 +2,7 @@ local list_sizing = require("desktop_manager.core.list_sizing")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local switch_list = require("desktop_manager.core.switch_list")
 local title_overflow = require("desktop_manager.core.title_overflow")
+local utf8_text = require("desktop_manager.core.utf8_text")
 
 ---Draws the list of numbered applications and their windows in the middle of the screen in front,
 ---as rows of lines or as columns of applications.
@@ -115,7 +116,7 @@ end
 ---@return TitleLayout
 local function truncate_title(title, visible_count)
     return {
-        text = switch_list.shorten(title, visible_count),
+        text = utf8_text.shorten(title, visible_count),
         line_count = 1,
         is_scrolling = false,
     }
@@ -126,15 +127,15 @@ local TITLE_LAYOUTS = {
         return truncate_title(title, visible_count)
     end,
     [title_overflow.WRAP] = function(title, visible_count, _, line_limit)
-        local needed = math.ceil(switch_list.count_characters(title) / visible_count)
+        local needed = math.ceil(utf8_text.count_characters(title) / visible_count)
         return {
-            text = switch_list.shorten(title, visible_count * line_limit),
+            text = utf8_text.shorten(title, visible_count * line_limit),
             line_count = math.max(1, math.min(line_limit, needed)),
             is_scrolling = false,
         }
     end,
     [title_overflow.SCROLL] = function(title, visible_count, is_selected)
-        if not is_selected or switch_list.count_characters(title) <= visible_count then
+        if not is_selected or utf8_text.count_characters(title) <= visible_count then
             return truncate_title(title, visible_count)
         end
         return {
@@ -357,7 +358,7 @@ local function draw_column_header(elements, column, origin, context, metrics)
     end
     local inset = CELL_PADDING + sizes.icon_size + 6
     local width = metrics.column_width - inset - CELL_PADDING
-    local text = switch_list.shorten(
+    local text = utf8_text.shorten(
         string.format("%d  %s", column.number, column.app_name),
         count_fitting_characters(width, sizes.application_font_size)
     )
@@ -385,7 +386,7 @@ local function draw_column_cells(elements, column, origin, context, metrics)
     if #column.cells == 0 then
         table.insert(
             elements,
-            build_text(switch_list.shorten(column.note or "", metrics.visible_count), {
+            build_text(utf8_text.shorten(column.note or "", metrics.visible_count), {
                 x = origin.x + CELL_PADDING,
                 y = origin.y + CELL_PADDING,
                 w = metrics.title_width,

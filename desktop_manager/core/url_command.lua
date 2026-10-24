@@ -1,3 +1,5 @@
+local utf8_text = require("desktop_manager.core.utf8_text")
+
 ---Commands carried by URLs such as `hammerspoon://desktop-manager?action=activate&profile=2`.
 local url_command = {
     ACTIVATE = "activate",
@@ -71,7 +73,7 @@ local function parse_app_number_command(params, limits)
     if params.action == url_command.RELEASE_APP_NUMBER then
         return { action = params.action, app_number = app_number }, nil
     end
-    local app = (params.app or ""):match("^%s*(.-)%s*$")
+    local app = utf8_text.trim(params.app or "")
     if app == "" then
         return nil, "the number-app action has no app parameter with a visible character"
     end
@@ -107,7 +109,7 @@ function url_command.parse(params, limits)
     if action ~= url_command.RENAME then
         return { action = action, profile_number = profile_number }, nil
     end
-    local name = (params.name or ""):match("^%s*(.-)%s*$")
+    local name = utf8_text.trim(params.name or "")
     if name == "" then
         return nil, "the rename action has no name parameter with a visible character"
     end

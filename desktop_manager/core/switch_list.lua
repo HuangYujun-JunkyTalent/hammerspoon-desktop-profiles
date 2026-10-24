@@ -1,4 +1,5 @@
 local list_layout = require("desktop_manager.core.list_layout")
+local utf8_text = require("desktop_manager.core.utf8_text")
 
 ---The list that a press of Control-Option with a number shows: the numbered applications of the
 ---active profile, the titles of their windows, and the selected window.
@@ -56,7 +57,6 @@ local switch_list = {}
 ---@field screen_uuid string
 ---@field name string
 
-local ELLIPSIS = "…"
 local UNTITLED = "untitled window"
 local WINDOW_INDENT = "      "
 local NO_WINDOW_NOTE = "no window, a new one opens"
@@ -115,31 +115,6 @@ end
 
 local SCROLL_SPACER = "     "
 
----@param title string
----@return string[] the characters of the title, or its bytes when it is no valid UTF-8
-local function split_characters(title)
-    local characters = {}
-    local is_valid = pcall(function()
-        for _, code in utf8.codes(title) do
-            table.insert(characters, utf8.char(code))
-        end
-    end)
-    if is_valid then
-        return characters
-    end
-    characters = {}
-    for index = 1, #title do
-        table.insert(characters, title:sub(index, index))
-    end
-    return characters
-end
-
----@param title string
----@return integer the characters of the title
-function switch_list.count_characters(title)
-    return #split_characters(title)
-end
-
 ---The part of a scrolling title that shows at a step: the title followed by a space, moved left by
 ---one character per step and starting again after its end.
 ---@param title string
@@ -147,26 +122,12 @@ end
 ---@param visible_count integer the characters that the space shows
 ---@return string
 function switch_list.scroll_title(title, step, visible_count)
-    local characters = split_characters(title .. SCROLL_SPACER)
+    local characters = utf8_text.split_characters(title .. SCROLL_SPACER)
     local visible = {}
     for offset = 0, visible_count - 1 do
         table.insert(visible, characters[(step + offset) % #characters + 1])
     end
     return table.concat(visible)
-end
-
----@param title string
----@param max_length integer the most characters that a title keeps, the ellipsis included
----@return string
-function switch_list.shorten(title, max_length)
-    local is_valid, length = pcall(utf8.len, title)
-    if not is_valid or not length then
-        return title:sub(1, max_length)
-    end
-    if length <= max_length then
-        return title
-    end
-    return title:sub(1, utf8.offset(title, max_length) - 1) .. ELLIPSIS
 end
 
 ---The lines of the list: each application with its number, and under it the titles of its windows.
@@ -196,7 +157,7 @@ function switch_list.describe_lines(applications, selection, max_title_length)
         for index, window in ipairs(application.windows) do
             local title = window.title ~= "" and window.title or UNTITLED
             table.insert(lines, {
-                text = WINDOW_INDENT .. switch_list.shorten(title, max_title_length),
+                text = WINDOW_INDENT .. utf8_text.shorten(title, max_title_length),
                 is_application = false,
                 is_selected = is_selected_application and selection.window_index == index,
                 bundle_id = application.bundle_id,

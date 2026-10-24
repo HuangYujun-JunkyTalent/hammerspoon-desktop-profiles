@@ -1,3 +1,5 @@
+local utf8_text = require("desktop_manager.core.utf8_text")
+
 ---Scores a search against texts, such as the name of an application and the title of a window.
 ---Each word of the search must appear in one of the texts as a subsequence that ignores the case
 ---of ASCII letters.
@@ -16,25 +18,6 @@ local fuzzy_match = {
 
 local STRONG_SCORE = 0.9
 local MEDIUM_SCORE = 0.7
-
----@param text string
----@return string[] the characters of the text, or its bytes when it is no valid UTF-8
-local function split_characters(text)
-    local characters = {}
-    local is_valid = pcall(function()
-        for _, code in utf8.codes(text) do
-            table.insert(characters, utf8.char(code))
-        end
-    end)
-    if is_valid then
-        return characters
-    end
-    characters = {}
-    for index = 1, #text do
-        table.insert(characters, text:sub(index, index))
-    end
-    return characters
-end
 
 ---@param character string|nil
 ---@return boolean whether the character belongs to a word, as a letter, a digit or a character
@@ -72,9 +55,9 @@ end
 ---@param text string
 ---@return number|nil the score from 0.5 to 1, or nil when the letters do not appear in order
 function fuzzy_match.score_word(word, text)
-    local letters = split_characters(word)
-    local original = split_characters(text)
-    local lowered = split_characters(text:lower())
+    local letters = utf8_text.split_characters(word)
+    local original = utf8_text.split_characters(text)
+    local lowered = utf8_text.split_characters(text:lower())
     if #letters == 0 or #lowered ~= #original then
         return nil
     end

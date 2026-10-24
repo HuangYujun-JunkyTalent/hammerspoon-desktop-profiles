@@ -1,4 +1,5 @@
 local fuzzy_match = require("desktop_manager.core.fuzzy_match")
+local utf8_text = require("desktop_manager.core.utf8_text")
 
 ---The search of the windows: every window, the applications in a row, the typed text, the
 ---application that the mouse hovers over or chose, the windows in view and the selected one.
@@ -243,11 +244,7 @@ end
 ---@param search WindowSearch
 ---@return WindowSearch
 function window_search.delete_last_character(search)
-    local is_valid, start = pcall(utf8.offset, search.text, -1)
-    if not is_valid or not start then
-        return window_search.with_text(search, search.text:sub(1, -2))
-    end
-    return window_search.with_text(search, search.text:sub(1, start - 1))
+    return window_search.with_text(search, utf8_text.remove_last_character(search.text))
 end
 
 ---@param search WindowSearch

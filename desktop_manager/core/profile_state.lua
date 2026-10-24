@@ -4,6 +4,7 @@ local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
+local utf8_text = require("desktop_manager.core.utf8_text")
 
 local profile_state = {}
 
@@ -145,7 +146,7 @@ end
 ---@param name string
 ---@return State
 function profile_state.rename_profile(state, number, name)
-    local trimmed = type(name) == "string" and name:match("^%s*(.-)%s*$") or ""
+    local trimmed = type(name) == "string" and utf8_text.trim(name) or ""
     if trimmed == "" then
         error(
             string.format(
