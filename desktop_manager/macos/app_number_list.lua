@@ -1,3 +1,4 @@
+local app_number_list_view = require("desktop_manager.core.app_number_list_view")
 local app_numbers = require("desktop_manager.core.app_numbers")
 local app_switcher = require("desktop_manager.macos.app_switcher")
 local hidden_application_filter = require("desktop_manager.macos.hidden_application_filter")
@@ -5,7 +6,6 @@ local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
 local retained_timers = require("desktop_manager.macos.retained_timers")
-local switch_list = require("desktop_manager.core.switch_list")
 local switch_overlay = require("desktop_manager.macos.switch_overlay")
 local track_windows = require("desktop_manager.macos.track_windows")
 local window_inventory = require("desktop_manager.macos.window_inventory")
@@ -36,13 +36,14 @@ local app_number_list = {}
 ---The list of numbered applications that a press of their modifiers with a number opens.
 ---@class SwitchSession
 ---@field entries AppNumber[]
----@field applications SwitchApplication[]
+---@field applications NumberedApplication[]
 ---@field window_by_id table<integer, table> the hs.window of each window id in the list
 ---@field unreached_by_id table<integer, ServerWindow> the windows of the list that accessibility
 ---does not reach
----@field selection SwitchSelection|nil
+---@field selection AppNumberListSelection|nil
 ---@field images SwitchImages the icons and the previews that the list shows
----@field displays SwitchDisplay[] the displays from left to right, for the columns per display
+---@field displays AppNumberListDisplay[] the displays from left to right, for the columns per
+---display
 ---@field modifiers string[] the modifiers of the shortcut that opened the list, which the user
 ---holds
 ---@field overlay table|nil the hs.canvas of the list
@@ -78,7 +79,7 @@ end
 ---@param settings Settings
 ---@return SwitchView
 local function describe_view(session, settings)
-    return switch_list.describe_view(
+    return app_number_list_view.describe_view(
         settings.list_layout,
         session.applications,
         session.selection,
@@ -100,7 +101,7 @@ local function describe_list_settings(settings)
 end
 
 ---@param settings Settings
----@return SwitchDisplay[] the displays in the order in which they stand from left to right
+---@return AppNumberListDisplay[] the displays in the order in which they stand from left to right
 local function list_displays_from_left(settings)
     local screens = read_screens.describe_screens(settings.builtin_screen_name_patterns)
     table.sort(screens, function(first, second)
@@ -139,7 +140,7 @@ end
 
 ---@param entries AppNumber[]
 ---@param shown ShownWindows
----@return SwitchApplication[] applications
+---@return NumberedApplication[] applications
 ---@return table<integer, table> window_by_id the hs.window of each window id in the list
 local function describe_applications(entries, shown)
     local screen_uuid_by_space =
@@ -190,7 +191,8 @@ end
 function AppNumberList:press(app_number, binding)
     local session = self.session
     if session then
-        session.selection = switch_list.press(session.applications, session.selection, app_number)
+        session.selection =
+            app_number_list_view.press(session.applications, session.selection, app_number)
         if session.overlay then
             switch_overlay.update(
                 session.overlay,
@@ -225,7 +227,7 @@ function AppNumberList:open(entries, app_number, modifiers)
         applications = applications,
         window_by_id = window_by_id,
         unreached_by_id = index_unreached_by_id(shown.unreached_windows),
-        selection = switch_list.press(applications, nil, app_number),
+        selection = app_number_list_view.press(applications, nil, app_number),
         images = { app_icons = read_app_icons(entries), previews = {} },
         displays = list_displays_from_left(self.context.settings),
         modifiers = modifiers,
@@ -336,7 +338,8 @@ function AppNumberList:go_to_selection()
         return
     end
     local entry = app_numbers.find_by_number(session.entries, session.selection.number)
-    local window_id = switch_list.find_selected_window_id(session.applications, session.selection)
+    local window_id =
+        app_number_list_view.find_selected_window_id(session.applications, session.selection)
     local function report(error_message)
         if error_message then
             context.report_failures({ error_message })
@@ -347,7 +350,8 @@ function AppNumberList:go_to_selection()
         app_switcher.reach_window(unreached, context.read_switcher_context(), report)
         return
     end
-    if switch_list.find_application(session.applications, session.selection.number).is_hidden then
+    local selected_number = session.selection.number
+    if app_number_list_view.find_application(session.applications, selected_number).is_hidden then
         app_switcher.unhide_application(
             entry,
             context.list_recorded_window_ids_of_application(entry.bundle_id),

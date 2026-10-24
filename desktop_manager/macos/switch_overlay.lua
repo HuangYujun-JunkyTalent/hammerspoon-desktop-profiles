@@ -1,7 +1,7 @@
+local app_number_list_view = require("desktop_manager.core.app_number_list_view")
 local canvas_elements = require("desktop_manager.macos.canvas_elements")
 local list_sizing = require("desktop_manager.core.list_sizing")
 local retained_timers = require("desktop_manager.macos.retained_timers")
-local switch_list = require("desktop_manager.core.switch_list")
 local title_overflow = require("desktop_manager.core.title_overflow")
 local utf8_text = require("desktop_manager.core.utf8_text")
 
@@ -19,8 +19,8 @@ switch_overlay.MAX_TITLE_LENGTH = 60
 
 ---What the list shows: lines for the rows, or groups of columns.
 ---@class SwitchView
----@field lines SwitchLine[]|nil
----@field groups SwitchColumnGroup[]|nil
+---@field lines AppNumberListLine[]|nil
+---@field groups AppNumberListColumnGroup[]|nil
 
 ---The settings of the list: its sizes as fractions of the screen in front, and its titles.
 ---@class SwitchListSettings
@@ -138,7 +138,7 @@ local TITLE_LAYOUTS = {
             return truncate_title(title, visible_count)
         end
         return {
-            text = switch_list.scroll_title(title, 0, visible_count),
+            text = app_number_list_view.scroll_title(title, 0, visible_count),
             line_count = 1,
             is_scrolling = true,
         }
@@ -253,7 +253,7 @@ end
 
 ---Draws one line of the rows, an application or a window with its preview, from its top.
 ---@param elements table[]
----@param line SwitchLine
+---@param line AppNumberListLine
 ---@param top number
 ---@param context DrawingContext
 ---@param metrics RowMetrics
@@ -307,7 +307,7 @@ local function draw_row_line(elements, line, top, context, metrics)
 end
 
 ---Draws the rows: each application on a line, and under it a line per window with its preview.
----@param lines SwitchLine[]
+---@param lines AppNumberListLine[]
 ---@param context DrawingContext
 ---@return table[] elements
 ---@return table size the w and h of the list
@@ -349,7 +349,7 @@ end
 
 ---Draws the header of a column: the icon, the number and the name of the application.
 ---@param elements table[]
----@param column SwitchColumn
+---@param column AppNumberListColumn
 ---@param origin table the x and y of the column
 ---@param context DrawingContext
 ---@param metrics ColumnMetrics
@@ -394,8 +394,8 @@ end
 
 ---Draws one window of a column, a preview with its title under it, from the top of its cell.
 ---@param elements table[]
----@param column SwitchColumn
----@param cell SwitchCell
+---@param column AppNumberListColumn
+---@param cell AppNumberListCell
 ---@param origin table the x of the column and the y of the top of the cell
 ---@param context DrawingContext
 ---@param metrics ColumnMetrics
@@ -445,7 +445,7 @@ end
 
 ---Draws the windows of a column downward, each a preview with its title under it.
 ---@param elements table[]
----@param column SwitchColumn
+---@param column AppNumberListColumn
 ---@param origin table the x and y of the first cell
 ---@param context DrawingContext
 ---@param metrics ColumnMetrics
@@ -478,12 +478,12 @@ end
 ---A run of columns of one group on one line of the list.
 ---@class ColumnSegment
 ---@field display_name string|nil
----@field columns SwitchColumn[]
+---@field columns AppNumberListColumn[]
 
 ---Folds the columns into lines, the first lines taking the larger share, so the numbers read from
 ---left to right and then downward.
 ---A group of a display that continues on the next line starts a new segment there.
----@param groups SwitchColumnGroup[]
+---@param groups AppNumberListColumnGroup[]
 ---@param line_count integer
 ---@return ColumnSegment[][] the segments of each line
 local function fold_columns(groups, line_count)
@@ -533,7 +533,7 @@ end
 
 ---Draws the columns: a column per application with its windows stacked downward, the name of a
 ---display above its columns, and the columns folded into the lines of the context.
----@param groups SwitchColumnGroup[]
+---@param groups AppNumberListColumnGroup[]
 ---@param context DrawingContext
 ---@return table[] elements
 ---@return table size the w and h of the list
@@ -702,7 +702,11 @@ local function start_scrolling(overlay, scrolling)
                     overlay.canvas:elementAttribute(
                         scrolling.element_index,
                         "text",
-                        switch_list.scroll_title(scrolling.title, step, scrolling.visible_count)
+                        app_number_list_view.scroll_title(
+                            scrolling.title,
+                            step,
+                            scrolling.visible_count
+                        )
                     )
                 end)
             )

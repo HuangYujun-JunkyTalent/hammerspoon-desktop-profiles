@@ -1,5 +1,5 @@
 local expect = require("tests.expect")
-local switch_list = require("desktop_manager.core.switch_list")
+local app_number_list_view = require("desktop_manager.core.app_number_list_view")
 
 local APPLICATIONS = {
     {
@@ -24,25 +24,26 @@ local APPLICATIONS = {
 
 return {
     the_first_press_selects_the_first_window_and_the_next_press_the_next_one = function()
-        local selection = switch_list.press(APPLICATIONS, nil, 1)
+        local selection = app_number_list_view.press(APPLICATIONS, nil, 1)
         expect.equal(selection, { number = 1, window_index = 2 })
-        selection = switch_list.press(APPLICATIONS, selection, 1)
-        expect.equal(switch_list.find_selected_window_id(APPLICATIONS, selection), 30)
-        selection = switch_list.press(APPLICATIONS, selection, 1)
-        expect.equal(switch_list.find_selected_window_id(APPLICATIONS, selection), 10)
+        selection = app_number_list_view.press(APPLICATIONS, selection, 1)
+        expect.equal(app_number_list_view.find_selected_window_id(APPLICATIONS, selection), 30)
+        selection = app_number_list_view.press(APPLICATIONS, selection, 1)
+        expect.equal(app_number_list_view.find_selected_window_id(APPLICATIONS, selection), 10)
     end,
 
     a_press_of_another_number_selects_that_application = function()
-        local selection = switch_list.press(APPLICATIONS, { number = 1, window_index = 1 }, 3)
+        local selection =
+            app_number_list_view.press(APPLICATIONS, { number = 1, window_index = 1 }, 3)
         expect.equal(selection, { number = 3, window_index = 0 })
-        expect.equal(switch_list.find_selected_window_id(APPLICATIONS, selection), nil)
-        expect.equal(switch_list.press(APPLICATIONS, selection, 3), selection)
+        expect.equal(app_number_list_view.find_selected_window_id(APPLICATIONS, selection), nil)
+        expect.equal(app_number_list_view.press(APPLICATIONS, selection, 3), selection)
     end,
 
     a_free_number_leaves_the_selection = function()
         local selection = { number = 1, window_index = 1 }
-        expect.equal(switch_list.press(APPLICATIONS, selection, 7), selection)
-        expect.equal(switch_list.press(APPLICATIONS, nil, 7), nil)
+        expect.equal(app_number_list_view.press(APPLICATIONS, selection, 7), selection)
+        expect.equal(app_number_list_view.press(APPLICATIONS, nil, 7), nil)
     end,
 
     the_lines_mark_the_selected_window_and_shorten_long_titles = function()
@@ -55,7 +56,8 @@ return {
                 first_window_index = 1,
             },
         }
-        local lines = switch_list.describe_lines(applications, { number = 2, window_index = 1 }, 12)
+        local lines =
+            app_number_list_view.describe_lines(applications, { number = 2, window_index = 1 }, 12)
         expect.equal(lines, {
             {
                 text = "2   Safari",
@@ -74,7 +76,8 @@ return {
     end,
 
     an_application_without_windows_is_selected_on_its_own_line = function()
-        local lines = switch_list.describe_lines(APPLICATIONS, { number = 3, window_index = 0 }, 40)
+        local lines =
+            app_number_list_view.describe_lines(APPLICATIONS, { number = 3, window_index = 0 }, 40)
         expect.equal(lines[5], {
             text = "3   Microsoft Word",
             is_application = true,
@@ -94,17 +97,22 @@ return {
             first_window_index = 0,
             is_hidden = true,
         }
-        local lines = switch_list.describe_lines({ hidden_word }, nil, 40)
+        local lines = app_number_list_view.describe_lines({ hidden_word }, nil, 40)
         expect.equal(lines[2].text, "hidden, a press unhides it")
-        local groups = switch_list.describe_application_columns({ hidden_word }, nil)
+        local groups = app_number_list_view.describe_application_columns({ hidden_word }, nil)
         expect.equal(groups[1].columns[1].note, "hidden, a press unhides it")
-        expect.equal(switch_list.describe_note(APPLICATIONS[1]), nil)
-        expect.equal(switch_list.describe_note(APPLICATIONS[2]), "no window, a new one opens")
+        expect.equal(app_number_list_view.describe_note(APPLICATIONS[1]), nil)
+        expect.equal(
+            app_number_list_view.describe_note(APPLICATIONS[2]),
+            "no window, a new one opens"
+        )
     end,
 
     application_columns_hold_every_window_and_mark_the_selection = function()
-        local groups =
-            switch_list.describe_application_columns(APPLICATIONS, { number = 1, window_index = 2 })
+        local groups = app_number_list_view.describe_application_columns(
+            APPLICATIONS,
+            { number = 1, window_index = 2 }
+        )
         expect.equal(#groups, 1)
         expect.equal(groups[1].display_name, nil)
         local firefox, word = groups[1].columns[1], groups[1].columns[2]
@@ -144,7 +152,7 @@ return {
                 first_window_index = 0,
             },
         }
-        local groups = switch_list.describe_display_columns(
+        local groups = app_number_list_view.describe_display_columns(
             applications,
             { number = 3, window_index = 0 },
             {
@@ -166,11 +174,11 @@ return {
     end,
 
     a_scrolling_title_moves_left_and_starts_again_after_its_end = function()
-        expect.equal(switch_list.scroll_title("Abcdef", 0, 4), "Abcd")
-        expect.equal(switch_list.scroll_title("Abcdef", 3, 4), "def ")
-        expect.equal(switch_list.scroll_title("Abcdef", 9, 4), "  Ab")
-        expect.equal(switch_list.scroll_title("Abcdef", 10, 4), " Abc")
-        expect.equal(switch_list.scroll_title("Abcdef", 11, 4), "Abcd")
-        expect.equal(switch_list.scroll_title("Ünï—x", 1, 3), "nï—")
+        expect.equal(app_number_list_view.scroll_title("Abcdef", 0, 4), "Abcd")
+        expect.equal(app_number_list_view.scroll_title("Abcdef", 3, 4), "def ")
+        expect.equal(app_number_list_view.scroll_title("Abcdef", 9, 4), "  Ab")
+        expect.equal(app_number_list_view.scroll_title("Abcdef", 10, 4), " Abc")
+        expect.equal(app_number_list_view.scroll_title("Abcdef", 11, 4), "Abcd")
+        expect.equal(app_number_list_view.scroll_title("Ünï—x", 1, 3), "nï—")
     end,
 }

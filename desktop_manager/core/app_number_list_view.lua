@@ -4,29 +4,29 @@ local window_titles = require("desktop_manager.core.window_titles")
 
 ---The list that a press of Control-Option with a number shows: the numbered applications of the
 ---active profile, the titles of their windows, and the selected window.
-local switch_list = {}
+local app_number_list_view = {}
 
----@class SwitchWindow
+---@class NumberedApplicationWindow
 ---@field window_id integer
 ---@field title string
 ---@field screen_uuid string|nil the display of the window, when its desktop is known
 
 ---An application of the list, with its windows in the order of the presses.
----@class SwitchApplication
+---@class NumberedApplication
 ---@field number integer
 ---@field bundle_id string
 ---@field app_name string
----@field windows SwitchWindow[]
+---@field windows NumberedApplicationWindow[]
 ---@field first_window_index integer the window that the first press selects, 0 without windows
 ---@field is_hidden boolean|nil true for a hidden application of which the list shows no window, so
 ---that a press unhides it
 
 ---The selected window, or the application itself when it has no window.
----@class SwitchSelection
+---@class AppNumberListSelection
 ---@field number integer
 ---@field window_index integer 0 when the application has no window
 
----@class SwitchLine
+---@class AppNumberListLine
 ---@field text string
 ---@field is_application boolean
 ---@field is_selected boolean
@@ -34,37 +34,37 @@ local switch_list = {}
 ---@field window_id integer|nil the window of the line, whose preview the line shows
 
 ---A window of a column, with the title that the overlay shortens to the width of the column.
----@class SwitchCell
+---@class AppNumberListCell
 ---@field window_id integer
 ---@field title string
 ---@field is_selected boolean
 
 ---An application of the columns, with the windows that the column holds.
----@class SwitchColumn
+---@class AppNumberListColumn
 ---@field number integer
 ---@field app_name string
 ---@field bundle_id string
 ---@field is_selected boolean whether the application itself is selected, because it has no window
----@field cells SwitchCell[]
+---@field cells AppNumberListCell[]
 ---@field note string|nil the note that the column shows in the place of windows
 
 ---The columns of one display, or of no display for the windows elsewhere and the applications
 ---without windows.
----@class SwitchColumnGroup
+---@class AppNumberListColumnGroup
 ---@field display_name string|nil
----@field columns SwitchColumn[]
+---@field columns AppNumberListColumn[]
 
----@class SwitchDisplay
+---@class AppNumberListDisplay
 ---@field screen_uuid string
 ---@field name string
 
 local NO_WINDOW_NOTE = "no window, a new one opens"
 local HIDDEN_NOTE = "hidden, a press unhides it"
 
----@param applications SwitchApplication[]
+---@param applications NumberedApplication[]
 ---@param number integer
----@return SwitchApplication|nil
-function switch_list.find_application(applications, number)
+---@return NumberedApplication|nil
+function app_number_list_view.find_application(applications, number)
     for _, application in ipairs(applications) do
         if application.number == number then
             return application
@@ -74,9 +74,9 @@ function switch_list.find_application(applications, number)
 end
 
 ---The note that the list shows in the place of the windows of an application without windows.
----@param application SwitchApplication
+---@param application NumberedApplication
 ---@return string|nil nil when the list shows windows of the application
-function switch_list.describe_note(application)
+function app_number_list_view.describe_note(application)
     if #application.windows > 0 then
         return nil
     end
@@ -87,12 +87,12 @@ end
 ---Another press of the selected number selects the next window of its application.
 ---A press of another number selects the first window of that application.
 ---A number without an application leaves the selection as it is.
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
 ---@param number integer
----@return SwitchSelection|nil
-function switch_list.press(applications, selection, number)
-    local application = switch_list.find_application(applications, number)
+---@return AppNumberListSelection|nil
+function app_number_list_view.press(applications, selection, number)
+    local application = app_number_list_view.find_application(applications, number)
     if not application then
         return selection
     end
@@ -103,11 +103,12 @@ function switch_list.press(applications, selection, number)
     return { number = number, window_index = application.first_window_index }
 end
 
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
 ---@return integer|nil the id of the selected window, or nil when the application has no window
-function switch_list.find_selected_window_id(applications, selection)
-    local application = selection and switch_list.find_application(applications, selection.number)
+function app_number_list_view.find_selected_window_id(applications, selection)
+    local application = selection
+        and app_number_list_view.find_application(applications, selection.number)
     local window = application and application.windows[selection.window_index]
     return window and window.window_id or nil
 end
@@ -120,7 +121,7 @@ local SCROLL_SPACER = "     "
 ---@param step integer 0 for the start of the title
 ---@param visible_count integer the characters that the space shows
 ---@return string
-function switch_list.scroll_title(title, step, visible_count)
+function app_number_list_view.scroll_title(title, step, visible_count)
     local characters = utf8_text.split_characters(title .. SCROLL_SPACER)
     local visible = {}
     for offset = 0, visible_count - 1 do
@@ -130,11 +131,11 @@ function switch_list.scroll_title(title, step, visible_count)
 end
 
 ---The lines of the list: each application with its number, and under it the titles of its windows.
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
 ---@param max_title_length integer
----@return SwitchLine[]
-function switch_list.describe_lines(applications, selection, max_title_length)
+---@return AppNumberListLine[]
+function app_number_list_view.describe_lines(applications, selection, max_title_length)
     local lines = {}
     for _, application in ipairs(applications) do
         local is_selected_application = selection ~= nil and selection.number == application.number
@@ -144,7 +145,7 @@ function switch_list.describe_lines(applications, selection, max_title_length)
             is_selected = is_selected_application and selection.window_index == 0,
             bundle_id = application.bundle_id,
         })
-        local note = switch_list.describe_note(application)
+        local note = app_number_list_view.describe_note(application)
         if note then
             table.insert(lines, {
                 text = note,
@@ -166,10 +167,10 @@ function switch_list.describe_lines(applications, selection, max_title_length)
     return lines
 end
 
----@param application SwitchApplication
----@param selection SwitchSelection|nil
----@param is_in_column fun(window: SwitchWindow): boolean
----@return SwitchColumn
+---@param application NumberedApplication
+---@param selection AppNumberListSelection|nil
+---@param is_in_column fun(window: NumberedApplicationWindow): boolean
+---@return AppNumberListColumn
 local function build_column(application, selection, is_in_column)
     local is_selected_application = selection ~= nil and selection.number == application.number
     local cells = {}
@@ -188,21 +189,21 @@ local function build_column(application, selection, is_in_column)
         bundle_id = application.bundle_id,
         is_selected = is_selected_application and selection.window_index == 0,
         cells = cells,
-        note = switch_list.describe_note(application),
+        note = app_number_list_view.describe_note(application),
     }
 end
 
----@param window SwitchWindow
+---@param window NumberedApplicationWindow
 ---@return boolean
 local function is_any_window(window)
     return window ~= nil
 end
 
 ---One column per application, with all its windows.
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
----@return SwitchColumnGroup[]
-function switch_list.describe_application_columns(applications, selection)
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
+---@return AppNumberListColumnGroup[]
+function app_number_list_view.describe_application_columns(applications, selection)
     local columns = {}
     for _, application in ipairs(applications) do
         table.insert(columns, build_column(application, selection, is_any_window))
@@ -213,11 +214,12 @@ end
 ---One group of columns per display that holds a window of the list, in the order of the displays.
 ---A last group without a display holds the windows whose display is unknown, and the applications
 ---without windows.
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
----@param displays SwitchDisplay[] in the order in which the displays stand from left to right
----@return SwitchColumnGroup[]
-function switch_list.describe_display_columns(applications, selection, displays)
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
+---@param displays AppNumberListDisplay[] in the order in which the displays stand from left
+---to right
+---@return AppNumberListColumnGroup[]
+function app_number_list_view.describe_display_columns(applications, selection, displays)
     local is_known_display = {}
     for _, display in ipairs(displays) do
         is_known_display[display.screen_uuid] = true
@@ -253,28 +255,31 @@ function switch_list.describe_display_columns(applications, selection, displays)
     return groups
 end
 
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
----@param _ SwitchDisplay[]
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
+---@param _ AppNumberListDisplay[]
 ---@param max_title_length integer
 ---@return SwitchView
 local function describe_rows(applications, selection, _, max_title_length)
-    return { lines = switch_list.describe_lines(applications, selection, max_title_length) }
+    local lines = app_number_list_view.describe_lines(applications, selection, max_title_length)
+    return { lines = lines }
 end
 
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
 ---@return SwitchView
 local function describe_columns(applications, selection)
-    return { groups = switch_list.describe_application_columns(applications, selection) }
+    return { groups = app_number_list_view.describe_application_columns(applications, selection) }
 end
 
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
----@param displays SwitchDisplay[]
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
+---@param displays AppNumberListDisplay[]
 ---@return SwitchView
 local function describe_columns_per_display(applications, selection, displays)
-    return { groups = switch_list.describe_display_columns(applications, selection, displays) }
+    return {
+        groups = app_number_list_view.describe_display_columns(applications, selection, displays),
+    }
 end
 
 local VIEW_BUILDERS = {
@@ -284,13 +289,20 @@ local VIEW_BUILDERS = {
 }
 
 ---@param layout string a value of the setting list_layout
----@param applications SwitchApplication[]
----@param selection SwitchSelection|nil
----@param displays SwitchDisplay[] the displays from left to right, for the columns per display
+---@param applications NumberedApplication[]
+---@param selection AppNumberListSelection|nil
+---@param displays AppNumberListDisplay[] the displays from left to right, for the columns per
+---display
 ---@param max_title_length integer the longest title of a line, for the rows
 ---@return SwitchView the lines or the groups of columns that the list draws under the layout
-function switch_list.describe_view(layout, applications, selection, displays, max_title_length)
+function app_number_list_view.describe_view(
+    layout,
+    applications,
+    selection,
+    displays,
+    max_title_length
+)
     return VIEW_BUILDERS[layout](applications, selection, displays, max_title_length)
 end
 
-return switch_list
+return app_number_list_view

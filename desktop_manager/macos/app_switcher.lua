@@ -36,7 +36,7 @@ local app_switcher = {}
 ---setting keeps
 ---@param screen_uuid_by_space table<integer, string> the display of each desktop
 ---@param hidden HiddenApplications
----@return SwitchApplication
+---@return NumberedApplication
 ---@return table<integer, table> the hs.window of each window id that accessibility reaches
 function app_switcher.describe_application(
     entry,
