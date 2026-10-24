@@ -666,8 +666,7 @@ function ProfileController:stop_unfinished_work()
 end
 
 function ProfileController:activate_profile(number)
-    if self.is_busy or self.is_showing_desktop then
-        hs.alert.show(STILL_SWITCHING_MESSAGE)
+    if self:refuse_while_busy() then
         return
     end
     if self.state.active_profile_number == number then
@@ -1194,7 +1193,7 @@ end
 ---@param press fun(on_pressed: fun(error_message: string|nil))
 ---@param on_done fun(error_message: string|nil)
 function ProfileController:run_press(text, press, on_done)
-    if self.is_busy or self.is_showing_desktop then
+    if self:is_work_running() then
         on_done(STILL_SWITCHING_MESSAGE)
         return
     end
@@ -1211,11 +1210,17 @@ function ProfileController:run_press(text, press, on_done)
     end)
 end
 
+---@return boolean whether a switch, a restore or a press of the list or the search runs
+function ProfileController:is_work_running()
+    return self.is_busy or self.is_showing_desktop
+end
+
 ---Shows "Desktop Manager is still switching" while a switch, a restore or a press runs, so that a
----selection of the list or the search does nothing and the message of that work stays.
----@return boolean whether the selection is refused
+---profile shortcut or a selection of the list or the search does nothing and the message of that
+---work stays.
+---@return boolean whether the action is refused
 function ProfileController:refuse_while_busy()
-    if self.is_busy or self.is_showing_desktop then
+    if self:is_work_running() then
         hs.alert.show(STILL_SWITCHING_MESSAGE)
         return true
     end
@@ -1500,7 +1505,7 @@ function ProfileController:start_screen_timer()
     retained_timers.stop(self.screen_timer)
     self.screen_timer = retained_timers.after(self.settings.timing.screen_settle_seconds, function()
         self.screen_timer = nil
-        if self.is_busy or self.is_showing_desktop then
+        if self:is_work_running() then
             self:start_screen_timer()
             return
         end
@@ -1524,7 +1529,7 @@ function ProfileController:handle_screens_changed()
     end
     self.are_saves_suspended = true
     retained_timers.stop(self.save_timer)
-    if self.state.active_profile_number and not self.is_busy and not self.is_showing_desktop then
+    if self.state.active_profile_number and not self:is_work_running() then
         self:show_busy_message(MONITORS_CHANGED_MESSAGE)
     end
     self:start_screen_timer()
