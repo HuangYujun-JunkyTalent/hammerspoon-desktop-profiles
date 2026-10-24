@@ -623,7 +623,7 @@ function ProfileController:leave_full_screen(arrangement, on_done)
     )
 end
 
----Brings the unseen windows that a switch or a restore acts on into view by their ids, after the
+---Brings the unreached windows that a switch or a restore acts on into view by their ids, after the
 ---screens that show a space in full screen show a desktop, as `leave_full_screen` says.
 ---@param arrangement Arrangement|nil
 ---@param windows_to_reach ServerWindow[]
@@ -695,7 +695,7 @@ end
 ---@field work_number integer the number of the switch, which the watchdog gave
 
 ---Conceals the windows that the profile does not keep, and restores the windows it records.
----The unseen windows that the switch acts on come into view by their ids first.
+---The unreached windows that the switch acts on come into view by their ids first.
 ---@param number integer
 ---@param name string the name of the profile
 ---@param started_at number
