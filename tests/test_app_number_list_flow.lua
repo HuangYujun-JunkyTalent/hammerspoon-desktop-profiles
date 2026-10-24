@@ -210,6 +210,28 @@ return {
         expect.equal(world.focused_window_id, nil)
     end,
 
+    a_preview_that_comes_between_the_release_and_the_close_draws_nothing = function()
+        local world = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["2"]()
+        -- Hammerspoon may handle the release before a line of the helper, and both before the
+        -- timers that they defer. Releasing during the decode of the first preview gives that
+        -- order: the close of the list is deferred before the redraw of the preview.
+        local image_from_url = _G.hs.image.imageFromURL
+        _G.hs.image.imageFromURL = function(url)
+            if world.held_modifiers.ctrl then
+                world.release_modifiers()
+            end
+            return image_from_url(url)
+        end
+        local canvas = world.overlay
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(canvas.is_deleted, true)
+        expect.equal(world.held_modifiers, {})
+    end,
+
     closing_the_list_deletes_its_canvas_which_then_takes_no_call = function()
         local world = controller_world.start_world()
         world.hotkeys["1"]()
