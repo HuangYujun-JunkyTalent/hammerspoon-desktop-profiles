@@ -50,6 +50,7 @@ local app_number_list = {}
 ---@field shown_at number|nil when the list showed, in seconds since the epoch
 ---@field last_input_at number when the last press of a number came, which holds the next preview
 ---back
+---@field is_redraw_due boolean whether a redraw waits for the previews that came at once
 
 ---The windows that the list shows, as the setting for the windows of hidden applications keeps
 ---them.
@@ -197,13 +198,7 @@ function AppNumberList:press(app_number, binding)
         session.last_input_at = hs.timer.secondsSinceEpoch()
         session.selection =
             app_number_list_view.press(session.applications, session.selection, app_number)
-        if session.overlay then
-            app_number_list_overlay.update(
-                session.overlay,
-                describe_view(session, self.context.settings),
-                session.images
-            )
-        end
+        self:redraw(session)
         return
     end
     local entries = self.context.read_numbering_profile().app_numbers
@@ -239,6 +234,7 @@ function AppNumberList:open(entries, app_number, modifiers)
         displays = list_displays_from_left(self.context.settings),
         modifiers = modifiers,
         last_input_at = hs.timer.secondsSinceEpoch(),
+        is_redraw_due = false,
     }
     self.session = session
     if not keyboard_modifiers.are_held(modifiers) then
@@ -270,6 +266,34 @@ function AppNumberList:show(session)
         :start()
 end
 
+---Draws the list again with its selection and its images.
+---@param session AppNumberListSession
+function AppNumberList:redraw(session)
+    if session.overlay then
+        app_number_list_overlay.update(
+            session.overlay,
+            describe_view(session, self.context.settings),
+            session.images
+        )
+    end
+end
+
+---Draws the list once the previews that came at once have all arrived, so that they give one
+---redraw.
+---@param session AppNumberListSession
+function AppNumberList:request_redraw(session)
+    if session.is_redraw_due then
+        return
+    end
+    session.is_redraw_due = true
+    retained_timers.defer(function()
+        session.is_redraw_due = false
+        if self.session == session then
+            self:redraw(session)
+        end
+    end)
+end
+
 ---Draws the preview of each window of the list in the place of the icon, as the snapshot comes.
 ---@param session AppNumberListSession
 function AppNumberList:load_previews(session)
@@ -289,14 +313,8 @@ function AppNumberList:load_previews(session)
             return self.session == session
         end,
         on_image = function(window_id, image)
-            if session.overlay then
-                session.images.previews[window_id] = image
-                app_number_list_overlay.update(
-                    session.overlay,
-                    describe_view(session, self.context.settings),
-                    session.images
-                )
-            end
+            session.images.previews[window_id] = image
+            self:request_redraw(session)
         end,
     })
 end

@@ -146,6 +146,7 @@ local current_world = nil
 ---`bundle_ids_without_icon` holds the bundle ids for which `hs.image.imageFromAppBundle` gives no
 ---icon.
 ---`filter_reads` counts the calls of `getWindows` of the window filter.
+---Each canvas counts the calls of its `replaceElements` in `replace_count`.
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
 ---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
 ---`type_keys` and `release_modifiers` was made, as `timestamp()` of the event gives it.
@@ -1663,7 +1664,8 @@ function fake_hammerspoon.install(spec)
         canvas = {
             windowLevels = world.window_levels,
             new = function(frame)
-                local canvas = { current_frame = frame, elements = {}, is_visible = false }
+                local canvas =
+                    { current_frame = frame, elements = {}, is_visible = false, replace_count = 0 }
                 table.insert(world.canvases, canvas)
                 function canvas:level(level)
                     canvas.window_level = level
@@ -1691,6 +1693,7 @@ function fake_hammerspoon.install(spec)
                 end
                 function canvas:replaceElements(elements)
                     canvas.elements = elements
+                    canvas.replace_count = canvas.replace_count + 1
                     return canvas
                 end
                 function canvas:show()

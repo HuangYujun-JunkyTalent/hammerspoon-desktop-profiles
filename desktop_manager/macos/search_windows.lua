@@ -40,7 +40,8 @@ local search_windows = {}
 ---@field event_tap table an hs.eventtap
 ---@field context SearchContext
 ---@field is_open boolean
----@field is_redraw_due boolean whether a redraw waits for the events that came at once
+---@field is_redraw_due boolean whether a redraw waits for the keys and the previews that came at
+---once
 ---@field times SearchOpeningTimes what happened since the opening, for the console
 ---@field shown_at number when the panel showed, in seconds since the epoch
 ---@field last_input_at number|nil when the last key, click or hover came, which holds the next
@@ -110,8 +111,19 @@ local function redraw(panel)
     end
 end
 
----Takes the new state of the search at once, and draws the panel once the events that came at
----once have all arrived.
+---Draws the panel once the events that came at once have all arrived, so that the keys and the
+---previews of one turn give one redraw.
+---@param panel SearchPanel
+local function request_redraw(panel)
+    if not panel.is_redraw_due then
+        panel.is_redraw_due = true
+        retained_timers.defer(function()
+            redraw(panel)
+        end)
+    end
+end
+
+---Takes the new state of the search at once, and draws it with the other events of the turn.
 ---@param panel SearchPanel
 ---@param search WindowSearch
 local function show_search(panel, search)
@@ -119,12 +131,7 @@ local function show_search(panel, search)
         return
     end
     panel.search = search
-    if not panel.is_redraw_due then
-        panel.is_redraw_due = true
-        retained_timers.defer(function()
-            redraw(panel)
-        end)
-    end
+    request_redraw(panel)
 end
 
 ---@param panel SearchPanel
@@ -352,7 +359,7 @@ local function load_previews(panel, entries)
         end,
         on_image = function(window_id, image)
             panel.images.previews[window_id] = image
-            redraw(panel)
+            request_redraw(panel)
             times.preview_count = times.preview_count + 1
             times.first_preview_after = times.first_preview_after or measure_since_opening(panel)
             times.last_preview_after = measure_since_opening(panel)
