@@ -20,7 +20,6 @@ local mission_control_desktops = require("desktop_manager.macos.mission_control_
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 local open_missing_windows = require("desktop_manager.macos.open_missing_windows")
-local preview_method = require("desktop_manager.core.preview_method")
 local profile_state = require("desktop_manager.core.profile_state")
 local profile_switch = require("desktop_manager.core.profile_switch")
 local reach_plan = require("desktop_manager.core.reach_plan")
@@ -83,7 +82,8 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---@field search_panel SearchPanel|nil the panel of the search of the windows while it shows
 ---@field window_inventory WindowInventory the windows that accessibility does not reach
 ---@field known_windows KnownWindows the windows that Hammerspoon knows
----@field are_snapshots_stopped boolean whether a slow snapshot stopped the snapshots until a reload
+---@field preview_loader PreviewLoader the previews of the list and the search, which a slow
+---snapshot stops until a reload
 ---@field hidden_states HiddenStates whether each application that the list or the search asked
 ---about is hidden
 
@@ -1380,38 +1380,6 @@ function ProfileController:open_switch_list(entries, app_number, modifiers)
     self:load_switch_previews(session)
 end
 
----Takes the snapshots of the windows of a list one at a time, after the list shows, and gives each
----to `on_image` as it comes, under the setting for snapshots.
----A snapshot slower than the time limit stops the snapshots until the next reload, because the
----function behind it once blocked Hammerspoon for two minutes on macOS 27.0.1.
----@param window_ids integer[]
----@param preview_size table the w and h of a preview in points
----@param is_list_shown fun(): boolean
----@param on_image fun(window_id: integer, image: table)
-function ProfileController:load_previews(window_ids, preview_size, is_list_shown, on_image)
-    if self.settings.preview_method ~= preview_method.BLURRED_SNAPSHOTS then
-        return
-    end
-    window_previews.load_one_at_a_time(window_ids, {
-        blur = self.settings.preview_blur,
-        preview_size = preview_size,
-        time_limit_seconds = self.settings.timing.snapshot_time_limit_seconds,
-        is_wanted = function()
-            return is_list_shown() and not self.are_snapshots_stopped
-        end,
-        on_image = on_image,
-        on_too_slow = function(seconds)
-            self.are_snapshots_stopped = true
-            self.log.w(
-                string.format(
-                    "a snapshot took %.1f seconds, so the list shows icons until the next reload",
-                    seconds
-                )
-            )
-        end,
-    })
-end
-
 ---Draws the preview of each window of the list in the place of the icon, as the snapshot comes.
 ---@param session SwitchSession
 function ProfileController:load_switch_previews(session)
@@ -1421,18 +1389,23 @@ function ProfileController:load_switch_previews(session)
             table.insert(window_ids, window.window_id)
         end
     end
-    self:load_previews(window_ids, switch_overlay.read_preview_size(session.overlay), function()
-        return self.switch_session == session
-    end, function(window_id, image)
-        if session.overlay then
-            session.images.previews[window_id] = image
-            switch_overlay.update(
-                session.overlay,
-                self:describe_switch_view(session),
-                session.images
-            )
+    self.preview_loader:load(
+        window_ids,
+        switch_overlay.read_preview_size(session.overlay),
+        function()
+            return self.switch_session == session
+        end,
+        function(window_id, image)
+            if session.overlay then
+                session.images.previews[window_id] = image
+                switch_overlay.update(
+                    session.overlay,
+                    self:describe_switch_view(session),
+                    session.images
+                )
+            end
         end
-    end)
+    )
 end
 
 ---Goes to the selection when a modifier of the numbers is released, and closes the list on Escape.
@@ -1677,7 +1650,7 @@ function ProfileController:open_window_search()
         },
         switcher = self:switcher_context(),
         load_previews = function(window_ids, preview_size, is_list_shown, on_image)
-            self:load_previews(window_ids, preview_size, is_list_shown, on_image)
+            self.preview_loader:load(window_ids, preview_size, is_list_shown, on_image)
         end,
         on_closed = function()
             self.search_panel = nil
@@ -2140,13 +2113,13 @@ function profile_controller.start(unchecked_settings, shortcuts)
         is_showing_desktop = false,
         are_saves_suspended = false,
         window_ids_out_of_sight = {},
-        are_snapshots_stopped = false,
         window_inventory = window_inventory.new(),
         hidden_states = {},
     }, ProfileController)
     controller.watchdog = work_watchdog.new(settings.timing, function()
         controller:stop_unfinished_work()
     end)
+    controller.preview_loader = window_previews.new_loader(settings, controller.log)
     local state, warning =
         state_file.read(settings.state_file_path, settings.initial_monitor_matching)
     controller.state = state

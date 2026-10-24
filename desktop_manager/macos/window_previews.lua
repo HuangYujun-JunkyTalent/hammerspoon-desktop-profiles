@@ -1,3 +1,4 @@
+local preview_method = require("desktop_manager.core.preview_method")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 
 ---Reads the icons of applications and the blurred snapshots of windows for the list.
@@ -82,6 +83,57 @@ function window_previews.load_one_at_a_time(window_ids, loading)
         retained_timers.defer(take_next_snapshot)
     end
     retained_timers.defer(take_next_snapshot)
+end
+
+---Loads the previews of the list and the search under the setting for snapshots, and stops the
+---snapshots until the next reload once a snapshot is slower than the time limit, because the
+---function behind it once blocked Hammerspoon for two minutes on macOS 27.0.1.
+---Each controller holds one loader, so that a stop holds until the next start of the controller.
+---@class PreviewLoader
+---@field settings Settings
+---@field log table an hs.logger
+---@field are_snapshots_stopped boolean whether a slow snapshot stopped the snapshots until a reload
+local PreviewLoader = {}
+PreviewLoader.__index = PreviewLoader
+
+---@param settings Settings
+---@param log table an hs.logger
+---@return PreviewLoader
+function window_previews.new_loader(settings, log)
+    return setmetatable(
+        { settings = settings, log = log, are_snapshots_stopped = false },
+        PreviewLoader
+    )
+end
+
+---Takes the snapshots of the windows of a list one at a time, after the list shows, and gives each
+---to `on_image` as it comes, under the setting for snapshots.
+---@param window_ids integer[]
+---@param preview_size table the w and h of a preview in points
+---@param is_list_shown fun(): boolean
+---@param on_image fun(window_id: integer, image: table)
+function PreviewLoader:load(window_ids, preview_size, is_list_shown, on_image)
+    if self.settings.preview_method ~= preview_method.BLURRED_SNAPSHOTS then
+        return
+    end
+    window_previews.load_one_at_a_time(window_ids, {
+        blur = self.settings.preview_blur,
+        preview_size = preview_size,
+        time_limit_seconds = self.settings.timing.snapshot_time_limit_seconds,
+        is_wanted = function()
+            return is_list_shown() and not self.are_snapshots_stopped
+        end,
+        on_image = on_image,
+        on_too_slow = function(seconds)
+            self.are_snapshots_stopped = true
+            self.log.w(
+                string.format(
+                    "a snapshot took %.1f seconds, so the list shows icons until the next reload",
+                    seconds
+                )
+            )
+        end,
+    })
 end
 
 return window_previews
