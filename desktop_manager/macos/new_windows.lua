@@ -1,5 +1,6 @@
 local poll_until = require("desktop_manager.macos.poll_until")
 local retained_timers = require("desktop_manager.macos.retained_timers")
+local track_windows = require("desktop_manager.macos.track_windows")
 
 local new_windows = {}
 
@@ -22,19 +23,6 @@ NewWindowSession.__index = NewWindowSession
 ---@return NewWindowSession
 function new_windows.start_session(timing)
     return setmetatable({ timing = timing, given_ids = {}, launched_ids = {} }, NewWindowSession)
-end
-
----@param application table an hs.application
----@return table<integer, boolean>
-local function index_window_ids(application)
-    local window_ids = {}
-    for _, window in ipairs(application:allWindows()) do
-        local window_id = window:id()
-        if window_id then
-            window_ids[window_id] = true
-        end
-    end
-    return window_ids
 end
 
 ---@param application table an hs.application
@@ -109,7 +97,7 @@ function NewWindowSession:wait_for_window(record, is_new, action, is_launch, on_
                 return
             end
             if is_launch then
-                for window_id in pairs(index_window_ids(application)) do
+                for window_id in pairs(track_windows.index_ids(application:allWindows())) do
                     self.launched_ids[window_id] = true
                 end
             end
@@ -142,7 +130,7 @@ function NewWindowSession:provide_window(record, on_done)
         self:give_window(launched_window, on_done)
         return
     end
-    local existing_ids = index_window_ids(application)
+    local existing_ids = track_windows.index_ids(application:allWindows())
     local function is_new(window_id)
         return not existing_ids[window_id]
     end

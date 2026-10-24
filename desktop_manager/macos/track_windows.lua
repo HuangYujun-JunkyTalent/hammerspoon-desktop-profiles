@@ -1,3 +1,4 @@
+local concatenate_lists = require("desktop_manager.core.concatenate_lists")
 local poll_until = require("desktop_manager.macos.poll_until")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
@@ -98,21 +99,16 @@ end
 ---@return table<integer, table> the hs.window of each window of the owning applications that
 ---accessibility reaches now
 local function find_reached_windows(windows)
-    local bundle_ids, reached = {}, {}
+    local bundle_ids, owned_windows = {}, {}
     for _, window in ipairs(windows) do
         bundle_ids[window.bundle_id] = true
     end
     for bundle_id in pairs(bundle_ids) do
         for _, application in ipairs(hs.application.applicationsForBundleID(bundle_id)) do
-            for _, window in ipairs(application:allWindows()) do
-                local window_id = window:id()
-                if window_id then
-                    reached[window_id] = window
-                end
-            end
+            owned_windows = concatenate_lists.concatenate(owned_windows, application:allWindows())
         end
     end
-    return reached
+    return track_windows.index_by_id(owned_windows)
 end
 
 ---Waits until accessibility reaches every one of the windows that Hammerspoon had not seen, as

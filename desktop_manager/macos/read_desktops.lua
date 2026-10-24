@@ -76,8 +76,7 @@ end
 ---@param window_id integer
 ---@return integer|nil
 function read_desktops.find_window_space_id(window_id)
-    local space_ids = hs.spaces.windowSpaces(window_id)
-    return space_ids and space_ids[1] or nil
+    return read_desktops.list_window_space_ids(window_id)[1]
 end
 
 ---@param space_id integer
