@@ -23,7 +23,7 @@ local search_opening_log = {}
 ---@param count integer
 ---@param noun string the noun for one
 ---@return string such as "1 window" or "12 windows"
-local function count_nouns(count, noun)
+local function describe_count(count, noun)
     return string.format("%d %s%s", count, noun, count == 1 and "" or "s")
 end
 
@@ -39,7 +39,7 @@ local function describe_previews(times)
             .. " blocking Hammerspoon for %.3f seconds in total and %.3f seconds at most",
         times.first_preview_after,
         times.preview_count,
-        count_nouns(times.requested_preview_count, "preview"),
+        describe_count(times.requested_preview_count, "preview"),
         times.last_preview_after,
         times.preview_blocking_seconds,
         times.longest_preview_blocking_seconds
@@ -66,11 +66,11 @@ local function describe_keys(times)
         return "no key"
     end
     if not times.longest_key_wait_seconds then
-        return count_nouns(times.key_count, "key")
+        return describe_count(times.key_count, "key")
     end
     return string.format(
         "%s, waiting %.3f seconds at most",
-        count_nouns(times.key_count, "key"),
+        describe_count(times.key_count, "key"),
         times.longest_key_wait_seconds
     )
 end
@@ -83,7 +83,7 @@ end
 function search_opening_log.describe(times)
     return string.format(
         "search of %s: shown after %.3f seconds, %s, %s, %s",
-        count_nouns(times.window_count, "window"),
+        describe_count(times.window_count, "window"),
         times.shown_after,
         describe_previews(times),
         describe_server_list(times),
