@@ -210,6 +210,19 @@ return {
         expect.equal(world.focused_window_id, nil)
     end,
 
+    closing_the_list_deletes_its_canvas_which_then_takes_no_call = function()
+        local world = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["2"]()
+        local canvas = world.overlay
+        world.release_modifiers()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(canvas.is_deleted, true)
+        expect.equal(pcall(canvas.replaceElements, canvas, {}), false)
+    end,
+
     the_setting_for_snapshots_shows_blurred_previews_and_icons_without_them = function()
         local world = controller_world.start_world({
             preview_method = preview_method.BLURRED_SNAPSHOTS,

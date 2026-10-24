@@ -1830,9 +1830,16 @@ function fake_hammerspoon.install(spec)
         },
         canvas = {
             windowLevels = world.window_levels,
+            ---A canvas raises an error on each call after its `delete`, as a deleted canvas of
+            ---Hammerspoon is no longer valid.
             new = function(frame)
-                local canvas =
-                    { current_frame = frame, elements = {}, is_visible = false, replace_count = 0 }
+                local canvas = {
+                    current_frame = frame,
+                    elements = {},
+                    is_visible = false,
+                    is_deleted = false,
+                    replace_count = 0,
+                }
                 table.insert(world.canvases, canvas)
                 function canvas:level(level)
                     canvas.window_level = level
@@ -1870,6 +1877,17 @@ function fake_hammerspoon.install(spec)
                 end
                 function canvas:delete()
                     canvas.is_visible = false
+                    canvas.is_deleted = true
+                end
+                for name, method in pairs(canvas) do
+                    if type(method) == "function" then
+                        canvas[name] = function(...)
+                            if canvas.is_deleted then
+                                error(string.format("canvas:%s() after canvas:delete()", name), 2)
+                            end
+                            return method(...)
+                        end
+                    end
                 end
                 return canvas
             end,
