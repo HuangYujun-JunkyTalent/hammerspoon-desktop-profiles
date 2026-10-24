@@ -83,14 +83,18 @@ local function call_all(callbacks)
 end
 
 ---Runs the script once, and then once more when calls wait for a list that starts later.
+---The task collects the output through a streaming callback, because a list above 64 KiB blocks a
+---task without one, as `javascript_tasks.new` says.
 ---@param inventory WindowInventory
 ---@param list_known_window_ids fun(): table<integer, boolean>
 local function start_refresh(inventory, list_known_window_ids)
     inventory.is_refreshing = true
+    local chunks = {}
     local task = javascript_tasks.new("list_server_windows.js", {}, function(exit_code, stdout)
         inventory.last_update_started_at = hs.timer.secondsSinceEpoch()
         inventory.is_refreshing = false
-        local is_decoded, rows = pcall(hs.json.decode, stdout or "")
+        table.insert(chunks, stdout or "")
+        local is_decoded, rows = pcall(hs.json.decode, table.concat(chunks))
         if exit_code == 0 and is_decoded and type(rows) == "table" then
             local hidden_space_lists = map_hidden_space_lists()
             local hidden_spaces = pick_last_spaces(hidden_space_lists)
@@ -111,6 +115,9 @@ local function start_refresh(inventory, list_known_window_ids)
         if #inventory.waiting > 0 and not inventory.is_refreshing then
             start_refresh(inventory, list_known_window_ids)
         end
+    end, function(_, stdout)
+        table.insert(chunks, stdout or "")
+        return true
     end)
     if not task or not task:start() then
         inventory.last_update_started_at = hs.timer.secondsSinceEpoch()

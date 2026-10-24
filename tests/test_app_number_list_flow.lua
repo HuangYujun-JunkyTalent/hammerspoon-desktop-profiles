@@ -818,6 +818,24 @@ return {
         expect.equal(world.focused_window_id, reading.id)
     end,
 
+    a_list_of_the_window_server_above_64_kib_reaches_the_numbered_list = function()
+        local world = controller_world.start_world({ list_layout = list_layout.ROWS })
+        world.is_server_list_above_64_kib = true
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["2"]()
+        expect.equal(world.read_overlay(), {
+            " 1   Microsoft Word",
+            " Draft.docx",
+            " 2   Safari",
+            ">Inbox",
+            " Reading list",
+        })
+    end,
+
     the_list_reaches_a_window_in_full_screen = function()
         local world = controller_world.start_world()
         world.displays[1].full_screen_space_ids = { 500 }

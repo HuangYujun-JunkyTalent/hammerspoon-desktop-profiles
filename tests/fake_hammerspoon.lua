@@ -174,6 +174,8 @@ local current_world = nil
 ---`garbled_window_ids[window_id]` makes the helper give a line for the window that holds no time
 ---and no image.
 ---`decode_seconds`, 0 by default, is the time that `hs.image.imageFromURL` takes.
+---`is_server_list_above_64_kib` makes the list of the window server too long for a task without a
+---streaming callback, which then never ends, as a task of Hammerspoon on macOS 27.0.1 did.
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
 ---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
 ---`type_keys` and `release_modifiers` was made, as `timestamp()` of the event gives it.
@@ -240,6 +242,7 @@ function fake_hammerspoon.install(spec)
         last_helper_line_route = nil,
         garbled_window_ids = {},
         decode_seconds = 0,
+        is_server_list_above_64_kib = false,
         overlay = nil,
         canvases = {},
         focused_window_id = nil,
@@ -1705,6 +1708,10 @@ function fake_hammerspoon.install(spec)
             ---the fake of the helper of the previews, or runs the script that turns one shortcut
             ---of macOS off at once, and the fake runs no other script.
             ---The streaming callback comes before the arguments, as in Hammerspoon.
+            ---The list of the window server comes in two parts, the first through the streaming
+            ---callback and the rest with the exit, when the task has a streaming callback.
+            ---Without one, the task gives the whole list with the exit, and never ends under
+            ---`is_server_list_above_64_kib`.
             new = function(path, callback, stream_callback_or_arguments, arguments)
                 local stream_callback = stream_callback_or_arguments
                 if type(stream_callback_or_arguments) == "table" then
@@ -1721,7 +1728,13 @@ function fake_hammerspoon.install(spec)
                             error("the fake runs no script of osascript but two: " .. script)
                         end
                         new_timer(0.2, function()
-                            callback(0, SERVER_WINDOWS_OUTPUT, "")
+                            if stream_callback then
+                                local split = math.floor(#SERVER_WINDOWS_OUTPUT / 2)
+                                stream_callback(task, SERVER_WINDOWS_OUTPUT:sub(1, split), "")
+                                callback(0, SERVER_WINDOWS_OUTPUT:sub(split + 1), "")
+                            elseif not world.is_server_list_above_64_kib then
+                                callback(0, SERVER_WINDOWS_OUTPUT, "")
+                            end
                         end, false)
                         return task
                     end
