@@ -172,6 +172,19 @@ function app_numbers.release(entries, number)
     return kept
 end
 
+---@param entries AppNumber[]
+---@return AppNumber[] the entries that the default rule gave, without the numbers that the user
+---gave
+function app_numbers.drop_chosen(entries)
+    local kept = {}
+    for _, entry in ipairs(entries) do
+        if not entry.is_chosen_by_user then
+            table.insert(kept, deep_copy.copy(entry))
+        end
+    end
+    return kept
+end
+
 ---The window after the focused one in the order of the ids, or the first when none is focused.
 ---@param window_ids integer[]
 ---@param focused_window_id integer|nil

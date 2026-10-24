@@ -190,4 +190,12 @@ return {
         expect.equal(app_numbers.find_first_selection_index({ 10, 20, 30 }, nil, nil), 0)
         expect.equal(app_numbers.find_first_selection_index({}, nil, nil), 0)
     end,
+
+    dropping_the_chosen_numbers_keeps_the_default_ones = function()
+        local entries = {
+            { number = 1, bundle_id = "a", app_name = "A", is_chosen_by_user = false },
+            { number = 2, bundle_id = "b", app_name = "B", is_chosen_by_user = true },
+        }
+        expect.equal(app_numbers.drop_chosen(entries), { entries[1] })
+    end,
 }

@@ -281,4 +281,108 @@ return {
         world.hotkeys["1"]()
         expect.equal(controller.state.active_profile_number, nil)
     end,
+
+    saving_the_arrangement_during_the_pause_records_the_windows_and_ends_the_pause = function()
+        local routes = {
+            function(world)
+                controller_world
+                    .find_menu_item(world, "Save arrangement now and end the pause")
+                    .fn()
+            end,
+            function(world)
+                world.url_handlers["desktop-manager"]("desktop-manager", { action = "save" })
+            end,
+        }
+        for _, route in ipairs(routes) do
+            local world, controller = start_after_login()
+            world.minimize_window(42)
+            route(world)
+            expect.equal(controller.state.is_active_profile_paused, false)
+            expect.equal(controller_world.recorded_sight(controller, 1, 42), "out of sight")
+        end
+    end,
+
+    saving_the_arrangement_while_the_monitors_settle_keeps_the_pause = function()
+        local world, controller, saved = start_after_login()
+        world.minimize_window(42)
+        world.connect_screen(controller_world.DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        controller_world.find_menu_item(world, "Save arrangement now and end the pause").fn()
+        expect.equal(controller.state.is_active_profile_paused, true)
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect_profile_1_as_saved(controller, saved)
+    end,
+
+    clearing_the_paused_profile_ends_the_pause_and_clearing_another_keeps_it = function()
+        local first_world = controller_world.start_world()
+        first_world.hotkeys["2"]()
+        first_world.advance(controller_world.SETTLE_SECONDS)
+        first_world.hotkeys["1"]()
+        first_world.advance(controller_world.SETTLE_SECONDS)
+        local world, controller = controller_world.start_world(
+            nil,
+            first_world.saved_json,
+            SECONDS_AFTER_LOGIN,
+            MACOS_START_TIME_AFTER_RESTART
+        )
+        world.alert_button = "Clear"
+        world.hotkey_by_shortcut["ctrl+alt+cmd 2"]()
+        expect.equal(controller.state.is_active_profile_paused, true)
+        world.hotkey_by_shortcut["ctrl+alt+cmd 1"]()
+        expect.equal(controller.state.is_active_profile_paused, false)
+        expect.equal(
+            world.alerts[#world.alerts],
+            "Profile 1 is cleared and records the windows from now on"
+        )
+    end,
+
+    the_numbers_during_the_pause_follow_the_record_and_the_choices_of_the_user = function()
+        local world, controller, saved = start_after_login()
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "1", app = "Microsoft Word" }
+        )
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "release-app-number", number = "1" }
+        )
+        expect.equal(
+            profile_state.profile_or_default(controller.state, 1).app_numbers,
+            saved.profiles["1"].app_numbers
+        )
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "3", app = "Microsoft Word" }
+        )
+        local chosen = profile_state.profile_or_default(controller.state, 1).app_numbers
+        expect.equal(chosen[#chosen].number, 3)
+        expect.equal(chosen[#chosen].is_chosen_by_user, true)
+        world.close_window(41)
+        world.app_hotkeys["0"]()
+        expect.equal(
+            profile_state.profile_or_default(controller.state, 1).app_numbers,
+            saved.profiles["1"].app_numbers
+        )
+    end,
+
+    the_numbers_during_the_pause_stay_under_monitors_that_the_profile_did_not_record = function()
+        local world, controller, saved = start_after_login()
+        world.connect_screen(controller_world.DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "release-app-number", number = "3" }
+        )
+        expect.equal(
+            profile_state.profile_or_default(controller.state, 1).app_numbers,
+            saved.profiles["1"].app_numbers
+        )
+        world.app_hotkeys["0"]()
+        expect.equal(
+            profile_state.profile_or_default(controller.state, 1).app_numbers,
+            saved.profiles["1"].app_numbers
+        )
+        expect.equal(controller.state.is_active_profile_paused, true)
+    end,
 }

@@ -153,7 +153,11 @@ local function build_items(state, settings, actions)
         menu = build_app_number_items(numbering_profile, settings.app_number_count, actions),
     })
     table.insert(items, { title = "-" })
-    table.insert(items, { title = "Save arrangement now", fn = actions.save_arrangement })
+    table.insert(items, {
+        title = state.is_active_profile_paused and "Save arrangement now and end the pause"
+            or "Save arrangement now",
+        fn = actions.save_arrangement,
+    })
     table.insert(
         items,
         { title = "Print diagnostics to the console", fn = actions.print_diagnostics }

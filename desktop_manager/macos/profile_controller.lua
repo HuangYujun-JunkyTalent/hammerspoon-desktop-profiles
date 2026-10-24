@@ -134,7 +134,7 @@ function ProfileController:refresh_menu()
             self:set_monitor_matching(matching)
         end,
         save_arrangement = function()
-            self:capture_active_arrangement()
+            self:save_arrangement_now()
         end,
         print_diagnostics = function()
             self:print_diagnostics()
@@ -322,6 +322,21 @@ function ProfileController:capture_active_arrangement()
         self.settings.app_number_count
     )
     self:write_state()
+end
+
+---Updates the record of the active profile at once, and ends its pause, because the user asks for
+---a record of the windows as they are.
+---While a switch, a restore or the wait after a change of the monitors runs, nothing changes, as
+---the capture says.
+function ProfileController:save_arrangement_now()
+    if self.is_switch_or_restore_running or self.are_saves_suspended then
+        return
+    end
+    if self.state.is_active_profile_paused then
+        self.state = profile_state.with_pause_ended(self.state)
+        self:refresh_menu()
+    end
+    self:capture_active_arrangement()
 end
 
 ---Gives profile 0 its default numbers from the windows open now, because it records no windows.
@@ -990,6 +1005,9 @@ function ProfileController:clear_profile(number)
     end
     retained_timers.stop(self.save_timer)
     self.state = profile_state.clear_arrangements(self.state, number)
+    if self.state.active_profile_number == number then
+        self.state = profile_state.with_pause_ended(self.state)
+    end
     self:write_state()
     self:refresh_menu()
     if self.state.active_profile_number == number then
@@ -1118,12 +1136,34 @@ end
 ---Gives the default numbers again after a change of the application numbers.
 ---While a switch runs, the state is written alone, because the update at the end of the switch
 ---gives the defaults.
+---While the active profile is paused, the defaults come from its record for the monitor
+---configuration, because the windows that macOS reopened are not yet where the record has them.
 function ProfileController:apply_numbers_change()
     if self.is_switch_or_restore_running then
         self:write_state()
+    elseif self.state.is_active_profile_paused then
+        self:give_paused_profile_default_numbers()
     else
         self:update_records_and_numbers()
     end
+end
+
+---Gives the paused profile the default numbers of its record for the monitor configuration, and
+---keeps its numbers when it has no record for the configuration.
+function ProfileController:give_paused_profile_default_numbers()
+    local number = self.state.active_profile_number
+    local configuration = self:read_monitor_configuration()
+    local arrangement = profile_state.find_arrangement(self.state, number, configuration.key)
+    if arrangement then
+        self.state = profile_state.with_default_app_numbers(
+            self.state,
+            number,
+            arrangement,
+            configuration,
+            self.settings.app_number_count
+        )
+    end
+    self:write_state()
 end
 
 ---Gives the number to the application in the active profile, or in profile 0 while no profile is
@@ -1165,7 +1205,12 @@ function ProfileController:reset_app_numbers()
         return
     end
     local number = profile_state.find_numbering_profile_number(self.state)
-    self.state = profile_state.with_app_numbers(self.state, number, {})
+    local kept_entries = self.state.is_active_profile_paused
+            and app_numbers.drop_chosen(
+                profile_state.profile_or_default(self.state, number).app_numbers
+            )
+        or {}
+    self.state = profile_state.with_app_numbers(self.state, number, kept_entries)
     self:apply_numbers_change()
     local name = profile_state.profile_or_default(self.state, number).name
     hs.alert.show(name .. " has the default application numbers")
@@ -1456,7 +1501,7 @@ local URL_ACTION_HANDLERS = {
         controller:reset_app_numbers()
     end,
     [url_command.SAVE] = function(controller)
-        controller:capture_active_arrangement()
+        controller:save_arrangement_now()
     end,
     [url_command.CLEAR] = function(controller, command)
         controller:clear_profile(command.profile_number)
