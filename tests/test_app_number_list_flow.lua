@@ -333,6 +333,20 @@ return {
         expect.equal(world.focused_window_id, news.id)
     end,
 
+    a_title_that_starts_with_blanks_keeps_them_in_the_rows_and_the_columns = function()
+        for _, layout in ipairs({ list_layout.ROWS, list_layout.COLUMNS }) do
+            local world = controller_world.start_world({ list_layout = layout })
+            world.create_window("com.apple.Safari", "  Indented")
+            world.hotkeys["1"]()
+            world.advance(controller_world.SETTLE_SECONDS)
+            world.held_modifiers = { ctrl = true, alt = true }
+            world.app_hotkeys["1"]()
+            expect.equal({ layout, world.read_overlay()[3] }, { layout, "   Indented" })
+            world.release_modifiers()
+            world.advance(controller_world.SETTLE_SECONDS)
+        end
+    end,
+
     the_columns_per_display_name_each_display_above_its_columns = function()
         local world =
             controller_world.start_world({ list_layout = list_layout.COLUMNS_PER_DISPLAY })

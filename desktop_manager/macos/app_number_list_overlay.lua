@@ -256,7 +256,7 @@ end
 local function draw_row_line(elements, line, top, context, metrics)
     local sizes, images = context.sizes, context.images
     local width, visible_count = metrics.width, metrics.visible_count
-    local text = line.is_application and line.text or (line.text:gsub("^%s+", ""))
+    local text = line.text
     local layout = { text = text, line_count = 1, is_scrolling = false }
     if not line.is_application and line.window_id then
         layout = lay_out_title(text, visible_count, line.is_selected, context.settings)
