@@ -1,5 +1,6 @@
 local controller_world = require("tests.controller_world")
 local expect = require("tests.expect")
+local retained_timers = require("desktop_manager.macos.retained_timers")
 
 ---@param world table
 ---@return string[] the focus operations on windows, in order
@@ -300,6 +301,40 @@ return {
         expect.equal(#world.read_search_panel().windows, 2)
         world.advance(1)
         expect.equal(world.read_search_panel().windows[3], "plain Reading list | Safari")
+    end,
+
+    a_window_found_after_the_panel_opened_waits_in_the_queue_of_the_previews = function()
+        local world = controller_world.start_world()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local unseen = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        local snapshots_before = world.snapshot_count
+        world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        world.advance(0.04)
+        world.press_key("tab")
+        world.advance(0.1)
+        world.press_key("tab")
+        world.advance(0.1)
+        local timers_before = retained_timers.count_running()
+        world.advance(0.02)
+        expect.equal(world.read_search_panel().windows[3], "plain Reading list | Safari")
+        expect.equal(retained_timers.count_running(), timers_before)
+        expect.equal(world.snapshot_count, snapshots_before)
+        world.advance(1)
+        expect.equal(world.snapshot_count, snapshots_before + 3)
+        expect.equal(world.read_overlay_images()[3], "blurred " .. unseen.id)
+    end,
+
+    closing_the_search_stops_the_preview_that_waits = function()
+        local world = controller_world.start_world()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local snapshots_before = world.snapshot_count
+        world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        world.advance(0.04)
+        world.press_key("tab")
+        world.advance(0.06)
+        world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        world.advance(1)
+        expect.equal(world.snapshot_count, snapshots_before)
     end,
 
     a_window_that_its_application_keeps_ordered_out_shows_in_no_list = function()
