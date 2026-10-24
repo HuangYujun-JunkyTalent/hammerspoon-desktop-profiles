@@ -21,6 +21,12 @@ local profile_state = {}
 ---@field format_version integer
 ---@field monitor_matching string
 ---@field active_profile_number integer|nil
+---@field is_active_profile_paused boolean whether the updates leave the records and the application
+---numbers of the active profile as they are, after a start of Hammerspoon soon after the start of
+---macOS
+---@field last_seen_macos_start_time integer|nil the start of macOS, in seconds since 1970, that the
+---last start of the desktop manager saw, so that only the first start after a start of macOS pauses
+---the active profile
 ---@field profiles table<string, Profile>
 ---@field app_pool AppPool the applications that every profile manages
 ---@field desktop_counts DesktopCounts the number of desktops of each display
@@ -87,6 +93,7 @@ function profile_state.new_state(matching)
         format_version = profile_state.FORMAT_VERSION,
         monitor_matching = matching,
         active_profile_number = nil,
+        is_active_profile_paused = false,
         profiles = {},
         app_pool = app_pool.new(),
         desktop_counts = desktop_counts.new(),
@@ -123,7 +130,42 @@ function profile_state.with_active_profile_number(state, number)
     if number == profile_state.NO_PROFILE_NUMBER then
         error("profile 0 holds the numbers of no active profile, and cannot be activated", 2)
     end
-    return with_field(state, "active_profile_number", number)
+    local updated = with_field(state, "active_profile_number", number)
+    updated.is_active_profile_paused = false
+    return updated
+end
+
+---@param state State
+---@return State a copy of the state in which the active profile is paused
+function profile_state.with_active_profile_paused(state)
+    if not state.active_profile_number then
+        error("no profile is active, so no profile can be paused", 2)
+    end
+    return with_field(state, "is_active_profile_paused", true)
+end
+
+---@param state State
+---@return State a copy of the state in which the updates write the records of the active profile
+function profile_state.with_pause_ended(state)
+    return with_field(state, "is_active_profile_paused", false)
+end
+
+---@param state State
+---@param macos_start_time integer|nil
+---@return State a copy of the state that keeps the start of macOS that this start of the desktop
+---manager saw
+function profile_state.with_last_seen_macos_start_time(state, macos_start_time)
+    return with_field(state, "last_seen_macos_start_time", macos_start_time)
+end
+
+---@param state State
+---@return integer|nil the profile whose records and numbers the updates write: the active profile,
+---or nil while it is paused or no profile is active
+function profile_state.find_profile_number_to_update(state)
+    if state.is_active_profile_paused then
+        return nil
+    end
+    return state.active_profile_number
 end
 
 ---@param state State
@@ -606,7 +648,9 @@ function profile_state.decode(raw)
     local active_number = to_integer(raw.active_profile_number)
     if active_number and active_number >= 1 then
         state.active_profile_number = active_number
+        state.is_active_profile_paused = raw.is_active_profile_paused == true
     end
+    state.last_seen_macos_start_time = to_integer(raw.last_seen_macos_start_time)
     state.app_pool = app_pool.decode(raw.app_pool, raw.managed_applications)
     state.highlight_colors = highlight_colors.decode(raw.highlight_colors)
     return state, nil

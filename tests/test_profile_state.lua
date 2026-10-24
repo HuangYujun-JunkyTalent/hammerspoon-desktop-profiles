@@ -458,4 +458,55 @@ return {
         local current = profile_state.decode(state)
         expect.equal(current, state)
     end,
+
+    decode_round_trips_a_pause_and_drops_a_pause_without_an_active_profile = function()
+        local active = profile_state.with_active_profile_number(
+            profile_state.new_state(monitor_matching.BY_COUNT),
+            1
+        )
+        local paused = profile_state.with_last_seen_macos_start_time(
+            profile_state.with_active_profile_paused(active),
+            1729500000
+        )
+        expect.equal(profile_state.decode(paused), paused)
+        expect.equal(profile_state.decode(active).last_seen_macos_start_time, nil)
+        local without_field = profile_state.new_state(monitor_matching.BY_COUNT)
+        without_field.active_profile_number = 1
+        without_field.is_active_profile_paused = nil
+        expect.equal(profile_state.decode(without_field).is_active_profile_paused, false)
+        local inactive = profile_state.new_state(monitor_matching.BY_COUNT)
+        inactive.is_active_profile_paused = true
+        expect.equal(profile_state.decode(inactive).is_active_profile_paused, false)
+    end,
+
+    a_change_of_the_active_profile_ends_the_pause = function()
+        local paused = profile_state.with_active_profile_paused(
+            profile_state.with_active_profile_number(
+                profile_state.new_state(monitor_matching.BY_COUNT),
+                1
+            )
+        )
+        for _, number in ipairs({ 1, 2 }) do
+            local switched = profile_state.with_active_profile_number(paused, number)
+            expect.equal(switched.is_active_profile_paused, false)
+            expect.equal(profile_state.find_profile_number_to_update(switched), number)
+        end
+        expect.equal(
+            profile_state.with_active_profile_number(paused, nil).is_active_profile_paused,
+            false
+        )
+        expect.equal(profile_state.find_profile_number_to_update(paused), nil)
+        expect.equal(
+            profile_state.find_profile_number_to_update(profile_state.with_pause_ended(paused)),
+            1
+        )
+    end,
+
+    only_an_active_profile_can_be_paused = function()
+        expect.raises(function()
+            profile_state.with_active_profile_paused(
+                profile_state.new_state(monitor_matching.BY_COUNT)
+            )
+        end, "no profile is active")
+    end,
 }
