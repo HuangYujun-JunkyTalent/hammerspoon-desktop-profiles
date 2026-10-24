@@ -1,21 +1,11 @@
-local default_settings = require("desktop_manager.default_settings")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
+local fake_worlds = require("tests.fake_worlds")
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 
-local BUILTIN_SCREEN = {
-    id = 1,
-    uuid = "BUILTIN-UUID",
-    name = "Built-in Retina Display",
-    frame = { x = 0, y = 25, w = 1440, h = 875 },
-}
-local DELL_SCREEN = {
-    id = 2,
-    uuid = "DELL-UUID",
-    name = "DELL S2725DS",
-    frame = { x = 1440, y = 0, w = 2560, h = 1415 },
-}
+local BUILTIN_SCREEN = fake_worlds.build_builtin_screen()
+local DELL_SCREEN = fake_worlds.build_dell_screen()
 local SETTLE_SECONDS = 30
 local DESKTOP_2 = "desktop 2 of Built-in Retina Display"
 local NO_FOCUS = ": no focus before the press, "
@@ -77,18 +67,7 @@ local LOG_OF_A_PRESS_CLOSED_BY_A_TOGGLE = DESKTOP_2
 local function start_world(builtin_space_ids, dell_space_ids)
     return fake_hammerspoon.install({
         screens = { BUILTIN_SCREEN, DELL_SCREEN },
-        displays = {
-            {
-                uuid = BUILTIN_SCREEN.uuid,
-                space_ids = builtin_space_ids,
-                active_space_id = builtin_space_ids[1],
-            },
-            {
-                uuid = DELL_SCREEN.uuid,
-                space_ids = dell_space_ids,
-                active_space_id = dell_space_ids[1],
-            },
-        },
+        displays = fake_worlds.build_two_displays(builtin_space_ids, dell_space_ids),
         applications = { { bundle_id = "com.apple.Safari", name = "Safari", is_running = true } },
         windows = {
             {
@@ -100,11 +79,6 @@ local function start_world(builtin_space_ids, dell_space_ids)
             },
         },
     })
-end
-
----@return Timing
-local function default_timing()
-    return default_settings.create("/fake/state.json").timing
 end
 
 ---@param screen table
@@ -158,9 +132,13 @@ end
 ---@return table state whose field `result` is "pending", "shown", or the message of the failure
 local function start_press(world)
     local state = { result = "pending" }
-    mission_control_desktops.show_space(14, default_timing(), function(error_message)
-        state.result = error_message or "shown"
-    end)
+    mission_control_desktops.show_space(
+        14,
+        fake_worlds.create_default_timing(),
+        function(error_message)
+            state.result = error_message or "shown"
+        end
+    )
     while #world.desktop_presses == 0 do
         world.advance(0.01)
     end
@@ -185,9 +163,13 @@ end
 ---@return string result "shown", or the message of the failure, once the world has settled
 local function show_and_settle(world, space_id)
     local result = "pending"
-    mission_control_desktops.show_space(space_id, default_timing(), function(error_message)
-        result = error_message or "shown"
-    end)
+    mission_control_desktops.show_space(
+        space_id,
+        fake_worlds.create_default_timing(),
+        function(error_message)
+            result = error_message or "shown"
+        end
+    )
     world.advance(SETTLE_SECONDS)
     return result
 end
@@ -209,10 +191,7 @@ local BOUNCE_SECONDS = 0.02
 local function start_bounce_world()
     local world = fake_hammerspoon.install({
         screens = { BUILTIN_SCREEN, DELL_SCREEN },
-        displays = {
-            { uuid = BUILTIN_SCREEN.uuid, space_ids = { 3 }, active_space_id = 3 },
-            { uuid = DELL_SCREEN.uuid, space_ids = { 7, 8, 9 }, active_space_id = 7 },
-        },
+        displays = fake_worlds.build_two_displays({ 3 }, { 7, 8, 9 }),
         applications = {
             { bundle_id = "com.tinyspeck.slackmacgap", name = "Slack", is_running = true },
             { bundle_id = VS_CODE, name = "Code", is_running = true },
@@ -253,9 +232,14 @@ end
 ---@return table state whose field `result` is "pending", "shown", or the message of the failure
 local function show_presentations_desktop(chosen_window)
     local state = { result = "pending" }
-    mission_control_desktops.show_space(8, default_timing(), function(error_message)
-        state.result = error_message or "shown"
-    end, chosen_window)
+    mission_control_desktops.show_space(
+        8,
+        fake_worlds.create_default_timing(),
+        function(error_message)
+            state.result = error_message or "shown"
+        end,
+        chosen_window
+    )
     return state
 end
 
@@ -277,7 +261,7 @@ return {
         mission_control_desktops.edit(
             { edit_of(BUILTIN_SCREEN, 1, {}), edit_of(DELL_SCREEN, 2, {}) },
             keep_no_desktop,
-            default_timing(),
+            fake_worlds.create_default_timing(),
             function(edit_failures)
                 failures = edit_failures
             end
@@ -297,7 +281,7 @@ return {
             { edit_of(BUILTIN_SCREEN, 0, { 64, 65 }), edit_of(DELL_SCREEN, 0, { 9 }) },
             14,
             keep_no_desktop,
-            default_timing(),
+            fake_worlds.create_default_timing(),
             function(edit_failures)
                 failures = edit_failures
             end
@@ -320,7 +304,7 @@ return {
             { edit_of(DELL_SCREEN, 0, { 8 }) },
             9,
             keep_no_desktop,
-            default_timing(),
+            fake_worlds.create_default_timing(),
             function(edit_failures)
                 failures = edit_failures
             end
@@ -339,7 +323,7 @@ return {
             { edit_of(BUILTIN_SCREEN, 0, { 64 }) },
             3,
             keep_no_desktop,
-            default_timing(),
+            fake_worlds.create_default_timing(),
             function(edit_failures)
                 failures = edit_failures
             end
@@ -365,7 +349,7 @@ return {
                 end
                 return nil
             end,
-            default_timing(),
+            fake_worlds.create_default_timing(),
             function(edit_failures)
                 failures = edit_failures
             end
@@ -385,7 +369,7 @@ return {
         mission_control_desktops.edit(
             { edit_of(BUILTIN_SCREEN, 0, { 64 }) },
             keep_no_desktop,
-            default_timing(),
+            fake_worlds.create_default_timing(),
             function(edit_failures)
                 failures = edit_failures
             end
@@ -412,7 +396,7 @@ return {
         mission_control_desktops.edit(
             { edit_of(BUILTIN_SCREEN, 0, { 64, 65 }) },
             keep_no_desktop,
-            default_timing(),
+            fake_worlds.create_default_timing(),
             function()
                 is_done = true
             end
@@ -439,9 +423,13 @@ return {
         local world = start_world({ 3, 14 }, { 7 })
         world.held_modifiers = { alt = true }
         local result = "pending"
-        mission_control_desktops.show_space(14, default_timing(), function(error_message)
-            result = error_message or "shown"
-        end)
+        mission_control_desktops.show_space(
+            14,
+            fake_worlds.create_default_timing(),
+            function(error_message)
+                result = error_message or "shown"
+            end
+        )
         world.advance(1)
         expect.equal(world.mission_control_openings, 0)
         world.held_modifiers = {}
@@ -469,9 +457,13 @@ return {
         world.ignores_desktop_presses = true
         local timers_before = retained_timers.count_running()
         local result = "pending"
-        mission_control_desktops.show_space(14, default_timing(), function(error_message)
-            result = error_message or "shown"
-        end)
+        mission_control_desktops.show_space(
+            14,
+            fake_worlds.create_default_timing(),
+            function(error_message)
+                result = error_message or "shown"
+            end
+        )
         while #world.desktop_presses == 0 do
             world.advance(0.05)
         end
@@ -592,9 +584,13 @@ return {
         local world = start_world({ 3, 14 }, { 7 })
         world.mission_control_close_delay_seconds = 2.5
         local result = "pending"
-        mission_control_desktops.show_space(14, default_timing(), function(error_message)
-            result = error_message or "shown"
-        end)
+        mission_control_desktops.show_space(
+            14,
+            fake_worlds.create_default_timing(),
+            function(error_message)
+                result = error_message or "shown"
+            end
+        )
         while #world.desktop_presses == 0 do
             world.advance(0.05)
         end
@@ -622,7 +618,7 @@ return {
         world.ignores_desktop_presses = true
         local timers_before = retained_timers.count_running()
         local is_done = false
-        mission_control_desktops.show_space(14, default_timing(), function()
+        mission_control_desktops.show_space(14, fake_worlds.create_default_timing(), function()
             is_done = true
         end)
         while #world.desktop_presses == 0 do
@@ -866,7 +862,7 @@ return {
 
     the_press_goes_on_when_the_application_is_not_frontmost_after_1_second = function()
         local world = start_bounce_world()
-        expect.equal(default_timing().application_focus_timeout_seconds, 1)
+        expect.equal(fake_worlds.create_default_timing().application_focus_timeout_seconds, 1)
         world.applications[VS_CODE].activation_delay_seconds = math.huge
         local state = show_presentations_desktop(PRESENTATIONS)
         world.advance(0.95)

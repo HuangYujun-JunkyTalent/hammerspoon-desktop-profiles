@@ -1,5 +1,6 @@
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
+local fake_worlds = require("tests.fake_worlds")
 local track_windows = require("desktop_manager.macos.track_windows")
 
 ---A world with two windows of Safari and one of Word on the desktop 14 of the built-in display,
@@ -19,14 +20,7 @@ local function start_world()
         })
     end
     return fake_hammerspoon.install({
-        screens = {
-            {
-                id = 1,
-                uuid = "BUILTIN-UUID",
-                name = "Built-in Retina Display",
-                frame = { x = 0, y = 25, w = 1440, h = 875 },
-            },
-        },
+        screens = { fake_worlds.build_builtin_screen() },
         displays = { { uuid = "BUILTIN-UUID", space_ids = { 3, 14 }, active_space_id = 3 } },
         applications = {
             { bundle_id = "com.apple.Safari", name = "Safari", is_running = true },

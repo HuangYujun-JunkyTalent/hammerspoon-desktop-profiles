@@ -1,20 +1,10 @@
-local default_settings = require("desktop_manager.default_settings")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
+local fake_worlds = require("tests.fake_worlds")
 local move_windows = require("desktop_manager.macos.move_windows")
 
-local BUILTIN_SCREEN = {
-    id = 1,
-    uuid = "BUILTIN-UUID",
-    name = "Built-in Retina Display",
-    frame = { x = 0, y = 25, w = 1440, h = 875 },
-}
-local DELL_SCREEN = {
-    id = 2,
-    uuid = "DELL-UUID",
-    name = "DELL S2725DS",
-    frame = { x = 1440, y = 0, w = 2560, h = 1415 },
-}
+local BUILTIN_SCREEN = fake_worlds.build_builtin_screen()
+local DELL_SCREEN = fake_worlds.build_dell_screen()
 
 ---A world with three windows of Safari on the desktops 3, 14 and 64 of the built-in display, and a
 ---Dell monitor with the desktops 7 and 8.
@@ -32,10 +22,7 @@ local function start_world()
     end
     return fake_hammerspoon.install({
         screens = { BUILTIN_SCREEN, DELL_SCREEN },
-        displays = {
-            { uuid = BUILTIN_SCREEN.uuid, space_ids = { 3, 14, 64 }, active_space_id = 3 },
-            { uuid = DELL_SCREEN.uuid, space_ids = { 7, 8 }, active_space_id = 7 },
-        },
+        displays = fake_worlds.build_two_displays({ 3, 14, 64 }, { 7, 8 }),
         applications = { { bundle_id = "com.apple.Safari", name = "Safari", is_running = true } },
         windows = windows,
     })
@@ -48,13 +35,9 @@ end
 local function move_and_settle(world, moves)
     local failures, finished_at = nil, nil
     local started_at = world.clock
-    move_windows.move_all(
-        moves,
-        default_settings.create("/fake/state.json").timing,
-        function(result)
-            failures, finished_at = result, world.clock
-        end
-    )
+    move_windows.move_all(moves, fake_worlds.create_default_timing(), function(result)
+        failures, finished_at = result, world.clock
+    end)
     world.advance(5)
     return failures, finished_at and finished_at - started_at
 end

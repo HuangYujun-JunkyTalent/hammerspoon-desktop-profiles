@@ -1,6 +1,5 @@
 local app_switcher = require("desktop_manager.macos.app_switcher")
 local concealment_method = require("desktop_manager.core.concealment_method")
-local default_settings = require("desktop_manager.default_settings")
 local hidden_application_windows = require("desktop_manager.core.hidden_application_windows")
 local list_layout = require("desktop_manager.core.list_layout")
 local list_sizing = require("desktop_manager.core.list_sizing")
@@ -10,6 +9,7 @@ local preview_method = require("desktop_manager.core.preview_method")
 local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
+local fake_worlds = require("tests.fake_worlds")
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
 local profile_controller = require("desktop_manager.macos.profile_controller")
 local profile_state = require("desktop_manager.core.profile_state")
@@ -19,19 +19,8 @@ local tiling_controller = require("window_tiling.macos.tiling_controller")
 local tiling_settings = require("window_tiling.default_settings")
 local title_overflow = require("desktop_manager.core.title_overflow")
 
-local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
-local BUILTIN_SCREEN = {
-    id = 1,
-    uuid = "BUILTIN-UUID",
-    name = "Built-in Retina Display",
-    frame = BUILTIN_FRAME,
-}
-local DELL_SCREEN = {
-    id = 2,
-    uuid = "DELL-UUID",
-    name = "DELL S2725DS",
-    frame = { x = 1440, y = 0, w = 2560, h = 1415 },
-}
+local BUILTIN_SCREEN = fake_worlds.build_builtin_screen()
+local DELL_SCREEN = fake_worlds.build_dell_screen()
 local SETTLE_SECONDS = 30
 local SEARCH_SHORTCUT = "ctrl+alt+cmd space"
 local MONITOR_CONFIGURATION_KEY = "built-in"
@@ -131,14 +120,7 @@ end
 ---@return ProfileController controller
 local function start_world(setting_changes, saved_state)
     local world = fake_hammerspoon.install({
-        screens = {
-            {
-                id = 1,
-                uuid = "BUILTIN-UUID",
-                name = "Built-in Retina Display",
-                frame = BUILTIN_FRAME,
-            },
-        },
+        screens = { fake_worlds.build_builtin_screen() },
         displays = { { uuid = "BUILTIN-UUID", space_ids = { 3, 14, 64 }, active_space_id = 3 } },
         applications = {
             {
@@ -178,7 +160,7 @@ local function start_world(setting_changes, saved_state)
         },
     })
     world.saved_json = saved_state
-    local settings = default_settings.create("/fake/state.json")
+    local settings = fake_worlds.create_default_settings()
     for name, value in pairs(setting_changes or {}) do
         settings[name] = value
     end
@@ -195,18 +177,7 @@ end
 local function start_two_screen_world(builtin_space_ids, dell_space_ids)
     local world = fake_hammerspoon.install({
         screens = { BUILTIN_SCREEN, DELL_SCREEN },
-        displays = {
-            {
-                uuid = BUILTIN_SCREEN.uuid,
-                space_ids = builtin_space_ids,
-                active_space_id = builtin_space_ids[1],
-            },
-            {
-                uuid = DELL_SCREEN.uuid,
-                space_ids = dell_space_ids,
-                active_space_id = dell_space_ids[1],
-            },
-        },
+        displays = fake_worlds.build_two_displays(builtin_space_ids, dell_space_ids),
         applications = {
             { bundle_id = "com.apple.Safari", name = "Safari", is_running = true },
             { bundle_id = "com.microsoft.Word", name = "Microsoft Word", is_running = true },
@@ -235,7 +206,7 @@ local function start_two_screen_world(builtin_space_ids, dell_space_ids)
             },
         },
     })
-    local controller = profile_controller.start(default_settings.create("/fake/state.json"))
+    local controller = profile_controller.start(fake_worlds.create_default_settings())
     return world, controller
 end
 
@@ -885,7 +856,7 @@ return {
     end,
 
     a_monitor_change_during_a_switch_is_restored_after_the_switch = function()
-        local timing = default_settings.create("/fake/state.json").timing
+        local timing = fake_worlds.create_default_timing()
         timing.screen_settle_seconds = 0.5
         local world, controller = start_world({ timing = timing })
         world.hotkeys["1"]()
@@ -1104,7 +1075,7 @@ return {
         local result = "pending"
         mission_control_desktops.show_space(
             12,
-            default_settings.create("/fake/state.json").timing,
+            fake_worlds.create_default_timing(),
             function(error_message)
                 result = error_message or "shown"
             end
@@ -1171,7 +1142,7 @@ return {
         }
         local shortcuts = shortcut_center.new(world.shortcuts_file_path)
         local controller =
-            profile_controller.start(default_settings.create("/fake/state.json"), shortcuts)
+            profile_controller.start(fake_worlds.create_default_settings(), shortcuts)
         tiling_controller.start(tiling_settings.create(), shortcuts)
         shortcuts:check_overrides()
         expect.equal(world.notifications, {})
@@ -1403,7 +1374,7 @@ return {
         })
         world.unwritable_paths[world.shortcuts_file_path] = true
         local controller = profile_controller.start(
-            default_settings.create("/fake/state.json"),
+            fake_worlds.create_default_settings(),
             shortcut_center.new(world.shortcuts_file_path)
         )
         find_menu_item(world, "Keyboard shortcuts…").fn()
@@ -2108,7 +2079,7 @@ return {
     end,
 
     a_monitor_change_during_a_press_of_the_list_is_restored_after_the_press = function()
-        local timing = default_settings.create("/fake/state.json").timing
+        local timing = fake_worlds.create_default_timing()
         timing.screen_settle_seconds = 0.2
         local world, controller = start_world({ timing = timing })
         world.hotkeys["1"]()
@@ -3280,7 +3251,7 @@ return {
         world.screen_watchers[1]()
         world.advance(3.1)
         expect.equal(controller.is_busy, true)
-        world.screens[1].frame = BUILTIN_FRAME
+        world.screens[1].frame = BUILTIN_SCREEN.frame
         world.screen_watchers[1]()
         local is_message_shown_between = false
         for _ = 1, 100 do
@@ -3332,7 +3303,7 @@ return {
     end,
 
     a_switch_that_the_watchdog_stopped_removes_no_desktop = function()
-        local timing = default_settings.create("/fake/state.json").timing
+        local timing = fake_worlds.create_default_timing()
         timing.busy_watchdog_seconds = 0.5
         local world, controller = start_world({ timing = timing })
         world.hotkeys["1"]()
@@ -3454,7 +3425,7 @@ return {
     end,
 
     a_press_holds_its_message_until_accessibility_reaches_the_window = function()
-        local timing = default_settings.create("/fake/state.json").timing
+        local timing = fake_worlds.create_default_timing()
         timing.window_reach_timeout_seconds = 3
         local world, controller = start_world({ list_layout = list_layout.ROWS, timing = timing })
         world.hotkeys["1"]()
@@ -3638,7 +3609,7 @@ return {
 
     the_list_leaves_out_the_windows_of_hidden_applications_by_default = function()
         expect.equal(
-            default_settings.create("/fake/state.json").hidden_application_windows,
+            fake_worlds.create_default_settings().hidden_application_windows,
             hidden_application_windows.LEAVE_OUT
         )
         local world = start_world_with_hidden_applications(hidden_application_windows.LEAVE_OUT)

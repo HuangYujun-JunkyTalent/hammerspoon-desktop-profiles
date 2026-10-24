@@ -1,4 +1,5 @@
 local expect = require("tests.expect")
+local fake_worlds = require("tests.fake_worlds")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 local restore_plan = require("desktop_manager.core.restore_plan")
@@ -19,12 +20,7 @@ local CONFIGURATION = monitor_configuration.describe({
 local function layout_with(space_ids)
     return {
         screens = {
-            {
-                screen_uuid = "BUILTIN-UUID",
-                screen_frame = BUILTIN_FRAME,
-                space_ids = space_ids,
-                active_space_id = space_ids[1],
-            },
+            fake_worlds.describe_screen_desktops("BUILTIN-UUID", BUILTIN_FRAME, space_ids),
         },
         focused_space_id = space_ids[1],
     }
@@ -48,18 +44,12 @@ local TWO_SCREENS = monitor_configuration.describe({
 local function two_screen_layout_with(builtin_space_ids, external_space_ids)
     return {
         screens = {
-            {
-                screen_uuid = "BUILTIN-UUID",
-                screen_frame = BUILTIN_FRAME,
-                space_ids = builtin_space_ids,
-                active_space_id = builtin_space_ids[1],
-            },
-            {
-                screen_uuid = "EXTERNAL-UUID",
-                screen_frame = EXTERNAL_FRAME,
-                space_ids = external_space_ids,
-                active_space_id = external_space_ids[1],
-            },
+            fake_worlds.describe_screen_desktops("BUILTIN-UUID", BUILTIN_FRAME, builtin_space_ids),
+            fake_worlds.describe_screen_desktops(
+                "EXTERNAL-UUID",
+                EXTERNAL_FRAME,
+                external_space_ids
+            ),
         },
         focused_space_id = builtin_space_ids[1],
     }

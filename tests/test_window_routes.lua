@@ -1,4 +1,5 @@
 local expect = require("tests.expect")
+local fake_worlds = require("tests.fake_worlds")
 local window_routes = require("desktop_manager.core.window_routes")
 
 local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
@@ -12,18 +13,8 @@ local ELSEWHERE = { x = 300, y = 200, w = 600, h = 400 }
 local function build_layout()
     return {
         screens = {
-            {
-                screen_uuid = "BUILTIN-UUID",
-                screen_frame = BUILTIN_FRAME,
-                space_ids = { 3, 14, 64 },
-                active_space_id = 3,
-            },
-            {
-                screen_uuid = "EXTERNAL-UUID",
-                screen_frame = EXTERNAL_FRAME,
-                space_ids = { 7, 8 },
-                active_space_id = 7,
-            },
+            fake_worlds.describe_screen_desktops("BUILTIN-UUID", BUILTIN_FRAME, { 3, 14, 64 }),
+            fake_worlds.describe_screen_desktops("EXTERNAL-UUID", EXTERNAL_FRAME, { 7, 8 }),
         },
         focused_space_id = 3,
     }

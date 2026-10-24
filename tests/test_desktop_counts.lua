@@ -1,5 +1,6 @@
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local expect = require("tests.expect")
+local fake_worlds = require("tests.fake_worlds")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 
@@ -25,12 +26,10 @@ local function layout_with(space_ids_by_uuid)
     for _, uuid in ipairs({ "BUILTIN-UUID", "DELL-UUID" }) do
         local space_ids = space_ids_by_uuid[uuid]
         if space_ids then
-            table.insert(screens, {
-                screen_uuid = uuid,
-                screen_frame = BUILTIN.frame,
-                space_ids = space_ids,
-                active_space_id = space_ids[1],
-            })
+            table.insert(
+                screens,
+                fake_worlds.describe_screen_desktops(uuid, BUILTIN.frame, space_ids)
+            )
         end
     end
     return { screens = screens, focused_space_id = screens[1].space_ids[1] }
