@@ -703,6 +703,16 @@ function ProfileController:activate_profile(number)
     self:switch_to_profile(number, name, started_at, work_number)
 end
 
+---The values that the steps of a switch to a profile share.
+---@class RunningSwitch
+---@field number integer the number of the profile
+---@field name string the name of the profile
+---@field busy_text string the message while the switch runs
+---@field configuration MonitorConfiguration the monitor configuration when the switch started
+---@field has_layout boolean whether the profile has a layout for the monitor configuration
+---@field started_at number the time when the switch started, in seconds
+---@field work_number integer the number of the switch, which the watchdog gave
+
 ---Conceals the windows that the profile does not keep, and restores the windows it records.
 ---The unseen windows that the switch acts on come into view by their ids first.
 ---@param number integer
@@ -711,126 +721,23 @@ end
 ---@param work_number integer
 function ProfileController:switch_to_profile(number, name, started_at, work_number)
     local configuration = self:read_monitor_configuration()
-    local busy_text = describe_arranging(name)
-    local function read_arrangement()
-        return profile_state.find_arrangement(self.state, number, configuration.key)
-    end
-    local function list_windows()
-        local windows = self.known_windows:list_managed(
-            profile_state.list_recorded_window_ids(read_arrangement())
-        )
-        self:rename_reopened_windows(windows)
-        return windows
-    end
-    local has_layout = read_arrangement() ~= nil
-    ---@param managed_windows table[]
-    ---@param unreached ServerWindow[]
-    ---@return Arrangement arrangement
-    ---@return WindowMatchResult match_result
-    ---@return SwitchCandidate[] candidates
-    local function mark_windows(managed_windows, unreached)
-        local arrangement = app_pool.keep_managed_records(
-            self.state.app_pool,
-            read_arrangement()
-                or { monitor_configuration_key = configuration.key, monitors = {}, windows = {} }
-        )
-        local match_result, open_windows =
-            self:match_with_unseen(arrangement, managed_windows, unreached)
-        local candidates = has_layout
-                and profile_switch.mark_kept_windows(open_windows, match_result.matches)
-            or profile_switch.mark_kept_windows_for_new_profile(
-                open_windows,
-                profile_state.index_recorded_windows(self.state)
-            )
-        return arrangement, match_result, candidates
-    end
-    local function finish(failures)
-        if not self:end_switch_work(work_number) then
-            return
-        end
-        self:schedule_save()
-        self.log.f(
-            "profile %d is active after %.1f seconds, with %d problems",
-            number,
-            hs.timer.secondsSinceEpoch() - started_at,
-            #failures
-        )
-        self:report_failures(failures)
-    end
-    local function conceal_and_restore(earlier_failures)
-        self:show_busy_message(busy_text)
-        local windows = list_windows()
-        local arrangement, match_result, candidates =
-            mark_windows(windows, self.known_windows:list_unreached_managed(windows))
-        self.window_ids_out_of_sight = {}
-        for _, candidate in ipairs(candidates) do
-            if not candidate.is_kept then
-                self.window_ids_out_of_sight[candidate.window_id] = true
-            end
-        end
-        local concealment =
-            profile_switch.plan_concealment(self.settings.concealment_method, candidates)
-        self.log.f(
-            "switching to profile %d: %d of %d saved windows open, concealing %s",
-            number,
-            #match_result.matches,
-            #arrangement.windows,
-            inspect_on_one_line(concealment)
-        )
-        local window_by_id = track_windows.index_by_id(windows)
-        local failures = concatenate_lists.concatenate(
-            earlier_failures,
-            conceal_windows.apply(concealment, window_by_id)
-        )
-        self.state = profile_state.with_active_profile_number(self.state, number)
-        self:write_state()
-        self:refresh_menu()
-        if not has_layout then
-            hs.alert.show(name)
-            finish(failures)
-            return
-        end
-        retained_timers.after(
-            self.settings.timing.window_settle_seconds,
-            self.watchdog:continue(function()
-                self:open_missing_windows(
-                    number,
-                    match_result.unmatched_records,
-                    function(opening_failures, new_matches)
-                        self:restore_matched_windows(
-                            number,
-                            arrangement,
-                            concatenate_lists.concatenate(match_result.matches, new_matches),
-                            window_by_id,
-                            busy_text,
-                            function(restore_failures, desktops_to_show)
-                                self:show_desktops_and_remove_extra_ones(
-                                    arrangement,
-                                    desktops_to_show,
-                                    function(desktop_failures)
-                                        finish(
-                                            concatenate_lists.concatenate(
-                                                failures,
-                                                opening_failures,
-                                                restore_failures,
-                                                desktop_failures
-                                            )
-                                        )
-                                    end
-                                )
-                            end
-                        )
-                    end
-                )
-            end)
-        )
-    end
-    local windows = list_windows()
+    ---@type RunningSwitch
+    local switch = {
+        number = number,
+        name = name,
+        busy_text = describe_arranging(name),
+        configuration = configuration,
+        has_layout = profile_state.find_arrangement(self.state, number, configuration.key) ~= nil,
+        started_at = started_at,
+        work_number = work_number,
+    }
+    local windows = self:list_switch_windows(switch)
     local unreached = self.known_windows:list_unreached_managed(windows)
-    local arrangement, match_result, candidates = mark_windows(windows, unreached)
+    local arrangement, match_result, candidates =
+        self:mark_switch_windows(switch, windows, unreached)
     local window_ids_to_reach =
         reach_plan.select_concealed(self.settings.concealment_method, unreached, candidates)
-    if has_layout then
+    if switch.has_layout then
         window_ids_to_reach = concatenate_lists.concatenate(
             reach_plan.select_misplaced(
                 unreached,
@@ -842,11 +749,164 @@ function ProfileController:switch_to_profile(number, name, started_at, work_numb
         )
     end
     local windows_to_reach = reach_plan.keep_windows_of_ids(unreached, window_ids_to_reach)
-    if not has_layout and #windows_to_reach == 0 then
-        conceal_and_restore({})
+    if not switch.has_layout and #windows_to_reach == 0 then
+        self:conceal_and_restore(switch, {})
         return
     end
-    self:bring_into_view(arrangement, windows_to_reach, conceal_and_restore)
+    self:bring_into_view(arrangement, windows_to_reach, function(failures)
+        self:conceal_and_restore(switch, failures)
+    end)
+end
+
+---@param switch RunningSwitch
+---@return Arrangement|nil the arrangement of the profile for the monitor configuration of the
+---switch, read at each call, because the rename of reopened windows changes its records
+function ProfileController:read_switch_arrangement(switch)
+    return profile_state.find_arrangement(self.state, switch.number, switch.configuration.key)
+end
+
+---@param switch RunningSwitch
+---@return table[] the hs.window objects of the managed applications, after the rename of the
+---reopened windows
+function ProfileController:list_switch_windows(switch)
+    local windows = self.known_windows:list_managed(
+        profile_state.list_recorded_window_ids(self:read_switch_arrangement(switch))
+    )
+    self:rename_reopened_windows(windows)
+    return windows
+end
+
+---@param switch RunningSwitch
+---@param managed_windows table[]
+---@param unreached ServerWindow[]
+---@return Arrangement arrangement
+---@return WindowMatchResult match_result
+---@return SwitchCandidate[] candidates
+function ProfileController:mark_switch_windows(switch, managed_windows, unreached)
+    local arrangement = app_pool.keep_managed_records(
+        self.state.app_pool,
+        self:read_switch_arrangement(switch)
+            or { monitor_configuration_key = switch.configuration.key, monitors = {}, windows = {} }
+    )
+    local match_result, open_windows =
+        self:match_with_unseen(arrangement, managed_windows, unreached)
+    local candidates = switch.has_layout
+            and profile_switch.mark_kept_windows(open_windows, match_result.matches)
+        or profile_switch.mark_kept_windows_for_new_profile(
+            open_windows,
+            profile_state.index_recorded_windows(self.state)
+        )
+    return arrangement, match_result, candidates
+end
+
+---@param switch RunningSwitch
+---@param failures string[]
+function ProfileController:finish_switch(switch, failures)
+    if not self:end_switch_work(switch.work_number) then
+        return
+    end
+    self:schedule_save()
+    self.log.f(
+        "profile %d is active after %.1f seconds, with %d problems",
+        switch.number,
+        hs.timer.secondsSinceEpoch() - switch.started_at,
+        #failures
+    )
+    self:report_failures(failures)
+end
+
+---Takes the windows that the profile does not keep out of sight, makes the profile active, and
+---restores its layout when it has one.
+---@param switch RunningSwitch
+---@param earlier_failures string[] the failures of the way into view
+function ProfileController:conceal_and_restore(switch, earlier_failures)
+    self:show_busy_message(switch.busy_text)
+    local windows = self:list_switch_windows(switch)
+    local arrangement, match_result, candidates = self:mark_switch_windows(
+        switch,
+        windows,
+        self.known_windows:list_unreached_managed(windows)
+    )
+    self.window_ids_out_of_sight = {}
+    for _, candidate in ipairs(candidates) do
+        if not candidate.is_kept then
+            self.window_ids_out_of_sight[candidate.window_id] = true
+        end
+    end
+    local concealment =
+        profile_switch.plan_concealment(self.settings.concealment_method, candidates)
+    self.log.f(
+        "switching to profile %d: %d of %d saved windows open, concealing %s",
+        switch.number,
+        #match_result.matches,
+        #arrangement.windows,
+        inspect_on_one_line(concealment)
+    )
+    local window_by_id = track_windows.index_by_id(windows)
+    local failures = concatenate_lists.concatenate(
+        earlier_failures,
+        conceal_windows.apply(concealment, window_by_id)
+    )
+    self.state = profile_state.with_active_profile_number(self.state, switch.number)
+    self:write_state()
+    self:refresh_menu()
+    if not switch.has_layout then
+        hs.alert.show(switch.name)
+        self:finish_switch(switch, failures)
+        return
+    end
+    retained_timers.after(
+        self.settings.timing.window_settle_seconds,
+        self.watchdog:continue(function()
+            self:restore_profile_layout(switch, arrangement, match_result, window_by_id, failures)
+        end)
+    )
+end
+
+---Opens the new windows of the missing records, brings the windows to their recorded places, shows
+---the recorded desktops and removes the desktops beyond the numbers of the arrangement.
+---@param switch RunningSwitch
+---@param arrangement Arrangement
+---@param match_result WindowMatchResult
+---@param window_by_id table<integer, table> the hs.window of each window id of the switch
+---@param earlier_failures string[] the failures of the way into view and of the concealment
+function ProfileController:restore_profile_layout(
+    switch,
+    arrangement,
+    match_result,
+    window_by_id,
+    earlier_failures
+)
+    self:open_missing_windows(
+        switch.number,
+        match_result.unmatched_records,
+        function(opening_failures, new_matches)
+            self:restore_matched_windows(
+                switch.number,
+                arrangement,
+                concatenate_lists.concatenate(match_result.matches, new_matches),
+                window_by_id,
+                switch.busy_text,
+                function(restore_failures, desktops_to_show)
+                    self:show_desktops_and_remove_extra_ones(
+                        arrangement,
+                        desktops_to_show,
+                        function(desktop_failures)
+                            self:finish_switch(
+                                switch,
+                                concatenate_lists.concatenate(
+                                    earlier_failures,
+                                    opening_failures,
+                                    restore_failures,
+                                    desktop_failures
+                                )
+                            )
+                        end
+                    )
+                end
+            )
+        end
+    )
 end
 
 function ProfileController:deactivate_profile()
