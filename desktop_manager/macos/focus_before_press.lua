@@ -33,8 +33,7 @@ function focus_before_press.find_window_to_focus(chosen, space_id)
     if not application then
         return nil
     end
-    local frontmost = hs.application.frontmostApplication()
-    if frontmost and track_windows.bundle_id_of(frontmost) == chosen.bundle_id then
+    if focus_before_press.is_frontmost(chosen.bundle_id) then
         return nil
     end
     if application:isHidden() then

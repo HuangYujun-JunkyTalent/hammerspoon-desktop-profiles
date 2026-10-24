@@ -311,14 +311,9 @@ function app_switcher.describe_application(
     end
     table.sort(window_ids)
     local first_window_id = windows[1] and windows[1]:id()
-    local frontmost = hs.application.frontmostApplication()
+    local is_application_frontmost = focus_before_press.is_frontmost(entry.bundle_id)
     local focused = hs.window.focusedWindow()
-    if
-        frontmost
-        and focused
-        and track_windows.bundle_id_of(frontmost) == entry.bundle_id
-        and window_by_id[focused:id()]
-    then
+    if is_application_frontmost and focused and window_by_id[focused:id()] then
         first_window_id = app_numbers.find_next_window_id(window_ids, focused:id())
     end
     local switch_windows, first_window_index = {}, 0
