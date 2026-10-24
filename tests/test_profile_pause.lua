@@ -147,6 +147,14 @@ return {
         expect.equal(login, { time = reading_time - 90, seconds_since = 90 })
     end,
 
+    a_login_in_the_second_of_the_reading_lies_in_the_year_of_the_reading = function()
+        local reading_time = os.time({ year = 2027, month = 1, day = 1, hour = 0, min = 0 })
+        local login = profile_pause.parse_login(
+            "jane\n" .. reading_time .. "\njane             console      Jan  1 00:00 \n"
+        )
+        expect.equal(login, { time = reading_time, seconds_since = 0 })
+    end,
+
     an_output_without_a_console_line_of_the_user_gives_no_login = function()
         expect.equal(profile_pause.parse_login(nil), nil)
         expect.equal(profile_pause.parse_login(""), nil)
@@ -154,6 +162,12 @@ return {
         expect.equal(
             profile_pause.parse_login(
                 "jane\n1791162000\nalex             console      Oct  4 20:59 \n"
+            ),
+            nil
+        )
+        expect.equal(
+            profile_pause.parse_login(
+                "jane\n1791162000\njane             console      Okt  4 20:59 \n"
             ),
             nil
         )
