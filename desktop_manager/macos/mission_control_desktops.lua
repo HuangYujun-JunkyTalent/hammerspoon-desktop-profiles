@@ -867,6 +867,8 @@ local function run_opening(edits, space_id, find_keeping_window, timing, chosen_
             end)
         end, function(error_message)
             if focus then
+                -- A focus needs a chosen window, which only show_space gives, with a desktop.
+                ---@cast space_id integer
                 log_failure_after_focus(describe_desktop(space_id), focus, error_message)
             end
             on_done({ error_message })

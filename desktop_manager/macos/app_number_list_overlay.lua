@@ -666,7 +666,8 @@ local function fit_to_screen(view, images, settings, screen)
             best_scale, best_context = scale, context
         end
     end
-    return best_context
+    -- The loop runs at least once, and its first run sets the context.
+    return best_context --[[@as DrawingContext]]
 end
 
 ---@param overlay AppNumberListOverlay

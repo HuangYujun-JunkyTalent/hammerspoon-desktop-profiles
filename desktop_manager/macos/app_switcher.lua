@@ -242,7 +242,7 @@ end
 function app_switcher.unhide_application(entry, recorded_window_ids, context, on_done)
     local application = track_windows.find_running_application(entry.bundle_id)
     local windows = application and application:allWindows() or {}
-    if #windows == 0 then
+    if not application or #windows == 0 then
         app_switcher.switch_to_selection(entry, nil, recorded_window_ids, context, on_done)
         return
     end
@@ -282,6 +282,8 @@ function app_switcher.unhide_application(entry, recorded_window_ids, context, on
                 on_done(error_message)
                 return
             end
+            -- The press ends without an error only after a window became standard.
+            ---@cast shown_window table
             app_switcher.bring_to_front(shown_window, context, on_done)
         end
     )

@@ -1152,7 +1152,8 @@ end
 ---Gives the paused profile the default numbers of its record for the monitor configuration, and
 ---keeps its numbers when it has no record for the configuration.
 function ProfileController:give_paused_profile_default_numbers()
-    local number = self.state.active_profile_number
+    -- A paused profile is the active profile.
+    local number = self.state.active_profile_number --[[@as integer]]
     local configuration = self:read_monitor_configuration()
     local arrangement = profile_state.find_arrangement(self.state, number, configuration.key)
     if arrangement then
@@ -1337,6 +1338,7 @@ function ProfileController:show_space(space_id, after_shown, on_done, chosen_win
     local slot = location
         and monitor_configuration.find_slot_of_screen(configuration, location.screen.screen_uuid)
     local text = slot
+            and location
             and busy_message.describe_showing_desktop(location.desktop_number, slot.slot_key)
         or "Showing another desktop… please wait"
     self:run_press(text, function(on_pressed)
@@ -1345,7 +1347,7 @@ function ProfileController:show_space(space_id, after_shown, on_done, chosen_win
                 on_pressed(error_message)
                 return
             end
-            if slot then
+            if slot and location then
                 self:record_shown_desktop(configuration.key, slot.slot_key, location.desktop_number)
             end
             run_after_shown(on_pressed)
@@ -1519,7 +1521,7 @@ function ProfileController:run_url_command(params)
         app_number_count = self.settings.app_number_count,
     })
     if not command then
-        notify(error_message)
+        notify(error_message --[[@as string]])
         return
     end
     local handle = URL_ACTION_HANDLERS[command.action]
@@ -1856,12 +1858,15 @@ function ProfileController:pause_at_start(reading)
     if reading.login then
         self.state = profile_state.with_last_seen_login_time(self.state, reading.login.time)
     end
+    -- A due pause and a kept pause both need an active profile.
     if is_due then
         self.state = profile_state.with_active_profile_paused(self.state)
         self:write_state()
-        self.log.i(profile_pause.describe_start_pause(number, reading, pause_seconds))
+        self.log.i(
+            profile_pause.describe_start_pause(number --[[@as integer]], reading, pause_seconds)
+        )
     elseif self.state.is_active_profile_paused then
-        self.log.i(profile_pause.describe_kept_pause(number))
+        self.log.i(profile_pause.describe_kept_pause(number --[[@as integer]]))
     end
 end
 

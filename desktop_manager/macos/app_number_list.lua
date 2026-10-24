@@ -365,6 +365,8 @@ function AppNumberList:go_to_selection()
         return
     end
     local entry = app_numbers.find_by_number(session.entries, session.selection.number)
+    -- The session numbers one application per entry, so the selected number has an entry.
+    ---@cast entry AppNumber
     local window_id =
         app_number_list_view.find_selected_window_id(session.applications, session.selection)
     local function report(error_message)

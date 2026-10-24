@@ -176,6 +176,7 @@ local function go_to_selection(panel)
         app_switcher.bring_to_front(window, panel.context.switcher, report)
         return
     end
+    ---@cast unreached ServerWindow
     app_switcher.reach_window(unreached, panel.context.switcher, report)
 end
 

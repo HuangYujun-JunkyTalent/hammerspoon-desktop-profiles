@@ -89,7 +89,7 @@ local function fit_grid(count, area, text_height, aspect, max_width)
     return best_columns, best_size
 end
 
----@param view SearchView
+---@param view { windows: SearchViewWindow[], applications: SearchViewApplication[] }
 ---@param settings SearchOverlaySettings
 ---@param screen table the frame of the screen in front
 ---@return SearchLayout
@@ -375,7 +375,7 @@ local function draw_applications(elements, applications, images, layout)
         }
         local color, backdrop_id = choose_application_backdrop(application, layout.colors)
         if color then
-            table.insert(elements, build_backdrop(frame, color, backdrop_id))
+            table.insert(elements, build_backdrop(frame, color, backdrop_id --[[@as string]]))
         end
         local image = build_image(images.app_icons[application.bundle_id], {
             x = frame.x,

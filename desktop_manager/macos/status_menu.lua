@@ -43,7 +43,12 @@ local function build_app_number_items(profile, app_number_count, actions)
                     title = string.format("Give %d to %s", app_number, front_name or "—"),
                     disabled = front_bundle_id == nil,
                     fn = function()
-                        actions.choose_app_number(app_number, front_bundle_id, front_name)
+                        -- The item is disabled while no application is in front.
+                        actions.choose_app_number(
+                            app_number,
+                            front_bundle_id --[[@as string]],
+                            front_name --[[@as string]]
+                        )
                     end,
                 },
                 {

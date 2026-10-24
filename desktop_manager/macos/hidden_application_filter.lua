@@ -138,6 +138,8 @@ local function list_windows_of_hidden_applications(hidden)
     return windows
 end
 
+---@alias JoiningTest fun(window: table): boolean
+
 ---What each value of hidden_application_windows does in the list and the search.
 ---`keeps_found` says whether a window of the application that the window filter or the list of the
 ---window server found stays.
@@ -150,7 +152,7 @@ end
 ---@field keeps_found fun(hidden: HiddenApplications, bundle_id: string, application: table|nil):
 ---boolean
 ---@field select_joining_test fun(hidden: HiddenApplications, bundle_id: string,
----application: table|nil): (fun(window: table): boolean)|nil
+---application: table|nil): JoiningTest|nil
 ---@field list_unfiltered_windows fun(hidden: HiddenApplications): table[]
 ---@field marks_hidden fun(hidden: HiddenApplications, bundle_id: string,
 ---application: table|nil): boolean
@@ -259,12 +261,14 @@ function hidden_application_filter.list_windows(bundle_id, filter_windows, hidde
         add(window)
     end
     local application = track_windows.find_running_application(bundle_id)
-    local joins = application
-        and HIDDEN_WINDOWS_RULES[hidden.setting].select_joining_test(hidden, bundle_id, application)
-    if joins then
-        for _, window in ipairs(application:allWindows()) do
-            if joins(window) then
-                add(window)
+    if application then
+        local joins =
+            HIDDEN_WINDOWS_RULES[hidden.setting].select_joining_test(hidden, bundle_id, application)
+        if joins then
+            for _, window in ipairs(application:allWindows()) do
+                if joins(window) then
+                    add(window)
+                end
             end
         end
     end
