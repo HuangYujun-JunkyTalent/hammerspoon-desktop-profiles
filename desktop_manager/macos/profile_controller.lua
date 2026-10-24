@@ -556,19 +556,19 @@ function ProfileController:open_missing_windows(number, unmatched_records, on_do
     open_missing_windows.open_all(
         number,
         unmatched_records,
-        self:opening_context(),
-        function(opening)
-            if #opening.renames > 0 then
-                self.state = profile_state.rename_windows(self.state, opening.renames)
+        self:new_windows_context(),
+        function(result)
+            if #result.renames > 0 then
+                self.state = profile_state.rename_windows(self.state, result.renames)
                 self:write_state()
             end
-            on_done(opening.failures, opening.new_matches)
+            on_done(result.failures, result.new_matches)
         end
     )
 end
 
----@return OpeningContext
-function ProfileController:opening_context()
+---@return NewWindowsContext
+function ProfileController:new_windows_context()
     return {
         timing = self.settings.timing,
         log = self.log,
@@ -853,7 +853,7 @@ function ProfileController:restore_profile_layout(
     self:open_missing_windows(
         switch.number,
         match_result.unmatched_records,
-        function(opening_failures, new_matches)
+        function(new_window_failures, new_matches)
             self:restore_matched_windows(
                 switch.number,
                 arrangement,
@@ -870,7 +870,7 @@ function ProfileController:restore_profile_layout(
                                 switch,
                                 concatenate_lists.concatenate(
                                     earlier_failures,
-                                    opening_failures,
+                                    new_window_failures,
                                     restore_failures,
                                     desktop_failures
                                 )

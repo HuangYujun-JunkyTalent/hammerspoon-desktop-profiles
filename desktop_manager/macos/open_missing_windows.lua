@@ -8,7 +8,7 @@ local unmatched_window_action = require("desktop_manager.core.unmatched_window_a
 ---`unmatched_window_action`.
 local open_missing_windows = {}
 
----@class OpeningContext
+---@class NewWindowsContext
 ---@field timing Timing
 ---@field log table an hs.logger
 ---@field read_monitor_configuration fun(): MonitorConfiguration
@@ -17,7 +17,7 @@ local open_missing_windows = {}
 ---@field action string a value of unmatched_window_action
 
 ---The windows that a switch opened for its missing records.
----@class MissingWindowOpening
+---@class NewWindowsResult
 ---@field failures string[]
 ---@field new_matches WindowMatch[] the records and their new windows, which the restore moves to
 ---their recorded places
@@ -31,8 +31,8 @@ local open_missing_windows = {}
 ---A record whose window sits on a desktop that Hammerspoon has not seen keeps that window.
 ---@param number integer the profile of the switch
 ---@param unmatched_records WindowRecord[]
----@param context OpeningContext
----@param on_done fun(opening: MissingWindowOpening)
+---@param context NewWindowsContext
+---@param on_done fun(result: NewWindowsResult)
 function open_missing_windows.open_all(number, unmatched_records, context, on_done)
     local missing_records = {}
     local classified =
