@@ -205,16 +205,16 @@ end
 ---@param initial_window_id integer|nil
 ---@return WindowSearch
 function window_search.start(entries, number_by_bundle_id, initial_window_id)
-    return update_view(
-        rank({
-            entries = entries,
-            number_by_bundle_id = number_by_bundle_id,
-            applications = group_applications(entries, number_by_bundle_id),
-            initial_window_id = initial_window_id,
-            text = "",
-        }),
-        nil
-    )
+    -- rank and update_view fill the other fields of the search.
+    local unranked = {
+        entries = entries,
+        number_by_bundle_id = number_by_bundle_id,
+        applications = group_applications(entries, number_by_bundle_id),
+        initial_window_id = initial_window_id,
+        text = "",
+    }
+    ---@cast unranked WindowSearch
+    return update_view(rank(unranked), nil)
 end
 
 ---Takes a new list of the windows, as when the window server reports windows that accessibility

@@ -107,8 +107,10 @@ end
 ---@param selection AppNumberListSelection|nil
 ---@return integer|nil the id of the selected window, or nil when the application has no window
 function app_number_list_view.find_selected_window_id(applications, selection)
-    local application = selection
-        and app_number_list_view.find_application(applications, selection.number)
+    if not selection then
+        return nil
+    end
+    local application = app_number_list_view.find_application(applications, selection.number)
     local window = application and application.windows[selection.window_index]
     return window and window.window_id or nil
 end
@@ -130,6 +132,17 @@ function app_number_list_view.scroll_title(title, step, visible_count)
     return table.concat(visible)
 end
 
+---@param application NumberedApplication
+---@param selection AppNumberListSelection|nil
+---@return integer|nil the index of the selected window of the application, 0 when the application
+---itself is selected, or nil when the selection lies on another application
+local function find_selected_window_index(application, selection)
+    if selection and selection.number == application.number then
+        return selection.window_index
+    end
+    return nil
+end
+
 ---The lines of the list: each application with its number, and under it the titles of its windows.
 ---@param applications NumberedApplication[]
 ---@param selection AppNumberListSelection|nil
@@ -138,11 +151,11 @@ end
 function app_number_list_view.describe_lines(applications, selection, max_title_length)
     local lines = {}
     for _, application in ipairs(applications) do
-        local is_selected_application = selection ~= nil and selection.number == application.number
+        local selected_window_index = find_selected_window_index(application, selection)
         table.insert(lines, {
             text = string.format("%d   %s", application.number, application.app_name),
             is_application = true,
-            is_selected = is_selected_application and selection.window_index == 0,
+            is_selected = selected_window_index == 0,
             bundle_id = application.bundle_id,
         })
         local note = app_number_list_view.describe_note(application)
@@ -158,7 +171,7 @@ function app_number_list_view.describe_lines(applications, selection, max_title_
             table.insert(lines, {
                 text = utf8_text.shorten(window_titles.describe(window.title), max_title_length),
                 is_application = false,
-                is_selected = is_selected_application and selection.window_index == index,
+                is_selected = selected_window_index == index,
                 bundle_id = application.bundle_id,
                 window_id = window.window_id,
             })
@@ -172,14 +185,14 @@ end
 ---@param is_in_column fun(window: NumberedApplicationWindow): boolean
 ---@return AppNumberListColumn
 local function build_column(application, selection, is_in_column)
-    local is_selected_application = selection ~= nil and selection.number == application.number
+    local selected_window_index = find_selected_window_index(application, selection)
     local cells = {}
     for index, window in ipairs(application.windows) do
         if is_in_column(window) then
             table.insert(cells, {
                 window_id = window.window_id,
                 title = window_titles.describe(window.title),
-                is_selected = is_selected_application and selection.window_index == index,
+                is_selected = selected_window_index == index,
             })
         end
     end
@@ -187,7 +200,7 @@ local function build_column(application, selection, is_in_column)
         number = application.number,
         app_name = application.app_name,
         bundle_id = application.bundle_id,
-        is_selected = is_selected_application and selection.window_index == 0,
+        is_selected = selected_window_index == 0,
         cells = cells,
         note = app_number_list_view.describe_note(application),
     }

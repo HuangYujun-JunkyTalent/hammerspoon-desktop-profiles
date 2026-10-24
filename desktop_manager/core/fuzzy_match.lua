@@ -43,6 +43,7 @@ local function is_word_start(previous, character)
     if not is_word_character(previous) then
         return true
     end
+    ---@cast previous string
     if previous:match("^%l$") and character:match("^%u$") then
         return true
     end

@@ -108,7 +108,7 @@ function desktop_counts.plan_removals(
     for _, screen in ipairs(desktop_layout.screens) do
         local slot = monitor_configuration.find_slot_of_screen(configuration, screen.screen_uuid)
         local count = slot and count_by_slot[slot.slot_key]
-        if count and #screen.space_ids > count then
+        if slot and count and #screen.space_ids > count then
             local removal = {
                 screen_uuid = screen.screen_uuid,
                 slot_key = slot.slot_key,
