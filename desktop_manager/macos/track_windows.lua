@@ -63,6 +63,19 @@ function track_windows.describe(window)
     )
 end
 
+---Reads the application of the window, its bundle id, whether the window is minimized and whether
+---the application is hidden, in that order.
+---@param window table an hs.window
+---@return LiveWindowState
+function track_windows.read_window_state(window)
+    local application = window:application()
+    return {
+        bundle_id = track_windows.bundle_id_of(application),
+        is_minimized = window:isMinimized(),
+        is_app_hidden = application ~= nil and application:isHidden(),
+    }
+end
+
 ---@param window table an hs.window
 ---@return WindowObservation
 function track_windows.observe(window)

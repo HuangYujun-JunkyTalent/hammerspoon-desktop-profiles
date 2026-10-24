@@ -196,17 +196,16 @@ local function describe_open_windows(windows)
     for _, window in ipairs(windows) do
         local window_id = window:id()
         if window_id then
-            local application = window:application()
-            local bundle_id = track_windows.bundle_id_of(application)
+            local state = track_windows.read_window_state(window)
             table.insert(open_windows, {
                 window_id = window_id,
-                bundle_id = bundle_id,
-                is_minimized = window:isMinimized(),
-                is_app_hidden = application ~= nil and application:isHidden(),
+                bundle_id = state.bundle_id,
+                is_minimized = state.is_minimized,
+                is_app_hidden = state.is_app_hidden,
             })
             table.insert(
                 live_windows,
-                { window_id = window_id, bundle_id = bundle_id, title = window:title() or "" }
+                { window_id = window_id, bundle_id = state.bundle_id, title = window:title() or "" }
             )
         end
     end
@@ -487,12 +486,7 @@ function ProfileController:restore_matched_windows(
     for _, match in ipairs(matches) do
         local window = find_window(match.window_id)
         if window then
-            local application = window:application()
-            live_states[match.window_id] = {
-                bundle_id = track_windows.bundle_id_of(application),
-                is_minimized = window:isMinimized(),
-                is_app_hidden = application ~= nil and application:isHidden(),
-            }
+            live_states[match.window_id] = track_windows.read_window_state(window)
         end
     end
     local plan = restore_plan.plan(
