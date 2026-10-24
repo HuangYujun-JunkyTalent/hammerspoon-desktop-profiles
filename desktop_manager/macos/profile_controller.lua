@@ -1835,8 +1835,11 @@ end
 
 ---Pauses the active profile at the first start of Hammerspoon soon after the start of macOS, and
 ---names the pause in the console, also when the state file kept it from an earlier start.
----The state file keeps the start of macOS that this start saw, so that a later start under the same
+---The state keeps the start of macOS that this start saw, so that a later start under the same
 ---start of macOS pauses nothing.
+---The state file takes it with the pause, or else with the next write, because a later start
+---before that write reads the same state file at a later time since the start of macOS, and so
+---pauses nothing that this start left unpaused, unless the setting changed in between.
 ---@param macos_start_time integer|nil the start of macOS in seconds since 1970, or nil when unknown
 ---@param seconds_since_macos_start number
 function ProfileController:pause_at_start(macos_start_time, seconds_since_macos_start)
@@ -1848,21 +1851,15 @@ function ProfileController:pause_at_start(macos_start_time, seconds_since_macos_
         seconds_since_macos_start,
         pause_seconds
     )
-    local is_new_macos_start = macos_start_time ~= nil
-        and macos_start_time ~= self.state.last_seen_macos_start_time
-    if is_new_macos_start then
-        self.state = profile_state.with_last_seen_macos_start_time(self.state, macos_start_time)
-    end
+    self.state = profile_state.with_last_seen_macos_start_time(self.state, macos_start_time)
     if is_due then
         self.state = profile_state.with_active_profile_paused(self.state)
+        self:write_state()
         self.log.i(
             profile_pause.describe_start_pause(number, seconds_since_macos_start, pause_seconds)
         )
     elseif self.state.is_active_profile_paused then
         self.log.i(profile_pause.describe_kept_pause(number))
-    end
-    if is_due or is_new_macos_start then
-        self:write_state()
     end
 end
 
