@@ -240,7 +240,6 @@ function fake_hammerspoon.install(spec)
         focused_window_reads = {},
         on_mission_control_open = nil,
         window_levels = { overlay = 102, screenSaver = 1000 },
-        window_list_runs = 0,
     }
     current_world = world
 
@@ -1003,25 +1002,6 @@ function fake_hammerspoon.install(spec)
         return texts
     end
 
-    ---The texts of the list on the screen, each after the mark of the rectangle behind it, such as
-    ---"selection" or "match-strong", or after "faded" for a faded text, or after "plain".
-    ---@return string[]|nil
-    function world.read_overlay_marks()
-        if not world.overlay or not world.overlay.is_visible then
-            return nil
-        end
-        local texts, mark = {}, nil
-        for _, element in ipairs(world.overlay.elements) do
-            if element.type == "rectangle" and element.frame and not element.trackMouseByBounds then
-                mark = element.id
-            elseif element.type == "text" then
-                table.insert(texts, (mark or element.id or "plain") .. " " .. element.text)
-                mark = nil
-            end
-        end
-        return texts
-    end
-
     ---The parts of the panel of the search on the screen: the two texts of the search line, the
     ---note without windows, and each preview and each application as its mark and its texts.
     ---The mark is the id of the rectangle behind the item, such as "selection", "hovered" or
@@ -1561,7 +1541,6 @@ function fake_hammerspoon.install(spec)
                 local task = {}
                 function task:start()
                     if path == OSASCRIPT_PATH then
-                        world.window_list_runs = world.window_list_runs + 1
                         new_timer(0.2, function()
                             callback(0, SERVER_WINDOWS_OUTPUT, "")
                         end, false)
