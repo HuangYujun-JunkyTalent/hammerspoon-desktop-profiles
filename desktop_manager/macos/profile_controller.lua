@@ -14,11 +14,10 @@ local list_known_windows = require("desktop_manager.macos.list_known_windows")
 local list_layout = require("desktop_manager.core.list_layout")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
-local missing_windows = require("desktop_manager.core.missing_windows")
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
-local new_windows = require("desktop_manager.macos.new_windows")
+local open_missing_windows = require("desktop_manager.macos.open_missing_windows")
 local preview_method = require("desktop_manager.core.preview_method")
 local profile_state = require("desktop_manager.core.profile_state")
 local profile_switch = require("desktop_manager.core.profile_switch")
@@ -39,7 +38,6 @@ local status_menu = require("desktop_manager.macos.status_menu")
 local switch_list = require("desktop_manager.core.switch_list")
 local switch_overlay = require("desktop_manager.macos.switch_overlay")
 local track_windows = require("desktop_manager.macos.track_windows")
-local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 local url_command = require("desktop_manager.core.url_command")
 local window_matching = require("desktop_manager.core.window_matching")
 local window_inventory = require("desktop_manager.macos.window_inventory")
@@ -584,95 +582,40 @@ function ProfileController:restore_open_windows(number, saved_arrangement, busy_
     )
 end
 
----Gives each record in sight whose window no longer exists a new window of its application, and
----writes the new window ids into the records of every profile.
----A new window opens on the desktop that shows, and the restore moves it to its recorded desktop
----by its frame and its id, through the new matches that `on_done` receives.
----Under `unmatched_window_action.FORGET`, no window opens, and the update after the switch drops
----the records.
----A record whose window sits on a desktop that Hammerspoon has not seen keeps that window.
+---Opens the new windows of the records in sight whose windows no longer exist, as
+---`open_missing_windows.open_all` says, and writes the new window ids into the records of every
+---profile before `on_done`.
 ---@param number integer
 ---@param unmatched_records WindowRecord[]
 ---@param on_done fun(failures: string[], new_matches: WindowMatch[])
 function ProfileController:open_missing_windows(number, unmatched_records, on_done)
-    local missing_records = {}
-    local classified =
-        missing_windows.classify_unmatched(unmatched_records, read_desktops.find_window_space_id)
-    for _, unmatched in ipairs(classified) do
-        local record = unmatched.record
-        if unmatched.kind == missing_windows.UNMATCHED_KIND.OUT_OF_SIGHT then
-            self.log.f(
-                "%s window %q is recorded out of sight and gone",
-                record.app_name,
-                record.title
-            )
-        elseif unmatched.kind == missing_windows.UNMATCHED_KIND.ON_UNSEEN_DESKTOP then
-            self.log.f(
-                "%s window %q stays on desktop %d, where Hammerspoon has not seen it",
-                record.app_name,
-                record.title,
-                unmatched.space_id
-            )
-        else
-            table.insert(missing_records, record)
-        end
-    end
-    if self.settings.unmatched_window_action == unmatched_window_action.FORGET then
-        for _, record in ipairs(missing_records) do
-            self.log.f(
-                "profile %d: %s window %q is gone, and the profile forgets it",
-                number,
-                record.app_name,
-                record.title
-            )
-        end
-        on_done({}, {})
-        return
-    end
-    local plan = missing_windows.plan(
-        missing_records,
-        self:read_monitor_configuration(),
-        read_desktops.read_desktop_layout()
-    )
-    for _, record in ipairs(plan.unplaced_records) do
-        self.log.f("%s window %q has no recorded desktop here", record.app_name, record.title)
-    end
-    local session = new_windows.start_session(self.settings.timing)
-    local failures, renames, new_matches = {}, {}, {}
-    local function open_next(index)
-        local missing_window = plan.missing_windows[index]
-        if not missing_window then
-            if #renames > 0 then
-                self.state = profile_state.rename_windows(self.state, renames)
+    open_missing_windows.open_all(
+        number,
+        unmatched_records,
+        self:opening_context(),
+        function(opening)
+            if #opening.renames > 0 then
+                self.state = profile_state.rename_windows(self.state, opening.renames)
                 self:write_state()
             end
-            on_done(failures, new_matches)
-            return
+            on_done(opening.failures, opening.new_matches)
         end
-        local record = missing_window.record
-        session:provide_window(
-            record,
-            self.watchdog:continue(function(window, error_message)
-                if not window then
-                    table.insert(failures, error_message)
-                else
-                    self.log.f(
-                        "profile %d: %s window %q is now window %d",
-                        number,
-                        record.app_name,
-                        record.title,
-                        window:id()
-                    )
-                    table.insert(new_matches, { window_id = window:id(), record = record })
-                    if record.window_id then
-                        table.insert(renames, profile_state.rename_of(record, window:id()))
-                    end
-                end
-                open_next(index + 1)
-            end)
-        )
-    end
-    open_next(1)
+    )
+end
+
+---@return OpeningContext
+function ProfileController:opening_context()
+    return {
+        timing = self.settings.timing,
+        log = self.log,
+        read_monitor_configuration = function()
+            return self:read_monitor_configuration()
+        end,
+        continue = function(callback)
+            return self.watchdog:continue(callback)
+        end,
+        action = self.settings.unmatched_window_action,
+    }
 end
 
 ---@return ReachContext
