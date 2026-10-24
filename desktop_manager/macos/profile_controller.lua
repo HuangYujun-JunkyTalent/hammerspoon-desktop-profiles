@@ -10,6 +10,7 @@ local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
+local list_known_windows = require("desktop_manager.macos.list_known_windows")
 local list_layout = require("desktop_manager.core.list_layout")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
@@ -81,8 +82,7 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---@field switch_session SwitchSession|nil the list of applications while it shows
 ---@field search_panel SearchPanel|nil the panel of the search of the windows while it shows
 ---@field window_inventory WindowInventory the windows that accessibility does not reach
----@field reached_windows table<integer, table> the hs.window of each window that a reach moved into
----view, until the window filter lists it
+---@field known_windows KnownWindows the windows that Hammerspoon knows
 ---@field are_snapshots_stopped boolean whether a slow snapshot stopped the snapshots until a reload
 ---@field hidden_states HiddenStates whether each application that the list or the search asked
 ---about is hidden
@@ -213,78 +213,6 @@ local function describe_open_windows(windows)
     return open_windows, live_windows
 end
 
----Some windows of macOS report the window id 0, such as one of Control Center.
----@param window table an hs.window
----@return boolean
-local function has_valid_id(window)
-    local window_id = window:id()
-    return window_id ~= nil and window_id > 0
-end
-
----@param windows table[] hs.window objects
----@return table[] the windows of the applications that the desktop manager manages
-function ProfileController:keep_managed_windows(windows)
-    return app_pool.keep_managed_by(self.state.app_pool, windows, function(window)
-        return track_windows.bundle_id_of(window:application())
-    end)
-end
-
----The windows of the managed applications that the tool knows.
----@param window_ids integer[]
----@return table[] hs.window objects
-function ProfileController:list_known_windows(window_ids)
-    return self:keep_managed_windows(self:list_all_known_windows(window_ids))
-end
-
----The windows of the window filter, and the windows of `window_ids` that the filter does not list.
----The filter drops a window whose subrole is not AXStandardWindow when the window hides or
----minimizes, as the window of Calendar does while Calendar is hidden.
----@param window_ids integer[]
----@return table[] hs.window objects
-function ProfileController:list_all_known_windows(window_ids)
-    local windows = {}
-    for _, window in ipairs(self.window_filter:getWindows()) do
-        if has_valid_id(window) then
-            table.insert(windows, window)
-        end
-    end
-    local listed = track_windows.index_by_id(windows)
-    local reached_ids = {}
-    for window_id in pairs(self.reached_windows) do
-        table.insert(reached_ids, window_id)
-    end
-    table.sort(reached_ids)
-    for _, window_id in ipairs(reached_ids) do
-        local window = self.reached_windows[window_id]
-        if listed[window_id] then
-            self.reached_windows[window_id] = nil
-        elseif window:id() == window_id then
-            listed[window_id] = window
-            table.insert(windows, window)
-        else
-            self.reached_windows[window_id] = nil
-        end
-    end
-    local missing = {}
-    for _, window_id in ipairs(window_ids) do
-        if not listed[window_id] then
-            missing[window_id] = true
-        end
-    end
-    if next(missing) == nil then
-        return windows
-    end
-    local known = { table.unpack(windows) }
-    for _, window in ipairs(hs.window.allWindows()) do
-        local window_id = window:id()
-        if window_id and missing[window_id] then
-            missing[window_id] = nil
-            table.insert(known, window)
-        end
-    end
-    return known
-end
-
 ---Gives the records of a window that its application reopened the id of the new window, in every
 ---profile, under the policy that matches titles.
 ---A reopened window is an open window that no profile recorded, of the same application and with
@@ -342,31 +270,6 @@ function ProfileController:rename_reopened_windows(windows)
     self:write_state()
 end
 
----The windows of the managed applications that the window server listed on a desktop out of view
----at the last refresh of the inventory, and that Hammerspoon has not seen.
----@param known_windows table[] hs.window objects
----@return ServerWindow[]
-function ProfileController:list_unreached_managed_windows(known_windows)
-    return app_pool.keep_managed(
-        self.state.app_pool,
-        window_inventory.list_unreached_windows(
-            self.window_inventory,
-            track_windows.index_ids(known_windows)
-        )
-    )
-end
-
----@param window_id integer
----@return table|nil an hs.window
-function ProfileController:find_window(window_id)
-    for _, window in ipairs(self.window_filter:getWindows()) do
-        if window:id() == window_id then
-            return window
-        end
-    end
-    return hs.window.get(window_id)
-end
-
 ---@param windows table[] hs.window objects
 ---@return WindowObservation[] observations of the windows that have an id
 ---@return table<integer, boolean> observed_ids
@@ -396,7 +299,7 @@ function ProfileController:capture_active_arrangement()
         return
     end
     local configuration = self:read_monitor_configuration()
-    local known_windows = self:list_known_windows(
+    local known_windows = self.known_windows:list_managed(
         profile_state.list_recorded_window_ids(
             profile_state.find_arrangement(self.state, number, configuration.key)
         )
@@ -412,7 +315,7 @@ function ProfileController:capture_active_arrangement()
             previous_by_id[record.window_id] = record
         end
     end
-    for _, window in ipairs(self:list_unreached_managed_windows(known_windows)) do
+    for _, window in ipairs(self.known_windows:list_unreached_managed(known_windows)) do
         if not observed_ids[window.window_id] then
             observed_ids[window.window_id] = true
             table.insert(
@@ -453,7 +356,7 @@ end
 ---A default number of profile 0 therefore stays while its application has a window open.
 function ProfileController:update_numbers_of_profile_0()
     local configuration = self:read_monitor_configuration()
-    local observations = observe_windows(self:list_known_windows({}))
+    local observations = observe_windows(self.known_windows:list_managed({}))
     local open_windows = arrangement_capture.capture(
         configuration,
         read_desktops.read_desktop_layout(),
@@ -578,7 +481,7 @@ function ProfileController:restore_matched_windows(
     on_done
 )
     local function find_window(window_id)
-        return window_by_id[window_id] or self:find_window(window_id)
+        return window_by_id[window_id] or self.known_windows:find(window_id)
     end
     local live_states = {}
     for _, match in ipairs(matches) do
@@ -668,9 +571,13 @@ end
 ---@param on_done fun(failures: string[], unmatched: WindowRecord[], desktops: ScreenDesktop[])
 function ProfileController:restore_open_windows(number, saved_arrangement, busy_text, on_done)
     local arrangement = app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
-    local windows = self:list_known_windows(profile_state.list_recorded_window_ids(arrangement))
-    local match_result =
-        self:match_with_unseen(arrangement, windows, self:list_unreached_managed_windows(windows))
+    local windows =
+        self.known_windows:list_managed(profile_state.list_recorded_window_ids(arrangement))
+    local match_result = self:match_with_unseen(
+        arrangement,
+        windows,
+        self.known_windows:list_unreached_managed(windows)
+    )
     self:restore_matched_windows(
         number,
         arrangement,
@@ -897,7 +804,10 @@ function ProfileController:reach_windows(windows, on_done)
                     local unreached = {}
                     for _, window in ipairs(moved) do
                         if reached[window.window_id] then
-                            self.reached_windows[window.window_id] = reached[window.window_id]
+                            self.known_windows:remember_reached(
+                                window.window_id,
+                                reached[window.window_id]
+                            )
                         else
                             table.insert(unreached, window)
                         end
@@ -995,8 +905,9 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         return profile_state.find_arrangement(self.state, number, configuration.key)
     end
     local function list_windows()
-        local windows =
-            self:list_known_windows(profile_state.list_recorded_window_ids(read_arrangement()))
+        local windows = self.known_windows:list_managed(
+            profile_state.list_recorded_window_ids(read_arrangement())
+        )
         self:rename_reopened_windows(windows)
         return windows
     end
@@ -1041,7 +952,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         self:show_busy_message(busy_text)
         local windows = list_windows()
         local arrangement, match_result, candidates =
-            mark_windows(windows, self:list_unreached_managed_windows(windows))
+            mark_windows(windows, self.known_windows:list_unreached_managed(windows))
         self.window_ids_out_of_sight = {}
         for _, candidate in ipairs(candidates) do
             if not candidate.is_kept then
@@ -1102,7 +1013,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         )
     end
     local windows = list_windows()
-    local unreached = self:list_unreached_managed_windows(windows)
+    local unreached = self.known_windows:list_unreached_managed(windows)
     local arrangement, match_result, candidates = mark_windows(windows, unreached)
     local window_ids_to_reach =
         reach_plan.select_concealed(self.settings.concealment_method, unreached, candidates)
@@ -1984,7 +1895,7 @@ end
 ---@return table<integer, boolean>
 function ProfileController:find_occupied_space_ids()
     local occupied = {}
-    local known_by_id = track_windows.index_by_id(self:list_all_known_windows({}))
+    local known_by_id = track_windows.index_by_id(self.known_windows:list_all({}))
     for window_id, space_id in pairs(self.window_inventory.occupying_windows) do
         if not known_by_id[window_id] then
             occupied[space_id] = true
@@ -2009,7 +1920,7 @@ end
 ---@param window_ids integer[]
 ---@return integer|nil
 function ProfileController:find_window_that_keeps_desktop(window_ids)
-    local known_by_id = track_windows.index_by_id(self:list_all_known_windows({}))
+    local known_by_id = track_windows.index_by_id(self.known_windows:list_all({}))
     local all_by_id = nil
     for _, window_id in ipairs(window_ids) do
         if #read_desktops.list_window_space_ids(window_id) == 1 then
@@ -2333,8 +2244,8 @@ function ProfileController:restore_after_screens_changed()
             local arrangement =
                 app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
             local windows =
-                self:list_known_windows(profile_state.list_recorded_window_ids(arrangement))
-            local unreached = self:list_unreached_managed_windows(windows)
+                self.known_windows:list_managed(profile_state.list_recorded_window_ids(arrangement))
+            local unreached = self.known_windows:list_unreached_managed(windows)
             local match_result = self:match_with_unseen(arrangement, windows, unreached)
             local windows_to_reach = keep_windows_of_ids(
                 unreached,
@@ -2473,8 +2384,8 @@ function ProfileController:print_diagnostics()
             configuration.key
         )
     local known_windows =
-        self:list_known_windows(profile_state.list_recorded_window_ids(active_arrangement))
-    add("windows out of reach: %d", #self:list_unreached_managed_windows(known_windows))
+        self.known_windows:list_managed(profile_state.list_recorded_window_ids(active_arrangement))
+    add("windows out of reach: %d", #self.known_windows:list_unreached_managed(known_windows))
     for _, window in ipairs(known_windows) do
         local observation = track_windows.observe(window)
         local recorded_states = {}
@@ -2601,7 +2512,6 @@ function profile_controller.start(unchecked_settings, shortcuts)
         window_ids_out_of_sight = {},
         are_snapshots_stopped = false,
         window_inventory = window_inventory.new(),
-        reached_windows = {},
         hidden_states = {},
     }, ProfileController)
     controller.watchdog = work_watchdog.new(settings.timing, function()
@@ -2616,6 +2526,13 @@ function profile_controller.start(unchecked_settings, shortcuts)
     end
     controller.screen_signature = read_screens.read_signature()
     controller.window_filter = track_windows.new_filter()
+    controller.known_windows = list_known_windows.new(
+        controller.window_filter,
+        controller.window_inventory,
+        function()
+            return controller.state.app_pool
+        end
+    )
     controller.menubar = hs.menubar.new()
     controller:refresh_menu()
     controller.shortcuts = shortcuts or shortcut_center.new(nil)
