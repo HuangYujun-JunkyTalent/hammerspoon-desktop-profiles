@@ -79,11 +79,13 @@ local function build_clear_items(state, settings, actions)
     return items
 end
 
+---One item per profile that activates it, or deactivates it while it is active, with a check
+---mark on the active profile.
 ---@param state State
 ---@param settings Settings
 ---@param actions StatusMenuActions
 ---@return table[] the items of an hs.menubar menu
-local function build_items(state, settings, actions)
+local function build_profile_items(state, settings, actions)
     local items = {}
     for number = 1, settings.profile_count do
         local profile = profile_state.profile_or_default(state, number)
@@ -95,6 +97,33 @@ local function build_items(state, settings, actions)
             end,
         })
     end
+    return items
+end
+
+---One item per way of matching monitor configurations, with a check mark on the way in use.
+---@param state State
+---@param actions StatusMenuActions
+---@return table[] the items of an hs.menubar submenu
+local function build_monitor_matching_items(state, actions)
+    local items = {}
+    for _, matching in ipairs(monitor_matching.all()) do
+        table.insert(items, {
+            title = monitor_matching.label_of(matching),
+            checked = state.monitor_matching == matching,
+            fn = function()
+                actions.set_monitor_matching(matching)
+            end,
+        })
+    end
+    return items
+end
+
+---@param state State
+---@param settings Settings
+---@param actions StatusMenuActions
+---@return table[] the items of an hs.menubar menu
+local function build_items(state, settings, actions)
+    local items = build_profile_items(state, settings, actions)
     table.insert(items, { title = "-" })
     table.insert(items, {
         title = "Deactivate profile",
@@ -113,17 +142,10 @@ local function build_items(state, settings, actions)
     table.insert(items, { title = "Managed applications…", fn = actions.open_app_pool_window })
     table.insert(items, { title = "Keyboard shortcuts…", fn = actions.open_shortcut_window })
     table.insert(items, { title = "Search colors…", fn = actions.open_color_window })
-    local matching_items = {}
-    for _, matching in ipairs(monitor_matching.all()) do
-        table.insert(matching_items, {
-            title = monitor_matching.label_of(matching),
-            checked = state.monitor_matching == matching,
-            fn = function()
-                actions.set_monitor_matching(matching)
-            end,
-        })
-    end
-    table.insert(items, { title = "Same monitor configuration by", menu = matching_items })
+    table.insert(items, {
+        title = "Same monitor configuration by",
+        menu = build_monitor_matching_items(state, actions),
+    })
     local numbering_profile =
         profile_state.profile_or_default(state, profile_state.find_numbering_profile_number(state))
     table.insert(items, {
