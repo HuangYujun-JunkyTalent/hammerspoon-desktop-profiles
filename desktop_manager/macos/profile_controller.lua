@@ -5,6 +5,7 @@ local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local busy_message = require("desktop_manager.macos.busy_message")
 local color_window = require("desktop_manager.macos.color_window")
+local concatenate_lists = require("desktop_manager.core.concatenate_lists")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
@@ -103,18 +104,6 @@ ProfileController.__index = ProfileController
 ---@param message string
 local function notify(message)
     hs.notify.new({ title = NOTIFICATION_TITLE, informativeText = message }):send()
-end
-
----@generic T
----@param first T[]
----@param second T[]
----@return T[]
-local function concatenate(first, second)
-    local joined = { table.unpack(first) }
-    for _, item in ipairs(second) do
-        table.insert(joined, item)
-    end
-    return joined
 end
 
 ---@param value any
@@ -762,8 +751,10 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
             inspect_on_one_line(concealment)
         )
         local window_by_id = track_windows.index_by_id(windows)
-        local failures =
-            concatenate(earlier_failures, conceal_windows.apply(concealment, window_by_id))
+        local failures = concatenate_lists.concatenate(
+            earlier_failures,
+            conceal_windows.apply(concealment, window_by_id)
+        )
         self.state = profile_state.with_active_profile_number(self.state, number)
         self:write_state()
         self:refresh_menu()
@@ -782,7 +773,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
                         self:restore_matched_windows(
                             number,
                             arrangement,
-                            concatenate(match_result.matches, new_matches),
+                            concatenate_lists.concatenate(match_result.matches, new_matches),
                             window_by_id,
                             busy_text,
                             function(restore_failures, desktops_to_show)
@@ -791,9 +782,11 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
                                     desktops_to_show,
                                     function(desktop_failures)
                                         finish(
-                                            concatenate(
-                                                concatenate(failures, opening_failures),
-                                                concatenate(restore_failures, desktop_failures)
+                                            concatenate_lists.concatenate(
+                                                failures,
+                                                opening_failures,
+                                                restore_failures,
+                                                desktop_failures
                                             )
                                         )
                                     end
@@ -811,7 +804,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
     local window_ids_to_reach =
         reach_plan.select_concealed(self.settings.concealment_method, unreached, candidates)
     if has_layout then
-        window_ids_to_reach = concatenate(
+        window_ids_to_reach = concatenate_lists.concatenate(
             reach_plan.select_misplaced(
                 unreached,
                 match_result.matches,
@@ -828,7 +821,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
     end
     self:leave_full_screen(arrangement, function(exit_failures)
         reach_windows.reach(windows_to_reach, self:reach_context(), function(reach_failures)
-            conceal_and_restore(concatenate(exit_failures, reach_failures))
+            conceal_and_restore(concatenate_lists.concatenate(exit_failures, reach_failures))
         end)
     end)
 end
@@ -1878,7 +1871,7 @@ function ProfileController:remove_extra_desktops(count_by_slot, desktop_of_focus
                     self:show_busy_message(message)
                 end
                 local finish = self.watchdog:continue(function(edit_failures)
-                    on_done(concatenate(failures, edit_failures))
+                    on_done(concatenate_lists.concatenate(failures, edit_failures))
                 end)
                 local space_id = desktop_of_focus and find_space_id_of(desktop_of_focus)
                 if space_id then
@@ -1946,7 +1939,7 @@ function ProfileController:show_desktops_and_remove_extra_ones(arrangement, desk
             desktop_of_focus,
             function(removal_failures)
                 self:focus_screen_of_slot(arrangement.focused_slot_key)
-                on_done(concatenate(show_failures, removal_failures))
+                on_done(concatenate_lists.concatenate(show_failures, removal_failures))
             end
         )
     end)
@@ -2062,9 +2055,11 @@ function ProfileController:restore_after_screens_changed()
                                 desktops_to_show,
                                 function(desktop_failures)
                                     finish(
-                                        concatenate(
-                                            concatenate(exit_failures, reach_failures),
-                                            concatenate(restore_failures, desktop_failures)
+                                        concatenate_lists.concatenate(
+                                            exit_failures,
+                                            reach_failures,
+                                            restore_failures,
+                                            desktop_failures
                                         )
                                     )
                                 end
