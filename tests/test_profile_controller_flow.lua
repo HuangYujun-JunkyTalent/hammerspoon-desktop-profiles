@@ -1299,6 +1299,118 @@ return {
         expect.equal(world.execute_calls, 2)
     end,
 
+    escape_ends_the_recording_of_a_shortcut_and_turns_the_shortcuts_on_again = function()
+        local world, controller = start_world()
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        world.post_to_webview({ kind = "record_start" })
+        local hotkey = controller.shortcuts.binding_by_id["window_search.toggle"].hotkey
+        expect.equal(hotkey.is_enabled, false)
+        world.post_to_webview({ kind = "record_cancel" })
+        expect.equal(hotkey.is_enabled, true)
+        expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, true)
+        expect.equal(controller.shortcut_window.model.problems, {})
+    end,
+
+    a_recorded_key_without_a_name_in_hammerspoon_is_reported_above_the_list = function()
+        local world, controller = start_world()
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        world.post_to_webview({ kind = "record_start" })
+        world.post_to_webview({ kind = "record_unknown", code = "IntlRo" })
+        expect.equal(
+            controller.shortcut_window.model.problems,
+            { "The key IntlRo has no name in Hammerspoon." }
+        )
+        expect.equal(
+            controller.shortcuts.binding_by_id["window_search.toggle"].hotkey.is_enabled,
+            true
+        )
+        expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, true)
+    end,
+
+    delete_leaves_an_action_without_a_shortcut = function()
+        local world, controller = start_world()
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        world.post_to_webview({ kind = "remove", id = "window_search.toggle" })
+        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT], nil)
+        local row = find_shortcut_row(controller, "window_search.toggle")
+        expect.equal(row.shortcut, nil)
+        expect.equal(row.is_default, false)
+        expect.equal(controller.shortcuts.overrides["window_search.toggle"], false)
+    end,
+
+    restore_all_defaults_gives_every_action_its_default_shortcut_again = function()
+        local world, controller = start_world()
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        world.post_to_webview({ kind = "remove", id = "window_search.toggle" })
+        world.post_to_webview({ kind = "remove", id = "profiles.deactivate" })
+        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"], nil)
+        world.post_to_webview({ kind = "reset_all" })
+        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"] ~= nil, true)
+        expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, true)
+        expect.equal(find_shortcut_row(controller, "profiles.deactivate").is_default, true)
+        expect.equal(controller.shortcuts.overrides, {})
+        expect.equal(controller.shortcut_window.model.problems, {})
+    end,
+
+    the_button_under_a_warning_turns_the_macos_shortcut_off = function()
+        local world, controller = start_world()
+        world.symbolic_hotkeys["61"] =
+            { enabled = true, value = { parameters = { 32, 49, 1835008 }, type = "standard" } }
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        world.post_to_webview({ kind = "turn_off_macos", id = "window_search.toggle" })
+        expect.equal(world.tasks[#world.tasks].arguments[2], "61")
+        expect.equal(world.symbolic_hotkeys["61"].enabled, false)
+        expect.equal(find_shortcut_row(controller, "window_search.toggle").macos_conflict, nil)
+        expect.equal(controller.shortcut_window.model.problems, {})
+    end,
+
+    a_macos_shortcut_that_cannot_be_turned_off_drops_the_choice_and_keeps_the_shortcut = function()
+        local world, controller = start_world()
+        world.symbolic_hotkeys["64"] =
+            { enabled = true, value = { parameters = { 32, 49, 1048576 }, type = "standard" } }
+        world.task_exit_code = 1
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        world.post_to_webview({ kind = "record_start" })
+        world.post_to_webview({
+            kind = "record",
+            id = "window_search.toggle",
+            modifiers = { "cmd" },
+            key = "space",
+        })
+        world.post_to_webview({ kind = "resolve", turn_off_macos = true })
+        expect.equal(controller.shortcut_window.model.pending, nil)
+        expect.equal(controller.shortcut_window.model.problems, {
+            'The macOS shortcut "Show Spotlight search" could not be turned off: ',
+        })
+        expect.equal(world.symbolic_hotkeys["64"].enabled, true)
+        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+        expect.equal(world.hotkey_by_shortcut["cmd space"], nil)
+    end,
+
+    a_file_of_shortcuts_that_cannot_be_written_is_reported_and_keeps_the_hotkeys = function()
+        local world = fake_hammerspoon.install({
+            screens = { BUILTIN_SCREEN },
+            displays = { { uuid = BUILTIN_SCREEN.uuid, space_ids = { 3 }, active_space_id = 3 } },
+            applications = {},
+            windows = {},
+        })
+        world.unwritable_paths[world.shortcuts_file_path] = true
+        local controller = profile_controller.start(
+            default_settings.create("/fake/state.json"),
+            shortcut_center.new(world.shortcuts_file_path)
+        )
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        local problems = { "the shortcuts could not be written to /fake/keyboard-shortcuts.json" }
+        world.post_to_webview({ kind = "remove", id = "window_search.toggle" })
+        expect.equal(controller.shortcut_window.model.problems, problems)
+        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+        world.post_to_webview({ kind = "reset_all" })
+        expect.equal(controller.shortcut_window.model.problems, problems)
+        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+        expect.equal(world.json_files[world.shortcuts_file_path], nil)
+    end,
+
     a_highlight_color_of_the_setting_marks_the_selection = function()
         local selection = { hex = "#2E8B57", alpha = 0.9 }
         local world = start_world({ search_highlight_colors = { selection = selection } })

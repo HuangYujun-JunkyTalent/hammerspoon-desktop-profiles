@@ -160,6 +160,7 @@ local current_world = nil
 ---the time.
 ---`on_window_manager_read` is called at each read of the accessibility tree of WindowManager.
 ---`execute_calls` counts the calls of `hs.execute`, each of which exports the shortcuts of macOS.
+---`unwritable_paths[path]` makes `hs.json.write` fail for that path and leave the file as it was.
 ---@param spec FakeWorldSpec
 ---@return table world
 function fake_hammerspoon.install(spec)
@@ -206,6 +207,7 @@ function fake_hammerspoon.install(spec)
         menu_selections = {},
         saved_json = nil,
         json_files = {},
+        unwritable_paths = {},
         shortcuts_file_path = "/fake/keyboard-shortcuts.json",
         next_window_id = 1000,
         next_space_id = 2000,
@@ -1923,6 +1925,9 @@ function fake_hammerspoon.install(spec)
                 return "{}"
             end,
             write = function(data, path)
+                if world.unwritable_paths[path] then
+                    return false
+                end
                 if path == world.shortcuts_file_path then
                     world.json_files[path] = data
                 else
