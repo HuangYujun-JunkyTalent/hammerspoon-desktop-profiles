@@ -57,6 +57,19 @@ return {
                 "the setting preview_blur is 0.5, and it must be a number of 1 or more",
             },
             {
+                { preview_blur = "soft" },
+                "the setting preview_blur is soft, and it must be a number of 1 or more",
+            },
+            {
+                { list_font_size = "small" },
+                "the setting list_font_size is small, and it must be a fraction of the height of"
+                    .. " the screen, above 0 and at most 0.1",
+            },
+            {
+                { title_line_count = "two" },
+                "the setting title_line_count is two, and it must be a whole number of 1 or more",
+            },
+            {
                 { preview_method = "thumbnails" },
                 'the setting preview_method is "thumbnails", which names no method',
             },
