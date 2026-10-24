@@ -2,7 +2,9 @@ local controller_world = require("tests.controller_world")
 local expect = require("tests.expect")
 local profile_state = require("desktop_manager.core.profile_state")
 
----A start of the desktop manager one minute after the start of macOS, as at a login.
+---A start of the desktop manager one minute after the login, or after the start of macOS when a
+---case gives no login.
+---The worlds place the login at the start of macOS unless a case gives another login.
 local SECONDS_AFTER_LOGIN = 60
 
 ---The start of macOS after a restart, a day after the start under which the worlds run by default.
