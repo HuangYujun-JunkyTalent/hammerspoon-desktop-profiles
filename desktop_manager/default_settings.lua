@@ -94,7 +94,7 @@ function default_settings.create(state_file_path)
         initial_monitor_matching = monitor_matching.BY_COUNT,
         concealment_method = concealment_method.MINIMIZE_WINDOWS,
         match_windows_by = match_windows_by.TITLE,
-        missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW,
+        missing_window_policy = missing_window_policy.MATCH_TITLE,
         unmatched_window_action = unmatched_window_action.OPEN_NEW_WINDOW,
         hidden_application_windows = hidden_application_windows.LEAVE_OUT,
         preview_method = preview_method.BLURRED_SNAPSHOTS,

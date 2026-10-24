@@ -54,11 +54,14 @@ By default the title decides, the window with the recorded id first among window
 macOS gives a window that its application reopens a new window id.
 When the window id decides, and the window of a record in sight no longer exists, a second setting chooses one of two options:
 
-- Option a opens a new window of the same application.
-- Option b takes an open window of the same application with the same title, and opens a new window when no title matches.
+- Option a matches the record by its window id alone, so no other window takes it.
+- Option b takes an open window of the same application with the same title.
 
 Option b is the default.
-The tool opens a new window, moves it to the recorded desktop with the recorded frame, and the records of every profile then name the new window.
+The value of each option in the settings names what it matches.
+A value that an earlier version gave an option still works, and the console names the value that takes its place.
+When no open window takes the record, the third setting below chooses whether the tool opens a new window.
+The tool moves a new window to the recorded desktop with the recorded frame, and the records of every profile then name the new window.
 Under option b, the tool also treats an unrecorded window as the reopened copy of a closed recorded window, when both belong to the same application and have the same title.
 
 When a saved window belongs to an application that is not running, the new window comes from a launch of the application.

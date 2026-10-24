@@ -108,4 +108,15 @@ return {
             controller_world.start_world({ hidden_application_windows = "show_some" })
         end, 'the setting hidden_application_windows is "show_some", which names no choice')
     end,
+
+    an_old_value_of_missing_window_policy_starts_with_a_line_in_the_console = function()
+        local world, controller =
+            controller_world.start_world({ missing_window_policy = "open_new_window" })
+        expect.equal(controller.settings.missing_window_policy, "match_id_alone")
+        expect.equal(
+            world.log_lines[1],
+            'the setting missing_window_policy is "open_new_window", the old name of'
+                .. ' "match_id_alone"'
+        )
+    end,
 }

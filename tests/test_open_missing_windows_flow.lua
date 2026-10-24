@@ -85,7 +85,7 @@ return {
     the_policy_that_opens_new_windows_opens_one_despite_a_window_with_the_title = function()
         local world, controller = controller_world.start_world({
             match_windows_by = match_windows_by.ID,
-            missing_window_policy = missing_window_policy.OPEN_NEW_WINDOW,
+            missing_window_policy = missing_window_policy.MATCH_ID_ALONE,
         })
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)

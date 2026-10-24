@@ -1772,7 +1772,8 @@ end
 ---center of this tool alone
 ---@return ProfileController
 function profile_controller.start(unchecked_settings, shortcuts)
-    local settings, message = settings_check.check(unchecked_settings)
+    local renamed_settings, renaming_lines = settings_check.replace_old_values(unchecked_settings)
+    local settings, message = settings_check.check(renamed_settings)
     if not settings then
         error(message, 2)
     end
@@ -1787,6 +1788,9 @@ function profile_controller.start(unchecked_settings, shortcuts)
         window_inventory = window_inventory.new(),
         hidden_states = {},
     }, ProfileController)
+    for _, line in ipairs(renaming_lines) do
+        controller.log.w(line)
+    end
     controller.watchdog = work_watchdog.new(settings.timing, function()
         controller:stop_unfinished_work()
     end)

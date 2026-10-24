@@ -94,6 +94,40 @@ local function check_search_highlight_colors(settings)
     return message
 end
 
+---The former values of each setting that has some, with the value that takes the place of each.
+---@type table<string, table<string, string>>
+local OLD_VALUES_BY_SETTING = {
+    missing_window_policy = missing_window_policy.OLD_VALUES,
+}
+
+---@param settings Settings
+---@return Settings replaced a copy of the settings, with each former value of a setting replaced
+---by the value that takes its place
+---@return string[] lines one line for each replaced value, which names the value that takes its
+---place
+function settings_check.replace_old_values(settings)
+    local replaced, lines = {}, {}
+    for name, value in pairs(settings) do
+        replaced[name] = value
+    end
+    for name, old_values in pairs(OLD_VALUES_BY_SETTING) do
+        local new_value = old_values[settings[name]]
+        if new_value then
+            replaced[name] = new_value
+            table.insert(
+                lines,
+                string.format(
+                    "the setting %s is %q, the old name of %q",
+                    name,
+                    settings[name],
+                    new_value
+                )
+            )
+        end
+    end
+    return replaced, lines
+end
+
 ---The checks in the order in which they run, so that the message names the first faulty setting.
 ---@type SettingCheck[]
 local CHECKS = {

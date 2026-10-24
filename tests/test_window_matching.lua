@@ -3,8 +3,8 @@ local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local window_matching = require("desktop_manager.core.window_matching")
 
-local MATCH_TITLE = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW
-local OPEN_NEW = missing_window_policy.OPEN_NEW_WINDOW
+local MATCH_TITLE = missing_window_policy.MATCH_TITLE
+local MATCH_ID_ALONE = missing_window_policy.MATCH_ID_ALONE
 local BY_ID = match_windows_by.ID
 local BY_TITLE = match_windows_by.TITLE
 
@@ -50,8 +50,12 @@ return {
     the_policy_that_opens_new_windows_matches_by_id_alone = function()
         local records = { record(41, "com.apple.Safari", "Inbox") }
         local open_windows = { { window_id = 7, bundle_id = "com.apple.Safari", title = "Inbox" } }
-        local result =
-            window_matching.match_records_to_open_windows(BY_ID, OPEN_NEW, records, open_windows)
+        local result = window_matching.match_records_to_open_windows(
+            BY_ID,
+            MATCH_ID_ALONE,
+            records,
+            open_windows
+        )
         expect.equal(result.matches, {})
         expect.raises(function()
             window_matching.match_records_to_open_windows(BY_ID, "guess", records, open_windows)
@@ -121,8 +125,12 @@ return {
             { window_id = 41, bundle_id = "com.apple.Safari", title = "News" },
             { window_id = 42, bundle_id = "com.apple.Safari", title = "Inbox" },
         }
-        local result =
-            window_matching.match_records_to_open_windows(BY_TITLE, OPEN_NEW, records, open_windows)
+        local result = window_matching.match_records_to_open_windows(
+            BY_TITLE,
+            MATCH_ID_ALONE,
+            records,
+            open_windows
+        )
         expect.equal(result.matches[1].window_id, 42)
         expect.equal(result.matches[2].window_id, 41)
     end,
@@ -150,12 +158,21 @@ return {
             { window_id = 7, bundle_id = "com.apple.Safari", title = "" },
             { window_id = 42, bundle_id = "com.apple.Safari", title = "Weather" },
         }
-        local result =
-            window_matching.match_records_to_open_windows(BY_TITLE, OPEN_NEW, records, open_windows)
+        local result = window_matching.match_records_to_open_windows(
+            BY_TITLE,
+            MATCH_ID_ALONE,
+            records,
+            open_windows
+        )
         expect.equal(result.matches[1].window_id, 41)
         expect.equal(result.matches[2].window_id, 42)
         expect.raises(function()
-            window_matching.match_records_to_open_windows("guess", OPEN_NEW, records, open_windows)
+            window_matching.match_records_to_open_windows(
+                "guess",
+                MATCH_ID_ALONE,
+                records,
+                open_windows
+            )
         end, 'unknown way to match windows "guess"')
     end,
 

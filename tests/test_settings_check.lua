@@ -2,6 +2,7 @@ local default_settings = require("desktop_manager.default_settings")
 local expect = require("tests.expect")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_layout = require("desktop_manager.core.list_layout")
+local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local settings_check = require("desktop_manager.core.settings_check")
 
 return {
@@ -42,5 +43,31 @@ return {
             "the setting preview_size must give w and h as fractions of the screen, above 0"
                 .. " and at most 1",
         })
+    end,
+
+    an_old_value_of_missing_window_policy_gives_way_to_its_new_value_with_a_line = function()
+        local settings = default_settings.create("/fake/state.json")
+        settings.missing_window_policy = "open_new_window"
+        local replaced, lines = settings_check.replace_old_values(settings)
+        expect.equal(replaced.missing_window_policy, missing_window_policy.MATCH_ID_ALONE)
+        expect.equal(lines, {
+            'the setting missing_window_policy is "open_new_window", the old name of'
+                .. ' "match_id_alone"',
+        })
+        expect.equal(settings.missing_window_policy, "open_new_window")
+        settings.missing_window_policy = "match_title_or_open_new_window"
+        replaced, lines = settings_check.replace_old_values(settings)
+        expect.equal(replaced.missing_window_policy, missing_window_policy.MATCH_TITLE)
+        expect.equal(lines, {
+            'the setting missing_window_policy is "match_title_or_open_new_window", the old name'
+                .. ' of "match_title"',
+        })
+    end,
+
+    the_current_values_give_no_line = function()
+        local settings = default_settings.create("/fake/state.json")
+        local replaced, lines = settings_check.replace_old_values(settings)
+        expect.equal(replaced, settings)
+        expect.equal(lines, {})
     end,
 }

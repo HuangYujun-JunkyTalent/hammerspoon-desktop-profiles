@@ -83,8 +83,8 @@ local function match_by_criteria(criteria, records, open_windows)
 end
 
 local CRITERIA_BY_ID = {
-    [missing_window_policy.OPEN_NEW_WINDOW] = { has_same_id },
-    [missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW] = { has_same_id, has_same_title },
+    [missing_window_policy.MATCH_ID_ALONE] = { has_same_id },
+    [missing_window_policy.MATCH_TITLE] = { has_same_id, has_same_title },
 }
 
 local CRITERIA_BY_TITLE = { has_same_id_and_title, has_same_given_title, has_same_id }

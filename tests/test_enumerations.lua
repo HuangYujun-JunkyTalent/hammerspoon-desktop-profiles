@@ -56,8 +56,8 @@ local CASES = {
         name = "missing_window_policy",
         module = missing_window_policy,
         constants = {
-            OPEN_NEW_WINDOW = "open_new_window",
-            MATCH_TITLE_OR_OPEN_NEW_WINDOW = "match_title_or_open_new_window",
+            MATCH_ID_ALONE = "match_id_alone",
+            MATCH_TITLE = "match_title",
         },
     },
     {
