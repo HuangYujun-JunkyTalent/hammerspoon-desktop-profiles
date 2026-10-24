@@ -178,4 +178,16 @@ return {
         expect.equal(app_numbers.find_next_window_id({ 30, 10, 20 }, nil), 10)
         expect.equal(app_numbers.find_next_window_id({}, nil), nil)
     end,
+
+    the_first_press_selects_the_window_after_the_focused_one_while_in_front = function()
+        expect.equal(app_numbers.find_first_selection_index({ 10, 20, 30 }, 30, 20), 3)
+        expect.equal(app_numbers.find_first_selection_index({ 10, 20, 30 }, 30, 30), 1)
+        expect.equal(app_numbers.find_first_selection_index({ 10 }, 10, 10), 1)
+    end,
+
+    the_first_press_selects_the_window_that_had_the_focus_last_otherwise = function()
+        expect.equal(app_numbers.find_first_selection_index({ 10, 20, 30 }, 20, nil), 2)
+        expect.equal(app_numbers.find_first_selection_index({ 10, 20, 30 }, nil, nil), 0)
+        expect.equal(app_numbers.find_first_selection_index({}, nil, nil), 0)
+    end,
 }

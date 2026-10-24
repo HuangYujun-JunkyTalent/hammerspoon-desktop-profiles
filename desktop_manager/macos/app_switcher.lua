@@ -28,9 +28,8 @@ local app_switcher = {}
 ---true while a switch, a restore or a press runs
 
 ---The application of the number for the list, with its windows in the order of the window ids, the
----windows that accessibility does not reach included.
----The first press selects the window after the focused one when the application is in front, and
----otherwise the window of the application that had the focus last.
+---windows that accessibility does not reach included, and the window that the first press selects,
+---as `app_numbers.find_first_selection_index` chooses it.
 ---@param entry AppNumber
 ---@param filter_windows table[] the hs.window objects of the window filter that the setting keeps
 ---@param unreached_windows ServerWindow[] the windows that accessibility does not reach, which the
@@ -60,14 +59,15 @@ function app_switcher.describe_application(
         end
     end
     table.sort(window_ids)
-    local first_window_id = windows[1] and windows[1]:id()
+    local last_focused_window_id = windows[1] and windows[1]:id()
     local is_application_frontmost = focus_before_press.is_frontmost(entry.bundle_id)
     local focused = hs.window.focusedWindow()
+    local focused_window_id = nil
     if is_application_frontmost and focused and window_by_id[focused:id()] then
-        first_window_id = app_numbers.find_next_window_id(window_ids, focused:id())
+        focused_window_id = focused:id()
     end
-    local switch_windows, first_window_index = {}, 0
-    for index, window_id in ipairs(window_ids) do
+    local switch_windows = {}
+    for _, window_id in ipairs(window_ids) do
         local space_id = read_desktops.find_window_space_id(window_id)
         local window = window_by_id[window_id]
         table.insert(switch_windows, {
@@ -75,16 +75,17 @@ function app_switcher.describe_application(
             title = window and (window:title() or "") or unreached_titles[window_id],
             screen_uuid = space_id and screen_uuid_by_space[space_id],
         })
-        if window_id == first_window_id then
-            first_window_index = index
-        end
     end
     return {
         number = entry.number,
         bundle_id = entry.bundle_id,
         app_name = entry.app_name,
         windows = switch_windows,
-        first_window_index = first_window_index,
+        first_window_index = app_numbers.find_first_selection_index(
+            window_ids,
+            last_focused_window_id,
+            focused_window_id
+        ),
         is_hidden = hidden_application_filter.marks_hidden(hidden, entry.bundle_id, application),
     },
         window_by_id

@@ -187,4 +187,31 @@ function app_numbers.find_next_window_id(window_ids, focused_window_id)
     return sorted[1]
 end
 
+---The index of the window that the first press of the list selects among the sorted window ids of
+---an application, 0 when it selects none of them.
+---The first press selects the window after the focused one when the application is in front, and
+---otherwise the window of the application that had the focus last.
+---@param sorted_window_ids integer[]
+---@param last_focused_window_id integer|nil the window of the application that had the focus last
+---@param focused_window_id integer|nil the focused window when it belongs to the application and
+---the application is in front, and nil otherwise
+---@return integer
+function app_numbers.find_first_selection_index(
+    sorted_window_ids,
+    last_focused_window_id,
+    focused_window_id
+)
+    local first_window_id = last_focused_window_id
+    if focused_window_id then
+        first_window_id = app_numbers.find_next_window_id(sorted_window_ids, focused_window_id)
+    end
+    local first_window_index = 0
+    for index, window_id in ipairs(sorted_window_ids) do
+        if window_id == first_window_id then
+            first_window_index = index
+        end
+    end
+    return first_window_index
+end
+
 return app_numbers
