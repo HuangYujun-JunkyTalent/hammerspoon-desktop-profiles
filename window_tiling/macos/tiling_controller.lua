@@ -101,7 +101,7 @@ function TilingController:list_shortcut_actions()
 end
 
 ---@param settings TilingSettings
----@param shortcuts ShortcutCenter|nil the center of the shortcuts of every utility, or nil for a
+---@param shortcuts ShortcutCenter|nil the center of the shortcuts of every tool, or nil for a
 ---center of this tool alone
 ---@return TilingController
 function tiling_controller.start(settings, shortcuts)

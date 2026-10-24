@@ -1,8 +1,8 @@
 local shortcut_registry = require("keyboard_shortcuts.core.shortcut_registry")
 
----Binds the global shortcuts of every utility, from one registry and one file of overrides.
----A utility registers its actions with a function for each, and the center binds the shortcut that
----the registry resolves, so that a change of a shortcut needs no change of the utility.
+---Binds the global shortcuts of every tool, from one registry and one file of overrides.
+---A tool registers its actions with a function for each, and the center binds the shortcut that
+---the registry resolves, so that a change of a shortcut needs no change of the tool.
 local shortcut_center = {}
 
 local NOTIFICATION_TITLE = "Keyboard shortcuts"
@@ -114,7 +114,7 @@ function ShortcutCenter:rebind()
     return resolution.problems
 end
 
----Adds the actions of one utility and binds their shortcuts.
+---Adds the actions of one tool and binds their shortcuts.
 ---@param actions RegisteredAction[]
 function ShortcutCenter:register(actions)
     for _, action in ipairs(actions) do
@@ -185,7 +185,7 @@ function ShortcutCenter:reset_all()
     return save_and_rebind(self)
 end
 
----Reports the overrides that name no action, once every utility has registered.
+---Reports the overrides that name no action, once every tool has registered.
 function ShortcutCenter:check_overrides()
     local resolution = shortcut_registry.resolve(self.registry, self.overrides, is_known_key)
     local problems = {}

@@ -2,7 +2,7 @@ local macos_shortcut_settings = require("keyboard_shortcuts.macos.macos_shortcut
 local shortcut_window_model = require("keyboard_shortcuts.core.shortcut_window_model")
 local web_window = require("keyboard_shortcuts.macos.web_window")
 
----The window that lists the shortcuts of every utility and changes them.
+---The window that lists the shortcuts of every tool and changes them.
 ---Clicking a shortcut records the next key press with modifiers, while every shortcut of the tools
 ---is off, so that pressing a shortcut of the tools records it instead of running it.
 ---A recorded shortcut that another action or macOS uses waits for a choice: move it from the other

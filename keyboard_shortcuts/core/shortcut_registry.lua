@@ -1,6 +1,6 @@
 ---The global keyboard shortcuts of the tools in one place.
----Each utility adds its actions with their default shortcuts, and one table of overrides changes
----any of them, so that no utility keeps shortcut settings of its own.
+---Each tool adds its actions with their default shortcuts, and one table of overrides changes
+---any of them, so that no tool keeps shortcut settings of its own.
 local shortcut_registry = {}
 
 ---A keyboard shortcut: the names of its modifiers and the name of its key, as hs.hotkey takes them.
@@ -10,19 +10,19 @@ local shortcut_registry = {}
 
 ---@class ShortcutAction
 ---@field id string such as "profiles.toggle.3", the name of the action in the file of overrides
----@field group string the utility, such as "Profiles", under which the window lists the action
+---@field group string the group of actions in the window, such as "Profiles", that lists the action
 ---@field title string what the shortcut does, such as "Activate profile 3, or deactivate it"
 ---@field default Shortcut|nil
 
 ---@class ShortcutRegistry
----@field actions ShortcutAction[] in the order the utilities added them
+---@field actions ShortcutAction[] in the order the tools added them
 ---@field action_by_id table<string, ShortcutAction>
 
 ---@class ShortcutResolution
 ---@field shortcut_by_id table<string, Shortcut> the shortcut of each action that has one
 ---@field problems string[] the overrides of actions that the registry left out, and why
 ---@field unknown_ids string[] the overrides that name no action, sorted, which may belong to a
----utility that registers later
+---tool that registers later
 
 ---The order in which macOS shows the modifiers of a shortcut.
 local MODIFIER_ORDER = { "ctrl", "alt", "shift", "cmd", "fn" }
