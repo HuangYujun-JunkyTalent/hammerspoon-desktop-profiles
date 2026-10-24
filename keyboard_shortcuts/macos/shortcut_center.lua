@@ -198,7 +198,7 @@ function ShortcutCenter:check_overrides()
     for _, id in ipairs(resolution.unknown_ids) do
         table.insert(
             problems,
-            string.format("%s names the action %q, which no utility has", self.file_path, id)
+            string.format("%s names the action %q, which no tool has", self.file_path, id)
         )
     end
     self:report(problems)

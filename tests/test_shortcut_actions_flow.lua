@@ -47,7 +47,9 @@ return {
         expect.equal(world.notifications, {})
         shortcuts.overrides["tiling.nowhere"] = false
         shortcuts:check_overrides()
-        expect.equal(#world.notifications, 1)
+        expect.equal(world.notifications, {
+            '/fake/keyboard-shortcuts.json names the action "tiling.nowhere", which no tool has',
+        })
         shortcuts.overrides["tiling.nowhere"] = nil
         world.notifications = {}
         expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 1"], nil)
