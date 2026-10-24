@@ -147,6 +147,7 @@ local current_world = nil
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
 ---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
 ---`type_keys` and `release_modifiers` was made, as `timestamp()` of the event gives it.
+---With `key_wait_seconds` nil, each such key carries the timestamp 0, as a key that a program made.
 ---`move_delay_seconds` is the time after which `hs.spaces.moveWindowToSpace` moves a window, as a
 ---build with pull request #3889 moves it after the call returns.
 ---`unmovable_window_ids` holds the windows that `hs.spaces.moveWindowToSpace` leaves where they
@@ -935,8 +936,11 @@ function fake_hammerspoon.install(spec)
     end
 
     ---@return number the time of a key made `key_wait_seconds` ago, in nanoseconds, on the clock of
-    ---`hs.timer.absoluteTime()`
+    ---`hs.timer.absoluteTime()`, or 0 for a key that a program made
     local function read_key_timestamp()
+        if world.key_wait_seconds == nil then
+            return 0
+        end
         return (world.clock - world.key_wait_seconds) * NANOSECONDS_PER_SECOND
     end
 
