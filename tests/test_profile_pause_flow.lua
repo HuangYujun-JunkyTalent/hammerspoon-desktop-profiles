@@ -137,6 +137,22 @@ return {
         expect.equal(controller.state.is_active_profile_paused, true)
     end,
 
+    a_start_that_cannot_read_the_start_of_macos_keeps_the_one_of_the_state = function()
+        local first_world = start_after_login()
+        first_world.hotkeys["1"]()
+        first_world.advance(controller_world.SETTLE_SECONDS)
+        local unread_world = controller_world.start_world(nil, first_world.saved_json, 120, false)
+        unread_world.hotkeys["1"]()
+        unread_world.advance(controller_world.SETTLE_SECONDS)
+        local _, controller = controller_world.start_world(
+            nil,
+            unread_world.saved_json,
+            200,
+            MACOS_START_TIME_AFTER_RESTART
+        )
+        expect.equal(controller.state.is_active_profile_paused, false)
+    end,
+
     the_updates_change_no_record_and_no_number_of_the_paused_profile = function()
         local world, controller, saved = start_after_login()
         world.minimize_window(42)

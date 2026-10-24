@@ -110,8 +110,8 @@ end
 ---@param saved_state table|nil the state file that the desktop manager finds at its start
 ---@param seconds_since_macos_start number|nil the time from the start of macOS to the start of the
 ---desktop manager, an hour when nil
----@param macos_start_time integer|nil the start of macOS in seconds since 1970, the same in every
----world when nil
+---@param macos_start_time integer|false|nil the start of macOS in seconds since 1970, the same in
+---every world when nil, and none that `sysctl` gives when false
 ---@return table world
 ---@return ProfileController controller
 function controller_world.start_world(

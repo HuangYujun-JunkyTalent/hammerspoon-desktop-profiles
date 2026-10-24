@@ -73,9 +73,10 @@ local fake_hammerspoon = {}
 ---@field seconds_since_macos_start number|nil the time from the start of macOS to the start of the
 ---world on the clock of `hs.timer.absoluteTime()`, an hour by default, so that a world starts long
 ---after the start of macOS
----@field macos_start_time integer|nil the start of macOS in seconds since 1970, which the fake
----gives as `sysctl -n kern.boottime` does, the same in every world by default, so that a world
----started from the state file of another runs under the same start of macOS
+---@field macos_start_time integer|false|nil the start of macOS in seconds since 1970, which the
+---fake gives as `sysctl -n kern.boottime` does, the same in every world by default, so that a
+---world started from the state file of another runs under the same start of macOS, and false
+---makes `sysctl` give no output
 
 local USER_SPACE_TYPE = 0
 local FULL_SCREEN_SPACE_TYPE = 4
@@ -213,7 +214,8 @@ function fake_hammerspoon.install(spec)
     local world = {
         clock = 0,
         macos_start_offset_seconds = spec.seconds_since_macos_start or 3600,
-        macos_start_time = spec.macos_start_time or DEFAULT_MACOS_START_TIME,
+        macos_start_time = spec.macos_start_time == nil and DEFAULT_MACOS_START_TIME
+            or spec.macos_start_time,
         timers = {},
         screens = spec.screens,
         displays = spec.displays,
@@ -1660,6 +1662,9 @@ function fake_hammerspoon.install(spec)
             watcher = watcher_factory(),
         },
         execute = function(command)
+            if command == MACOS_START_TIME_COMMAND and world.macos_start_time == false then
+                return "", nil
+            end
             if command == MACOS_START_TIME_COMMAND then
                 return string.format(
                     "{ sec = %d, usec = 0 } Mon Oct 21 10:40:00 2024\n",
