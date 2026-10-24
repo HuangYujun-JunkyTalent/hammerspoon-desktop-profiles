@@ -30,4 +30,25 @@ function poll_until.wait(is_met, timeout_seconds, interval_seconds, on_done)
     end)
 end
 
+---Calls `on_done(value)` once `find` returns a value, or `on_done(nil)` after the timeout.
+---@generic T
+---@param find fun(): T|nil
+---@param timeout_seconds number
+---@param interval_seconds number
+---@param on_done fun(value: T|nil) the value that `find` returned, or nil after the timeout
+function poll_until.wait_for_value(find, timeout_seconds, interval_seconds, on_done)
+    local found = nil
+    poll_until.wait(
+        function()
+            found = find()
+            return found ~= nil
+        end,
+        timeout_seconds,
+        interval_seconds,
+        function()
+            on_done(found)
+        end
+    )
+end
+
 return poll_until

@@ -76,19 +76,14 @@ end
 ---@param is_launch boolean whether the action launched the application
 ---@param on_done fun(window: table|nil, error_message: string|nil)
 function NewWindowSession:wait_for_window(record, is_new, action, is_launch, on_done)
-    local function find_window()
-        local application = hs.application.get(record.bundle_id)
-        return application and self:pick_window(application, is_new, record.title)
-    end
-    poll_until.wait(
+    poll_until.wait_for_value(
         function()
-            return find_window() ~= nil
+            local application = hs.application.get(record.bundle_id)
+            return application and self:pick_window(application, is_new, record.title)
         end,
         self.timing.application_launch_timeout_seconds,
         WINDOW_POLL_SECONDS,
-        function()
-            local application = hs.application.get(record.bundle_id)
-            local window = find_window()
+        function(window)
             if not window then
                 on_done(
                     nil,
@@ -97,6 +92,7 @@ function NewWindowSession:wait_for_window(record, is_new, action, is_launch, on_
                 return
             end
             if is_launch then
+                local application = hs.application.get(record.bundle_id)
                 for window_id in pairs(track_windows.index_ids(application:allWindows())) do
                     self.launched_ids[window_id] = true
                 end

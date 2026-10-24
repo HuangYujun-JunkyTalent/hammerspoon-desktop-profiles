@@ -178,25 +178,6 @@ local function find_standard_window(application)
     return nil
 end
 
----Polls `find` until it gives a window, up to the time limit.
----@param find fun(): table|nil
----@param timeout_seconds number
----@param on_done fun(window: table|nil) the window that `find` gave, or nil after the time limit
-local function wait_until_found(find, timeout_seconds, on_done)
-    local found = nil
-    poll_until.wait(
-        function()
-            found = find()
-            return found ~= nil
-        end,
-        timeout_seconds,
-        REACH_POLL_SECONDS,
-        function()
-            on_done(found)
-        end
-    )
-end
-
 ---Waits until the application shows a standard window, as after an unhide, while its windows may
 ---still report another subrole such as `AXDialog`, up to the time limit.
 ---@param application table an hs.application
@@ -204,9 +185,9 @@ end
 ---@param on_done fun(window: table|nil) the main window of the application when it is a standard
 ---window, and otherwise its first standard window, or nil after the time limit
 function track_windows.wait_until_standard(application, timeout_seconds, on_done)
-    wait_until_found(function()
+    poll_until.wait_for_value(function()
         return find_standard_window(application)
-    end, timeout_seconds, on_done)
+    end, timeout_seconds, REACH_POLL_SECONDS, on_done)
 end
 
 ---Waits until the window is a standard window, as after the unhide of its application, up to the
@@ -215,9 +196,9 @@ end
 ---@param timeout_seconds number
 ---@param on_done fun(window: table|nil) the window, or nil after the time limit
 function track_windows.wait_until_window_standard(window, timeout_seconds, on_done)
-    wait_until_found(function()
+    poll_until.wait_for_value(function()
         return window:isStandard() and window or nil
-    end, timeout_seconds, on_done)
+    end, timeout_seconds, REACH_POLL_SECONDS, on_done)
 end
 
 return track_windows
