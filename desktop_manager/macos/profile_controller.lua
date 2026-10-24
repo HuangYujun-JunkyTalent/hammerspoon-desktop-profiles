@@ -13,7 +13,6 @@ local extra_desktops = require("desktop_manager.macos.extra_desktops")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_known_windows = require("desktop_manager.macos.list_known_windows")
-local list_layout = require("desktop_manager.core.list_layout")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
@@ -1201,44 +1200,6 @@ function ProfileController:list_recorded_window_ids_of_application(bundle_id)
     return window_ids
 end
 
----@param session SwitchSession
----@return SwitchView
-local function describe_switch_rows(session)
-    return {
-        lines = switch_list.describe_lines(
-            session.applications,
-            session.selection,
-            switch_overlay.MAX_TITLE_LENGTH
-        ),
-    }
-end
-
----@param session SwitchSession
----@return SwitchView
-local function describe_switch_columns(session)
-    return {
-        groups = switch_list.describe_application_columns(session.applications, session.selection),
-    }
-end
-
----@param session SwitchSession
----@return SwitchView
-local function describe_switch_columns_per_display(session)
-    return {
-        groups = switch_list.describe_display_columns(
-            session.applications,
-            session.selection,
-            session.displays
-        ),
-    }
-end
-
-local SWITCH_VIEW_BUILDERS = {
-    [list_layout.ROWS] = describe_switch_rows,
-    [list_layout.COLUMNS] = describe_switch_columns,
-    [list_layout.COLUMNS_PER_DISPLAY] = describe_switch_columns_per_display,
-}
-
 ---Opens the list of numbered applications with the window of the number selected, or moves the
 ---selection while the list shows.
 ---A number that the active profile, or profile 0 while no profile is active, gives to no
@@ -1271,7 +1232,13 @@ end
 ---@param session SwitchSession
 ---@return SwitchView
 function ProfileController:describe_switch_view(session)
-    return SWITCH_VIEW_BUILDERS[self.settings.list_layout](session)
+    return switch_list.describe_view(
+        self.settings.list_layout,
+        session.applications,
+        session.selection,
+        session.displays,
+        switch_overlay.MAX_TITLE_LENGTH
+    )
 end
 
 ---@return SwitchListSettings the settings that the list and the search of the windows share
@@ -1319,12 +1286,8 @@ function ProfileController:open_switch_list(entries, app_number, modifiers)
         )
     )
     self:refresh_window_inventory(nil)
-    local screen_uuid_by_space = {}
-    for _, screen in ipairs(read_desktops.read_desktop_layout().screens) do
-        for _, space_id in ipairs(screen.space_ids) do
-            screen_uuid_by_space[space_id] = screen.screen_uuid
-        end
-    end
+    local screen_uuid_by_space =
+        read_desktops.index_screen_of_each_space(read_desktops.read_desktop_layout())
     local applications, window_by_id = {}, {}
     for _, entry in ipairs(entries) do
         local application, windows = app_switcher.describe_application(

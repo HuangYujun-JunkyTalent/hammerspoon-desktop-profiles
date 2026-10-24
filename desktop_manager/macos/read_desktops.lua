@@ -54,6 +54,18 @@ function read_desktops.read_desktop_layout()
     return { screens = screens, focused_space_id = hs.spaces.focusedSpace() }
 end
 
+---@param layout DesktopLayout
+---@return table<integer, string> the uuid of the screen of each desktop of the layout, by its space
+function read_desktops.index_screen_of_each_space(layout)
+    local screen_uuid_by_space = {}
+    for _, screen in ipairs(layout.screens) do
+        for _, space_id in ipairs(screen.space_ids) do
+            screen_uuid_by_space[space_id] = screen.screen_uuid
+        end
+    end
+    return screen_uuid_by_space
+end
+
 ---@param window_id integer
 ---@return integer[] the desktops that macOS lists for the window, several for a window on all
 ---desktops

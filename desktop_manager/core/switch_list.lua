@@ -1,3 +1,5 @@
+local list_layout = require("desktop_manager.core.list_layout")
+
 ---The list that a press of Control-Option with a number shows: the numbered applications of the
 ---active profile, the titles of their windows, and the selected window.
 local switch_list = {}
@@ -290,6 +292,46 @@ function switch_list.describe_display_columns(applications, selection, displays)
         table.insert(groups, { display_name = nil, columns = other_columns })
     end
     return groups
+end
+
+---@param applications SwitchApplication[]
+---@param selection SwitchSelection|nil
+---@param _ SwitchDisplay[]
+---@param max_title_length integer
+---@return SwitchView
+local function describe_rows(applications, selection, _, max_title_length)
+    return { lines = switch_list.describe_lines(applications, selection, max_title_length) }
+end
+
+---@param applications SwitchApplication[]
+---@param selection SwitchSelection|nil
+---@return SwitchView
+local function describe_columns(applications, selection)
+    return { groups = switch_list.describe_application_columns(applications, selection) }
+end
+
+---@param applications SwitchApplication[]
+---@param selection SwitchSelection|nil
+---@param displays SwitchDisplay[]
+---@return SwitchView
+local function describe_columns_per_display(applications, selection, displays)
+    return { groups = switch_list.describe_display_columns(applications, selection, displays) }
+end
+
+local VIEW_BUILDERS = {
+    [list_layout.ROWS] = describe_rows,
+    [list_layout.COLUMNS] = describe_columns,
+    [list_layout.COLUMNS_PER_DISPLAY] = describe_columns_per_display,
+}
+
+---@param layout string a value of the setting list_layout
+---@param applications SwitchApplication[]
+---@param selection SwitchSelection|nil
+---@param displays SwitchDisplay[] the displays from left to right, for the columns per display
+---@param max_title_length integer the longest title of a line, for the rows
+---@return SwitchView the lines or the groups of columns that the list draws under the layout
+function switch_list.describe_view(layout, applications, selection, displays, max_title_length)
+    return VIEW_BUILDERS[layout](applications, selection, displays, max_title_length)
 end
 
 return switch_list
