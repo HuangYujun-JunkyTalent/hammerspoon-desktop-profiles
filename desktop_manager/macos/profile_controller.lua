@@ -884,8 +884,7 @@ function ProfileController:restore_profile_layout(
 end
 
 function ProfileController:deactivate_profile()
-    if self.is_switch_or_restore_running then
-        hs.alert.show(STILL_SWITCHING_MESSAGE)
+    if self:refuse_while_busy() then
         return
     end
     if not self.state.active_profile_number then
@@ -948,8 +947,7 @@ end
 ---An active profile stays active and records the windows from its next update on.
 ---@param number integer
 function ProfileController:clear_profile(number)
-    if self.is_switch_or_restore_running then
-        hs.alert.show(STILL_SWITCHING_MESSAGE)
+    if self:refuse_while_busy() then
         return
     end
     local name = profile_state.profile_or_default(self.state, number).name

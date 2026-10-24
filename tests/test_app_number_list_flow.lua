@@ -76,6 +76,44 @@ return {
         expect.equal(world.focused_window_id, 41)
     end,
 
+    a_deactivation_during_a_press_of_the_list_is_refused = function()
+        local world, controller = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.app_hotkeys["2"]()
+        expect.equal(controller.is_press_running, true)
+        local alert_count = #world.alerts
+        world.hotkeys["1"]()
+        world.hotkeys["0"]()
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "deactivate", profile = "1" }
+        )
+        expect.equal(#world.alerts, alert_count + 3)
+        for index = alert_count + 1, #world.alerts do
+            expect.equal(world.alerts[index], "Desktop Manager is still switching")
+        end
+        expect.equal(controller.state.active_profile_number, 1)
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 1)
+        expect.equal(controller.is_press_running, false)
+    end,
+
+    a_clear_during_a_press_of_the_list_is_refused = function()
+        local world, controller = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.app_hotkeys["2"]()
+        expect.equal(controller.is_press_running, true)
+        world.alert_button = "Clear"
+        world.hotkey_by_shortcut["ctrl+alt+cmd 1"]()
+        expect.equal(world.alerts[#world.alerts], "Desktop Manager is still switching")
+        expect.equal(profile_state.has_arrangements(controller.state, 1), true)
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(profile_state.has_arrangements(controller.state, 1), true)
+        expect.equal(controller.is_press_running, false)
+    end,
+
     a_monitor_change_during_a_press_of_the_list_is_restored_after_the_press = function()
         local timing = fake_worlds.create_default_timing()
         timing.screen_settle_seconds = 0.2
