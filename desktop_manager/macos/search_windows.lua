@@ -1,4 +1,5 @@
 local app_switcher = require("desktop_manager.macos.app_switcher")
+local preview_pacing = require("desktop_manager.core.preview_pacing")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local search_opening_log = require("desktop_manager.core.search_opening_log")
 local search_overlay = require("desktop_manager.macos.search_overlay")
@@ -378,6 +379,8 @@ end
 
 ---Shows the panel with the window before the focused one selected, loads the previews, and adds
 ---the windows of a new list of the window server when it comes.
+---The new list starts once the panel has had the time to draw, because the start of its process
+---holds the main thread for a few milliseconds.
 ---@param context SearchContext
 ---@return SearchPanel
 function search_windows.open(context)
@@ -426,10 +429,13 @@ function search_windows.open(context)
         end)
         :start()
     load_previews(panel, entries)
-    context.refresh_unreached_windows(function(unreached_windows, update_started_at)
-        add_unreached_windows(panel, unreached_windows)
-        panel.times.server_list_after = update_started_at - context.opened_at
-        panel.times.server_list_blocking_seconds = hs.timer.secondsSinceEpoch() - update_started_at
+    retained_timers.after(preview_pacing.AFTER_DRAWING_SECONDS, function()
+        context.refresh_unreached_windows(function(unreached_windows, update_started_at)
+            add_unreached_windows(panel, unreached_windows)
+            panel.times.server_list_after = update_started_at - context.opened_at
+            panel.times.server_list_blocking_seconds = hs.timer.secondsSinceEpoch()
+                - update_started_at
+        end)
     end)
     panel.times.shown_after = measure_since_opening(panel)
     return panel
