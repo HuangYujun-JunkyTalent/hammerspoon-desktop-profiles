@@ -1,3 +1,5 @@
+local track_windows = require("desktop_manager.macos.track_windows")
+
 local conceal_windows = {}
 
 ---@param plan ConcealmentPlan
@@ -5,10 +7,9 @@ local conceal_windows = {}
 ---@return string[] failures
 function conceal_windows.apply(plan, window_by_id)
     local failures = {}
-    for _, bundle_id in ipairs(plan.bundle_ids_to_hide) do
-        for _, application in ipairs(hs.application.applicationsForBundleID(bundle_id)) do
-            application:hide()
-        end
+    local applications = track_windows.list_running_applications(plan.bundle_ids_to_hide)
+    for _, application in ipairs(applications) do
+        application:hide()
     end
     for _, window_id in ipairs(plan.window_ids_to_minimize) do
         local window = window_by_id[window_id]

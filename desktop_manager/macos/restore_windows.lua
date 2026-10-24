@@ -5,6 +5,7 @@ local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local step_sequence = require("desktop_manager.core.step_sequence")
+local track_windows = require("desktop_manager.macos.track_windows")
 local window_routes = require("desktop_manager.core.window_routes")
 
 ---Brings the windows of a restore plan to their desktops and frames without a switch of desktops,
@@ -229,85 +230,103 @@ local function keep_routes_on_their_screens(planned, context, failures)
     return kept
 end
 
+---Unhides the applications of the bundle ids, and after `window_settle_seconds` adds a failure for
+---each application that stayed hidden.
+---@param bundle_ids string[]
+---@param context RestoreContext
+---@param failures string[]
+---@param on_done fun()
+local function unhide_applications(bundle_ids, context, failures, on_done)
+    for _, application in ipairs(track_windows.list_running_applications(bundle_ids)) do
+        application:unhide()
+    end
+    retained_timers.after(context.timing.window_settle_seconds, function()
+        for _, application in ipairs(track_windows.list_running_applications(bundle_ids)) do
+            if application:isHidden() then
+                table.insert(failures, application:name() .. " stayed hidden")
+            end
+        end
+        on_done()
+    end)
+end
+
+---Moves the windows of the routes by their ids to the desktop in view of their screens, where they
+---can take their frames, and calls `on_done` with the routes whose window arrived.
+---@param planned PlannedRoute[]
+---@param context RestoreContext
+---@param failures string[]
+---@param on_done fun(arrived: PlannedRoute[])
+local function bring_routes_into_view(planned, context, failures, on_done)
+    move_routes(planned, function(route)
+        return route.view_space_id
+    end, function(entry, message)
+        return string.format(
+            "%s did not come into view to take its frame: %s",
+            context.describe_window(entry.route.window_id),
+            message
+        )
+    end, context, failures, on_done)
+end
+
+---Moves the windows of the routes by their ids to their recorded desktops.
+---@param planned PlannedRoute[]
+---@param context RestoreContext
+---@param failures string[]
+---@param on_done fun()
+local function move_routes_to_their_desktops(planned, context, failures, on_done)
+    move_routes(
+        planned,
+        function(route)
+            return route.target_space_id
+        end,
+        function(entry, message)
+            return string.format(
+                "%s did not reach desktop %d of %s: %s",
+                context.describe_window(entry.route.window_id),
+                entry.placement.desktop_number,
+                entry.placement.slot_key,
+                message
+            )
+        end,
+        context,
+        failures,
+        function()
+            on_done()
+        end
+    )
+end
+
 ---@param plan RestorePlan
 ---@param context RestoreContext
 ---@param failures string[]
 ---@return Step[]
 local function build_steps(plan, context, failures)
     local planned = {}
-    local steps = {}
-    table.insert(steps, function(continue)
-        for _, bundle_id in ipairs(plan.bundle_ids_to_unhide) do
-            for _, application in ipairs(hs.application.applicationsForBundleID(bundle_id)) do
-                application:unhide()
-            end
-        end
-        retained_timers.after(context.timing.window_settle_seconds, function()
-            for _, bundle_id in ipairs(plan.bundle_ids_to_unhide) do
-                for _, application in ipairs(hs.application.applicationsForBundleID(bundle_id)) do
-                    if application:isHidden() then
-                        table.insert(failures, application:name() .. " stayed hidden")
-                    end
-                end
-            end
-            continue()
-        end)
-    end)
-    table.insert(steps, function(continue)
-        add_desktops(plan.desktop_additions, context, failures, continue)
-    end)
-    table.insert(steps, function(continue)
-        unminimize_windows(plan.unminimizations, context, continue)
-    end)
-    table.insert(steps, function(continue)
-        planned = plan_routes(plan.placements, context, failures)
-        move_routes(
-            planned,
-            function(route)
-                return route.view_space_id
-            end,
-            function(entry, message)
-                return string.format(
-                    "%s did not come into view to take its frame: %s",
-                    context.describe_window(entry.route.window_id),
-                    message
-                )
-            end,
-            context,
-            failures,
-            function(arrived)
+    return {
+        function(continue)
+            unhide_applications(plan.bundle_ids_to_unhide, context, failures, continue)
+        end,
+        function(continue)
+            add_desktops(plan.desktop_additions, context, failures, continue)
+        end,
+        function(continue)
+            unminimize_windows(plan.unminimizations, context, continue)
+        end,
+        function(continue)
+            planned = plan_routes(plan.placements, context, failures)
+            bring_routes_into_view(planned, context, failures, function(arrived)
                 planned = arrived
                 continue()
-            end
-        )
-    end)
-    table.insert(steps, function(continue)
-        set_frames(planned, context, continue)
-    end)
-    table.insert(steps, function(continue)
-        planned = keep_routes_on_their_screens(planned, context, failures)
-        move_routes(
-            planned,
-            function(route)
-                return route.target_space_id
-            end,
-            function(entry, message)
-                return string.format(
-                    "%s did not reach desktop %d of %s: %s",
-                    context.describe_window(entry.route.window_id),
-                    entry.placement.desktop_number,
-                    entry.placement.slot_key,
-                    message
-                )
-            end,
-            context,
-            failures,
-            function()
-                continue()
-            end
-        )
-    end)
-    return steps
+            end)
+        end,
+        function(continue)
+            set_frames(planned, context, continue)
+        end,
+        function(continue)
+            planned = keep_routes_on_their_screens(planned, context, failures)
+            move_routes_to_their_desktops(planned, context, failures, continue)
+        end,
+    }
 end
 
 ---Carries out a restore plan, and calls `on_done` with the failures that the user should hear of.

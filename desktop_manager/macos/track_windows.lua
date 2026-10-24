@@ -45,6 +45,20 @@ function track_windows.find_running_application(bundle_id)
     return hs.application.applicationsForBundleID(bundle_id)[1]
 end
 
+---Every running application of each bundle id, in the order of the bundle ids, also a second
+---instance of an application.
+---@param bundle_ids string[]
+---@return table[] hs.application objects
+function track_windows.list_running_applications(bundle_ids)
+    local applications = {}
+    for _, bundle_id in ipairs(bundle_ids) do
+        for _, application in ipairs(hs.application.applicationsForBundleID(bundle_id)) do
+            table.insert(applications, application)
+        end
+    end
+    return applications
+end
+
 ---@param windows table[] hs.window objects
 ---@return table<integer, table> the hs.window of each window id
 function track_windows.index_by_id(windows)
