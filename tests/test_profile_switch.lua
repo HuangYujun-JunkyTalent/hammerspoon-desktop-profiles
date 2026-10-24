@@ -11,6 +11,7 @@ local function open_window(window_id, bundle_id)
     return {
         window_id = window_id,
         bundle_id = bundle_id,
+        title = tostring(window_id),
         is_minimized = false,
         is_app_hidden = false,
     }
