@@ -17,14 +17,20 @@ local function add(lines, format, ...)
     table.insert(lines, string.format(format, ...))
 end
 
----@param state State
----@return string[] the build and the permission of Hammerspoon, the timers, the monitor matching
----and the pool of managed applications
-function diagnostic_lines.describe_build(state)
+---@return string[] the build and the permission of Hammerspoon, and the timers that run
+function diagnostic_lines.describe_hammerspoon()
     local lines = {}
     add(lines, "Hammerspoon %s", tostring(hs.processInfo and hs.processInfo.version))
     add(lines, "accessibility permission: %s", tostring(hs.accessibilityState()))
     add(lines, "running timers: %d", retained_timers.count_running())
+    return lines
+end
+
+---@param state State
+---@return string[] the monitor matching and the pool of managed applications, which the menu bar
+---item sets
+function diagnostic_lines.describe_menu_choices(state)
+    local lines = {}
     add(lines, "monitor matching: %s", state.monitor_matching)
     add(lines, "application pool: %s", app_pool.describe(state.app_pool))
     return lines
@@ -51,8 +57,11 @@ function diagnostic_lines.describe_screens(configuration, builtin_screen_name_pa
 end
 
 ---@param configuration MonitorConfiguration
----@return string[] the desktops of each screen with the one it shows, and the focused desktop
-function diagnostic_lines.describe_desktops(configuration)
+---@param kept_desktop_counts table<string, integer> the number of desktops that the desktop manager
+---tracks for each display, by slot key
+---@return string[] the desktops of each screen with the one it shows, the focused desktop, and the
+---desktops kept per display
+function diagnostic_lines.describe_desktops(configuration, kept_desktop_counts)
     local lines = {}
     local layout = read_desktops.read_desktop_layout()
     for _, screen in ipairs(layout.screens) do
@@ -74,22 +83,21 @@ function diagnostic_lines.describe_desktops(configuration)
         )
     end
     add(lines, "focused desktop: %s", tostring(layout.focused_space_id))
+    local kept_counts = {}
+    for slot_key, count in pairs(kept_desktop_counts) do
+        table.insert(kept_counts, string.format("%s %d", slot_key, count))
+    end
+    table.sort(kept_counts)
+    add(lines, "desktops kept per display: %s", table.concat(kept_counts, ", "))
     return lines
 end
 
 ---@param state State
 ---@param active_arrangement Arrangement|nil the arrangement of the active profile for the monitor
 ---configuration
----@return string[] the desktops kept per display, the active profile, and the desktops and the
----focus that its arrangement records
+---@return string[] the active profile, and the desktops and the focus that its arrangement records
 function diagnostic_lines.describe_profile(state, active_arrangement)
     local lines = {}
-    local kept_counts = {}
-    for slot_key, count in pairs(state.desktop_counts.kept) do
-        table.insert(kept_counts, string.format("%s %d", slot_key, count))
-    end
-    table.sort(kept_counts)
-    add(lines, "desktops kept per display: %s", table.concat(kept_counts, ", "))
     add(lines, "active profile: %s", tostring(state.active_profile_number))
     local active_number = state.active_profile_number
     for _, monitor in ipairs(active_arrangement and active_arrangement.monitors or {}) do

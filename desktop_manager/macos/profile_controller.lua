@@ -1653,11 +1653,13 @@ end
 
 ---Prints what the tool reads of the screens, desktops and windows, without changing anything.
 function ProfileController:print_diagnostics()
-    local build_lines = diagnostic_lines.describe_build(self.state)
+    local hammerspoon_lines = diagnostic_lines.describe_hammerspoon()
+    local menu_choice_lines = diagnostic_lines.describe_menu_choices(self.state)
     local configuration = self:read_monitor_configuration()
     local screen_lines =
         diagnostic_lines.describe_screens(configuration, self.settings.builtin_screen_name_patterns)
-    local desktop_lines = diagnostic_lines.describe_desktops(configuration)
+    local desktop_lines =
+        diagnostic_lines.describe_desktops(configuration, self.state.desktop_counts.kept)
     local active_number = self.state.active_profile_number
     local active_arrangement = active_number
         and profile_state.find_arrangement(self.state, active_number, configuration.key)
@@ -1672,7 +1674,8 @@ function ProfileController:print_diagnostics()
         self.window_filter
     )
     local lines = concatenate_lists.concatenate(
-        build_lines,
+        hammerspoon_lines,
+        menu_choice_lines,
         screen_lines,
         desktop_lines,
         profile_lines,
