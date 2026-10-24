@@ -208,6 +208,7 @@ function fake_hammerspoon.install(spec)
         saved_json = nil,
         json_files = {},
         unwritable_paths = {},
+        webview_message_callbacks = {},
         shortcuts_file_path = "/fake/keyboard-shortcuts.json",
         next_window_id = 1000,
         next_space_id = 2000,
@@ -1177,10 +1178,15 @@ function fake_hammerspoon.install(spec)
         return timer
     end
 
-    ---Sends a message of the page of the webview, as its script posts one.
+    ---Sends a message of the page of a webview, as the script of the page posts one to its handler.
+    ---@param handler_name string the name of the message handler of the page, such as "appPool"
     ---@param body table
-    function world.post_to_webview(body)
-        world.webview_message_callback({ name = "appPool", body = body })
+    function world.post_to_webview(handler_name, body)
+        local callback = world.webview_message_callbacks[handler_name]
+        if not callback then
+            error("no page of a webview has the message handler " .. handler_name)
+        end
+        callback({ name = handler_name, body = body })
     end
 
     ---Disconnects a screen as macOS 27 does while displays have separate Spaces: the first desktop
@@ -1500,7 +1506,7 @@ function fake_hammerspoon.install(spec)
                 new = function(name)
                     local content = { name = name }
                     function content:setCallback(callback)
-                        world.webview_message_callback = callback
+                        world.webview_message_callbacks[name] = callback
                         return content
                     end
                     return content

@@ -271,7 +271,7 @@ end
 ---@param world table
 local function leave_notes_to_macos(world)
     open_app_pool_window(world)
-    world.post_to_webview({
+    world.post_to_webview("appPool", {
         kind = "tick",
         bundle_id = "com.apple.Notes",
         app_name = "Notes",
@@ -1059,7 +1059,7 @@ return {
         expect.equal(controller:does_window_keep_desktop(41), false)
         world.minimize_window(42)
         open_app_pool_window(world)
-        world.post_to_webview({
+        world.post_to_webview("appPool", {
             kind = "tick",
             bundle_id = "com.microsoft.Word",
             app_name = "Microsoft Word",
@@ -1196,9 +1196,9 @@ return {
         expect.equal(row.title, "Show the search of the windows, or close it")
         expect.equal(row.macos_conflict, nil)
         world.hotkey_events = {}
-        world.post_to_webview({ kind = "record_start" })
+        world.post_to_webview("shortcuts", { kind = "record_start" })
         expect.equal(world.hotkey_events[1]:match("^disable") ~= nil, true)
-        world.post_to_webview({
+        world.post_to_webview("shortcuts", {
             kind = "record",
             id = "window_search.toggle",
             modifiers = { "ctrl", "alt" },
@@ -1209,7 +1209,7 @@ return {
         world.hotkey_by_shortcut["ctrl+alt f"]()
         expect.equal(world.read_search_panel() ~= nil, true)
         expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, false)
-        world.post_to_webview({ kind = "default", id = "window_search.toggle" })
+        world.post_to_webview("shortcuts", { kind = "default", id = "window_search.toggle" })
         expect.equal(world.hotkey_by_shortcut["ctrl+alt f"], nil)
         expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
     end,
@@ -1217,8 +1217,8 @@ return {
     a_shortcut_of_another_action_moves_after_a_choice = function()
         local world, controller = start_world()
         find_menu_item(world, "Keyboard shortcuts…").fn()
-        world.post_to_webview({ kind = "record_start" })
-        world.post_to_webview({
+        world.post_to_webview("shortcuts", { kind = "record_start" })
+        world.post_to_webview("shortcuts", {
             kind = "record",
             id = "profiles.deactivate",
             modifiers = { "cmd", "alt", "shift" },
@@ -1228,12 +1228,12 @@ return {
         expect.equal(pending.holder.id, "profiles.toggle.2")
         expect.equal(pending.text, "Option-Shift-Command-2")
         expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"] ~= nil, true)
-        world.post_to_webview({ kind = "resolve", remove_holder = true })
+        world.post_to_webview("shortcuts", { kind = "resolve", remove_holder = true })
         expect.equal(controller.shortcut_window.model.pending, nil)
         expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"], nil)
         expect.equal(controller.shortcuts:find_shortcut("profiles.toggle.2"), nil)
         expect.equal(controller.shortcuts:find_shortcut("profiles.deactivate").key, "2")
-        world.post_to_webview({ kind = "done" })
+        world.post_to_webview("shortcuts", { kind = "done" })
         expect.equal(controller.shortcut_window, nil)
     end,
 
@@ -1242,15 +1242,15 @@ return {
         world.symbolic_hotkeys["64"] =
             { enabled = true, value = { parameters = { 32, 49, 1048576 }, type = "standard" } }
         find_menu_item(world, "Keyboard shortcuts…").fn()
-        world.post_to_webview({ kind = "record_start" })
-        world.post_to_webview({
+        world.post_to_webview("shortcuts", { kind = "record_start" })
+        world.post_to_webview("shortcuts", {
             kind = "record",
             id = "window_search.toggle",
             modifiers = { "cmd" },
             key = "space",
         })
         expect.equal(controller.shortcut_window.model.pending.macos.name, "Show Spotlight search")
-        world.post_to_webview({ kind = "resolve", turn_off_macos = true })
+        world.post_to_webview("shortcuts", { kind = "resolve", turn_off_macos = true })
         expect.equal(
             world.tasks[#world.tasks].arguments[1]:match("disable_macos_shortcut%.sh$") ~= nil,
             true
@@ -1271,8 +1271,8 @@ return {
             find_shortcut_row(controller, "window_search.toggle").macos_conflict.name,
             "Select next source in Input menu"
         )
-        world.post_to_webview({ kind = "record_start" })
-        world.post_to_webview({
+        world.post_to_webview("shortcuts", { kind = "record_start" })
+        world.post_to_webview("shortcuts", {
             kind = "record",
             id = "window_search.toggle",
             modifiers = { "ctrl", "alt", "shift", "cmd" },
@@ -1281,7 +1281,7 @@ return {
         local pending = controller.shortcut_window.model.pending
         expect.equal(pending.text, "Control-Option-Shift-Command-3")
         expect.equal(pending.macos.name, "Switch to Desktop 3")
-        world.post_to_webview({ kind = "resolve" })
+        world.post_to_webview("shortcuts", { kind = "resolve" })
         expect.equal(controller.shortcuts:find_shortcut("window_search.toggle").key, "3")
         expect.equal(world.hotkey_by_shortcut["ctrl+alt+shift+cmd 3"] ~= nil, true)
         expect.equal(
@@ -1295,17 +1295,17 @@ return {
         world.execute_calls = 0
         find_menu_item(world, "Keyboard shortcuts…").fn()
         expect.equal(world.execute_calls, 1)
-        world.post_to_webview({ kind = "remove", id = "window_search.toggle" })
+        world.post_to_webview("shortcuts", { kind = "remove", id = "window_search.toggle" })
         expect.equal(world.execute_calls, 2)
     end,
 
     escape_ends_the_recording_of_a_shortcut_and_turns_the_shortcuts_on_again = function()
         local world, controller = start_world()
         find_menu_item(world, "Keyboard shortcuts…").fn()
-        world.post_to_webview({ kind = "record_start" })
+        world.post_to_webview("shortcuts", { kind = "record_start" })
         local hotkey = controller.shortcuts.binding_by_id["window_search.toggle"].hotkey
         expect.equal(hotkey.is_enabled, false)
-        world.post_to_webview({ kind = "record_cancel" })
+        world.post_to_webview("shortcuts", { kind = "record_cancel" })
         expect.equal(hotkey.is_enabled, true)
         expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, true)
         expect.equal(controller.shortcut_window.model.problems, {})
@@ -1314,8 +1314,8 @@ return {
     a_recorded_key_without_a_name_in_hammerspoon_is_reported_above_the_list = function()
         local world, controller = start_world()
         find_menu_item(world, "Keyboard shortcuts…").fn()
-        world.post_to_webview({ kind = "record_start" })
-        world.post_to_webview({ kind = "record_unknown", code = "IntlRo" })
+        world.post_to_webview("shortcuts", { kind = "record_start" })
+        world.post_to_webview("shortcuts", { kind = "record_unknown", code = "IntlRo" })
         expect.equal(
             controller.shortcut_window.model.problems,
             { "The key IntlRo has no name in Hammerspoon." }
@@ -1330,7 +1330,7 @@ return {
     delete_leaves_an_action_without_a_shortcut = function()
         local world, controller = start_world()
         find_menu_item(world, "Keyboard shortcuts…").fn()
-        world.post_to_webview({ kind = "remove", id = "window_search.toggle" })
+        world.post_to_webview("shortcuts", { kind = "remove", id = "window_search.toggle" })
         expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT], nil)
         local row = find_shortcut_row(controller, "window_search.toggle")
         expect.equal(row.shortcut, nil)
@@ -1341,10 +1341,10 @@ return {
     restore_all_defaults_gives_every_action_its_default_shortcut_again = function()
         local world, controller = start_world()
         find_menu_item(world, "Keyboard shortcuts…").fn()
-        world.post_to_webview({ kind = "remove", id = "window_search.toggle" })
-        world.post_to_webview({ kind = "remove", id = "profiles.deactivate" })
+        world.post_to_webview("shortcuts", { kind = "remove", id = "window_search.toggle" })
+        world.post_to_webview("shortcuts", { kind = "remove", id = "profiles.deactivate" })
         expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"], nil)
-        world.post_to_webview({ kind = "reset_all" })
+        world.post_to_webview("shortcuts", { kind = "reset_all" })
         expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
         expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"] ~= nil, true)
         expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, true)
@@ -1358,7 +1358,7 @@ return {
         world.symbolic_hotkeys["61"] =
             { enabled = true, value = { parameters = { 32, 49, 1835008 }, type = "standard" } }
         find_menu_item(world, "Keyboard shortcuts…").fn()
-        world.post_to_webview({ kind = "turn_off_macos", id = "window_search.toggle" })
+        world.post_to_webview("shortcuts", { kind = "turn_off_macos", id = "window_search.toggle" })
         expect.equal(world.tasks[#world.tasks].arguments[2], "61")
         expect.equal(world.symbolic_hotkeys["61"].enabled, false)
         expect.equal(find_shortcut_row(controller, "window_search.toggle").macos_conflict, nil)
@@ -1371,14 +1371,14 @@ return {
             { enabled = true, value = { parameters = { 32, 49, 1048576 }, type = "standard" } }
         world.task_exit_code = 1
         find_menu_item(world, "Keyboard shortcuts…").fn()
-        world.post_to_webview({ kind = "record_start" })
-        world.post_to_webview({
+        world.post_to_webview("shortcuts", { kind = "record_start" })
+        world.post_to_webview("shortcuts", {
             kind = "record",
             id = "window_search.toggle",
             modifiers = { "cmd" },
             key = "space",
         })
-        world.post_to_webview({ kind = "resolve", turn_off_macos = true })
+        world.post_to_webview("shortcuts", { kind = "resolve", turn_off_macos = true })
         expect.equal(controller.shortcut_window.model.pending, nil)
         expect.equal(controller.shortcut_window.model.problems, {
             'The macOS shortcut "Show Spotlight search" could not be turned off: ',
@@ -1402,10 +1402,10 @@ return {
         )
         find_menu_item(world, "Keyboard shortcuts…").fn()
         local problems = { "the shortcuts could not be written to /fake/keyboard-shortcuts.json" }
-        world.post_to_webview({ kind = "remove", id = "window_search.toggle" })
+        world.post_to_webview("shortcuts", { kind = "remove", id = "window_search.toggle" })
         expect.equal(controller.shortcut_window.model.problems, problems)
         expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
-        world.post_to_webview({ kind = "reset_all" })
+        world.post_to_webview("shortcuts", { kind = "reset_all" })
         expect.equal(controller.shortcut_window.model.problems, problems)
         expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
         expect.equal(world.json_files[world.shortcuts_file_path], nil)
@@ -1436,7 +1436,7 @@ return {
         )
         local chosen = controller.color_window.model.colors
         chosen.selection = { hex = "#2E8B57", alpha = 0.9 }
-        world.post_to_webview({ kind = "set", colors = chosen })
+        world.post_to_webview("colors", { kind = "set", colors = chosen })
         expect.equal(world.saved_json.highlight_colors.selection, { hex = "#2E8B57", alpha = 0.9 })
         world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
         local fill = nil
@@ -1447,9 +1447,9 @@ return {
         end
         expect.equal(fill, { hex = "#2E8B57", alpha = 0.9 })
         world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
-        world.post_to_webview({ kind = "restore" })
+        world.post_to_webview("colors", { kind = "restore" })
         expect.equal(controller.state.highlight_colors, {})
-        world.post_to_webview({ kind = "done" })
+        world.post_to_webview("colors", { kind = "done" })
         expect.equal(controller.color_window, nil)
     end,
 
@@ -2444,7 +2444,7 @@ return {
         world.advance(SETTLE_SECONDS)
         expect.equal(recorded_sight(controller, 1, 41), "in sight")
         open_app_pool_window(world)
-        world.post_to_webview({
+        world.post_to_webview("appPool", {
             kind = "tick",
             bundle_id = "com.apple.Safari",
             app_name = "Safari",
@@ -2469,12 +2469,12 @@ return {
             world.webview.page:find('data-app-name="Safari"> Safari', 1, true) ~= nil,
             true
         )
-        world.post_to_webview({ kind = "mode", mode = "manage_listed" })
+        world.post_to_webview("appPool", { kind = "mode", mode = "manage_listed" })
         for _, application in ipairs({
             { "com.apple.Safari", "Safari" },
             { "com.microsoft.Word", "Microsoft Word" },
         }) do
-            world.post_to_webview({
+            world.post_to_webview("appPool", {
                 kind = "tick",
                 bundle_id = application[1],
                 app_name = application[2],
@@ -2485,9 +2485,9 @@ return {
         expect.equal(controller.state.app_pool.mode, "manage_listed")
         expect.equal(#controller.state.app_pool.manage_listed, 2)
         expect.equal(controller.state.app_pool.skip_listed, {})
-        world.post_to_webview({ kind = "mode", mode = "skip_listed" })
+        world.post_to_webview("appPool", { kind = "mode", mode = "skip_listed" })
         expect.equal(world.webview.page:find('data-app-name="Safari" checked', 1, true), nil)
-        world.post_to_webview({ kind = "done" })
+        world.post_to_webview("appPool", { kind = "done" })
         expect.equal(world.webview.is_visible, false)
         expect.equal(controller.app_pool_window, nil)
     end,
@@ -3593,7 +3593,7 @@ return {
     the_check_before_a_removal_walks_every_window_once = function()
         local world, controller = start_world()
         open_app_pool_window(world)
-        world.post_to_webview({
+        world.post_to_webview("appPool", {
             kind = "tick",
             bundle_id = "com.microsoft.Word",
             app_name = "Microsoft Word",
