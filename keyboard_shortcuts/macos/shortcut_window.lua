@@ -1,5 +1,6 @@
 local macos_shortcut_settings = require("keyboard_shortcuts.macos.macos_shortcut_settings")
 local shortcut_window_model = require("keyboard_shortcuts.core.shortcut_window_model")
+local web_window = require("keyboard_shortcuts.macos.web_window")
 
 ---The window that lists the shortcuts of every utility and changes them.
 ---Clicking a shortcut records the next key press with modifiers, while every shortcut of the tools
@@ -19,7 +20,7 @@ local WINDOW_SIZE = { w = 720, h = 720 }
 ---@field macos MacosShortcut|nil the shortcut of macOS that is on with the same keys
 
 ---@class ShortcutWindow
----@field view table the hs.webview
+---@field web_window WebWindow
 ---@field center ShortcutCenter
 ---@field problems string[] the problems of the last change, shown above the list
 ---@field pending PendingShortcut|nil
@@ -27,23 +28,15 @@ local WINDOW_SIZE = { w = 720, h = 720 }
 ---@field on_closed fun()
 
 local STYLE = [[
-:root { color-scheme: light dark; --accent: #0a84ff; --warn: #c27c0e;
-  --card: rgba(127, 127, 127, 0.08); --line: rgba(127, 127, 127, 0.18);
-  font: 13px -apple-system, BlinkMacSystemFont, sans-serif; }
 body { margin: 0; }
 header { position: sticky; top: 0; z-index: 2; padding: 16px 20px 10px; background: Canvas;
   border-bottom: 1px solid var(--line); }
-h1 { font-size: 17px; margin: 0 0 4px; }
 .lead { margin: 0 0 10px; color: GrayText; }
 #filter { width: 100%; box-sizing: border-box; font-size: 13px; padding: 6px 10px;
   border-radius: 7px; border: 1px solid var(--line); background: var(--card); }
 main { padding: 6px 20px 70px; }
-h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: GrayText;
-  margin: 18px 0 6px 4px; }
-.card { background: var(--card); border-radius: 10px; overflow: hidden; }
 .row { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
   border-top: 1px solid var(--line); }
-.row:first-child { border-top: none; }
 .title { flex: 1; }
 .changed { display: inline-block; width: 6px; height: 6px; border-radius: 3px;
   background: var(--accent); margin-left: 6px; vertical-align: middle; }
@@ -63,17 +56,12 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; margin: 0 1px;
 .note { margin: 0 12px 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
 .note.warn { background: rgba(194, 124, 14, 0.13); }
 .note .choices { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
-.note button, footer button { font: inherit; padding: 3px 12px; border-radius: 6px;
+.note button { font: inherit; padding: 3px 12px; border-radius: 6px;
   border: 1px solid var(--line); background: Canvas; cursor: pointer; }
-.note button.primary, footer button.primary { background: var(--accent); color: white;
-  border-color: var(--accent); }
+.note button.primary { background: var(--accent); color: white; border-color: var(--accent); }
 .banner { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px;
   background: rgba(208, 54, 45, 0.13); }
 .empty { color: GrayText; padding: 12px; }
-footer { position: fixed; bottom: 0; left: 0; right: 0; display: flex;
-  justify-content: space-between; align-items: center; padding: 10px 20px; background: Canvas;
-  border-top: 1px solid var(--line); }
-footer .hint { color: GrayText; font-size: 11px; }
 ]]
 
 local SCRIPT = [[
@@ -225,6 +213,7 @@ document.getElementById("done").addEventListener("click", () => post({ kind: "do
 function shortcut_window.build_page(model)
     return table.concat({
         "<!DOCTYPE html><html><head><meta charset='utf-8'><style>",
+        web_window.SHARED_STYLE,
         STYLE,
         "</style></head><body><header><h1>Keyboard Shortcuts</h1>",
         "<p class='lead'>Click a shortcut and press the new keys. Escape cancels, and Delete",
@@ -276,14 +265,14 @@ end
 ---@param window ShortcutWindow
 local function load_page(window)
     window.model = build_window_model(window)
-    window.view:html(shortcut_window.build_page(window.model))
+    window.web_window.view:html(shortcut_window.build_page(window.model))
 end
 
 ---Builds the model of the window again and draws the list of the loaded page with it.
 ---@param window ShortcutWindow
 local function redraw_list(window)
     window.model = build_window_model(window)
-    window.view:evaluateJavaScript("render(" .. hs.json.encode(window.model) .. ")")
+    window.web_window.view:evaluateJavaScript("render(" .. hs.json.encode(window.model) .. ")")
 end
 
 ---@param window ShortcutWindow
@@ -416,32 +405,16 @@ local MESSAGE_KIND_HANDLERS = {
         end
     end,
     done = function(window)
-        finish_closing(window)
-        window.view:delete()
+        web_window.close(window.web_window)
     end,
 }
 
 ---@param window ShortcutWindow
 ---@param body table the message of the page
 local function handle_message(window, body)
-    if type(body) ~= "table" then
-        return
-    end
     local handler = MESSAGE_KIND_HANDLERS[body.kind]
     if handler then
         handler(window, body)
-    end
-end
-
----Hammerspoon comes to the front first, because a window of an application in the back takes no
----key presses.
----@param window ShortcutWindow
-local function focus(window)
-    hs.focus()
-    window.view:bringToFront()
-    local hs_window = window.view:hswindow()
-    if hs_window then
-        hs_window:focus()
     end
 end
 
@@ -450,42 +423,28 @@ end
 ---@return ShortcutWindow
 function shortcut_window.open(center, on_closed)
     local window = { center = center, problems = {}, pending = nil, on_closed = on_closed }
-    local screen_frame = hs.screen.mainScreen():frame()
-    local user_content = hs.webview.usercontent.new(MESSAGE_HANDLER)
-    user_content:setCallback(function(message)
-        handle_message(window, message.body)
-    end)
-    window.view = hs
-        .webview
-        .new({
-            x = screen_frame.x + (screen_frame.w - WINDOW_SIZE.w) / 2,
-            y = screen_frame.y + (screen_frame.h - WINDOW_SIZE.h) / 2,
-            w = WINDOW_SIZE.w,
-            h = WINDOW_SIZE.h,
-        }, {}, user_content)
-        :windowTitle("Keyboard Shortcuts")
-        :windowStyle({ "titled", "closable", "resizable" })
-        :allowTextEntry(true)
+    window.web_window = web_window.new({
+        title = "Keyboard Shortcuts",
+        size = WINDOW_SIZE,
+        message_handler = MESSAGE_HANDLER,
         -- Escape cancels a recording, so it does not close the window.
-        :closeOnEscape(
-            false
-        )
-        :deleteOnClose(true)
-        :windowCallback(function(action)
-            if action == "closing" then
-                finish_closing(window)
-            end
-        end)
+        does_escape_close = false,
+        on_message = function(body)
+            handle_message(window, body)
+        end,
+        on_closed = function()
+            finish_closing(window)
+        end,
+    })
     load_page(window)
-    window.view:show()
-    focus(window)
+    web_window.show(window.web_window)
     return window
 end
 
 ---@param window ShortcutWindow
 function shortcut_window.bring_to_front(window)
     redraw_list(window)
-    focus(window)
+    web_window.bring_to_front(window.web_window)
 end
 
 return shortcut_window

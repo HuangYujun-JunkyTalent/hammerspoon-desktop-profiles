@@ -1411,6 +1411,22 @@ return {
         expect.equal(world.json_files[world.shortcuts_file_path], nil)
     end,
 
+    the_window_of_the_shortcuts_runs_its_closing_action_once = function()
+        local world, controller = start_world()
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        local view = controller.shortcut_window.web_window.view
+        world.hotkey_events = {}
+        world.post_to_webview("shortcuts", { kind = "done" })
+        local event_count = #world.hotkey_events
+        expect.equal(event_count > 0, true)
+        expect.equal(controller.shortcut_window, nil)
+        view.window_callback("closing")
+        expect.equal(#world.hotkey_events, event_count)
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        controller.shortcut_window.web_window.view.window_callback("closing")
+        expect.equal(controller.shortcut_window, nil)
+    end,
+
     a_highlight_color_of_the_setting_marks_the_selection = function()
         local selection = { hex = "#2E8B57", alpha = 0.9 }
         local world = start_world({ search_highlight_colors = { selection = selection } })

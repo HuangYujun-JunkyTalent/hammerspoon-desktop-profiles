@@ -1,4 +1,5 @@
 local app_pool = require("desktop_manager.core.app_pool")
+local web_window = require("keyboard_shortcuts.macos.web_window")
 
 ---The window that chooses the managed applications.
 ---A menu of the menu bar item closes at each click, so the window holds the choice instead, and
@@ -16,7 +17,7 @@ local WINDOW_SIZE = { w = 460, h = 560 }
 ---@field on_closed fun()
 
 ---@class AppPoolWindow
----@field view table the hs.webview
+---@field web_window WebWindow
 ---@field actions AppPoolWindowActions
 
 ---@param text string
@@ -124,7 +125,7 @@ end
 
 ---@param window AppPoolWindow
 local function render(window)
-    window.view:html(
+    window.web_window.view:html(
         app_pool_window.build_page(window.actions.read_pool(), window.actions.list_choices())
     )
 end
@@ -132,9 +133,6 @@ end
 ---@param window AppPoolWindow
 ---@param body table the message of the page
 local function handle_message(window, body)
-    if type(body) ~= "table" then
-        return
-    end
     if body.kind == "mode" and app_pool.is_valid_mode(body.mode) then
         window.actions.set_mode(body.mode)
         -- The ticks of the other mode show once the page is drawn again.
@@ -146,20 +144,7 @@ local function handle_message(window, body)
             body.is_listed == true
         )
     elseif body.kind == "done" then
-        window.actions.on_closed()
-        window.view:delete()
-    end
-end
-
----Hammerspoon comes to the front first, because a window of an application in the back takes no
----key presses, such as Escape.
----@param window AppPoolWindow
-local function focus(window)
-    hs.focus()
-    window.view:bringToFront()
-    local hs_window = window.view:hswindow()
-    if hs_window then
-        hs_window:focus()
+        web_window.close(window.web_window)
     end
 end
 
@@ -167,31 +152,18 @@ end
 ---@return AppPoolWindow
 function app_pool_window.open(actions)
     local window = { actions = actions }
-    local screen_frame = hs.screen.mainScreen():frame()
-    local user_content = hs.webview.usercontent.new(MESSAGE_HANDLER)
-    user_content:setCallback(function(message)
-        handle_message(window, message.body)
-    end)
-    window.view = hs.webview
-        .new({
-            x = screen_frame.x + (screen_frame.w - WINDOW_SIZE.w) / 2,
-            y = screen_frame.y + (screen_frame.h - WINDOW_SIZE.h) / 2,
-            w = WINDOW_SIZE.w,
-            h = WINDOW_SIZE.h,
-        }, {}, user_content)
-        :windowTitle("Managed applications")
-        :windowStyle({ "titled", "closable", "resizable" })
-        :allowTextEntry(true)
-        :closeOnEscape(true)
-        :deleteOnClose(true)
-        :windowCallback(function(action)
-            if action == "closing" then
-                actions.on_closed()
-            end
-        end)
+    window.web_window = web_window.new({
+        title = "Managed applications",
+        size = WINDOW_SIZE,
+        message_handler = MESSAGE_HANDLER,
+        does_escape_close = true,
+        on_message = function(body)
+            handle_message(window, body)
+        end,
+        on_closed = actions.on_closed,
+    })
     render(window)
-    window.view:show()
-    focus(window)
+    web_window.show(window.web_window)
     return window
 end
 
@@ -200,7 +172,7 @@ end
 ---@param window AppPoolWindow
 function app_pool_window.bring_to_front(window)
     render(window)
-    focus(window)
+    web_window.bring_to_front(window.web_window)
 end
 
 return app_pool_window

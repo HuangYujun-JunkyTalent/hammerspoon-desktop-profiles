@@ -1,4 +1,5 @@
 local highlight_colors = require("desktop_manager.core.highlight_colors")
+local web_window = require("keyboard_shortcuts.macos.web_window")
 
 ---The window that picks the colors of the search of the windows.
 ---A preview in the style of the search panel follows each move of a picker or a slider, and each
@@ -32,7 +33,7 @@ local LABELS = {
 ---@field on_closed fun()
 
 ---@class ColorWindow
----@field view table the hs.webview
+---@field web_window WebWindow
 ---@field actions ColorWindowActions
 ---@field model table the content of the page when the window opened
 
@@ -71,12 +72,7 @@ local function build_model(actions)
 end
 
 local STYLE = [[
-:root { color-scheme: light dark; --accent: #0a84ff; --card: rgba(127, 127, 127, 0.08);
-  --line: rgba(127, 127, 127, 0.18); font: 13px -apple-system, BlinkMacSystemFont, sans-serif; }
 body { margin: 0; padding: 16px 20px 70px; }
-h1 { font-size: 17px; margin: 0 0 4px; }
-h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: GrayText;
-  margin: 18px 0 6px 4px; }
 .lead { margin: 0 0 12px; color: GrayText; }
 .preview { background: rgba(31, 31, 31, 0.97); color: white; border-radius: 14px; padding: 14px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); }
@@ -99,10 +95,8 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .preset:hover { border-color: var(--accent); }
 .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block;
   border: 1px solid rgba(127, 127, 127, 0.4); }
-.card { background: var(--card); border-radius: 10px; overflow: hidden; }
 .row { display: flex; align-items: center; gap: 12px; padding: 9px 12px;
   border-top: 1px solid var(--line); }
-.row:first-child { border-top: none; }
 .label { flex: 1; } .label .description { color: GrayText; font-size: 11px; }
 input[type=color] { width: 38px; height: 26px; border: none; padding: 0; background: none;
   cursor: pointer; }
@@ -112,13 +106,6 @@ input[type=range] { width: 120px; }
   width: 24px; border-radius: 5px; }
 .reset:hover { background: var(--card); color: CanvasText; }
 .reset[disabled] { visibility: hidden; }
-footer { position: fixed; bottom: 0; left: 0; right: 0; display: flex;
-  justify-content: space-between; align-items: center; padding: 10px 20px; background: Canvas;
-  border-top: 1px solid var(--line); }
-footer button { font: inherit; padding: 3px 12px; border-radius: 6px; border: 1px solid var(--line);
-  background: Canvas; cursor: pointer; }
-footer button.primary { background: var(--accent); color: white; border-color: var(--accent); }
-footer .hint { color: GrayText; font-size: 11px; }
 ]]
 
 local SCRIPT = [[
@@ -215,6 +202,7 @@ local PREVIEW = [[
 local function build_page(model)
     return table.concat({
         "<!DOCTYPE html><html><head><meta charset='utf-8'><style>",
+        web_window.SHARED_STYLE,
         STYLE,
         "</style></head><body><h1>Search Colors</h1>",
         "<p class='lead'>The colors behind the selection, the hover and the matches of the search",
@@ -236,9 +224,6 @@ end
 ---@param window ColorWindow
 ---@param body table the message of the page
 local function handle_message(window, body)
-    if type(body) ~= "table" then
-        return
-    end
     if body.kind == "set" and type(body.colors) == "table" then
         local chosen = {}
         for _, name in ipairs(highlight_colors.NAMES) do
@@ -258,18 +243,7 @@ local function handle_message(window, body)
     elseif body.kind == "restore" then
         window.actions.set_colors({})
     elseif body.kind == "done" then
-        window.actions.on_closed()
-        window.view:delete()
-    end
-end
-
----@param window ColorWindow
-local function focus(window)
-    hs.focus()
-    window.view:bringToFront()
-    local hs_window = window.view:hswindow()
-    if hs_window then
-        hs_window:focus()
+        web_window.close(window.web_window)
     end
 end
 
@@ -277,38 +251,25 @@ end
 ---@return ColorWindow
 function color_window.open(actions)
     local window = { actions = actions }
-    local screen_frame = hs.screen.mainScreen():frame()
-    local user_content = hs.webview.usercontent.new(MESSAGE_HANDLER)
-    user_content:setCallback(function(message)
-        handle_message(window, message.body)
-    end)
-    window.view = hs.webview
-        .new({
-            x = screen_frame.x + (screen_frame.w - WINDOW_SIZE.w) / 2,
-            y = screen_frame.y + (screen_frame.h - WINDOW_SIZE.h) / 2,
-            w = WINDOW_SIZE.w,
-            h = WINDOW_SIZE.h,
-        }, {}, user_content)
-        :windowTitle("Search Colors")
-        :windowStyle({ "titled", "closable", "resizable" })
-        :allowTextEntry(true)
-        :closeOnEscape(true)
-        :deleteOnClose(true)
-        :windowCallback(function(action)
-            if action == "closing" then
-                actions.on_closed()
-            end
-        end)
+    window.web_window = web_window.new({
+        title = "Search Colors",
+        size = WINDOW_SIZE,
+        message_handler = MESSAGE_HANDLER,
+        does_escape_close = true,
+        on_message = function(body)
+            handle_message(window, body)
+        end,
+        on_closed = actions.on_closed,
+    })
     window.model = build_model(actions)
-    window.view:html(build_page(window.model))
-    window.view:show()
-    focus(window)
+    window.web_window.view:html(build_page(window.model))
+    web_window.show(window.web_window)
     return window
 end
 
 ---@param window ColorWindow
 function color_window.bring_to_front(window)
-    focus(window)
+    web_window.bring_to_front(window.web_window)
 end
 
 return color_window
