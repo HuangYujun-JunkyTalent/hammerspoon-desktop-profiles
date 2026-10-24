@@ -1,5 +1,7 @@
----The text of the log line of a press on the thumbnail of a desktop in Mission Control, from the
----record of the press.
+---The texts that describe a press on the thumbnail of a desktop in Mission Control, from the record
+---of the press: the log line of the press, the errors of its presses in the warning when its
+---desktop did not show, and the count of its openings and presses in the failure that the press
+---reports to the alert after a switch, a restore or a press of the list or the search.
 local thumbnail_press_log = {}
 
 ---The focus of a window of the application of the chosen window before a press, so that the
