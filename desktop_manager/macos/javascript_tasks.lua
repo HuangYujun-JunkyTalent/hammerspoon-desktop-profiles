@@ -15,8 +15,8 @@ local SCRIPT_FOLDER = (
 ---@param script_name string a script of this folder, such as "list_server_windows.js"
 ---@param script_arguments string[]
 ---@param on_exit fun(exit_code: integer, output: string, error_output: string)
----@param on_output fun(task: table|nil, output: string, error_output: string): boolean|nil receives
----the output as it comes, or nil to receive the whole output at the exit
+---@param on_output? fun(task: table|nil, output: string, error_output: string): boolean receives
+---the output as it comes, and without it the exit callback receives the whole output
 ---@return table|nil the hs.task, or nil when Hammerspoon cannot create it
 function javascript_tasks.new(script_name, script_arguments, on_exit, on_output)
     local arguments = { "-l", "JavaScript", SCRIPT_FOLDER .. "/" .. script_name }
