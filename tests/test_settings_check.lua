@@ -46,6 +46,7 @@ return {
     end,
 
     an_old_value_of_missing_window_policy_gives_way_to_its_new_value_with_a_line = function()
+        ---@type table the settings with a former value of missing_window_policy
         local settings = default_settings.create("/fake/state.json")
         settings.missing_window_policy = "open_new_window"
         local replaced, lines = settings_check.replace_old_values(settings)

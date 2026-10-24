@@ -109,10 +109,9 @@ return {
         world.windows[41].is_unseen = false
         world.windows[42].is_unseen = false
         world.windows_without_application[41] = true
-        expect.equal(track_windows.describe(_G.hs.window.get(41)), 'a window "Window 1"')
-        expect.equal(
-            track_windows.describe(_G.hs.window.get(42)),
-            'Microsoft Word window "Window 2"'
-        )
+        local without_application = expect.present(_G.hs.window.get(41), "window 41")
+        local of_word = expect.present(_G.hs.window.get(42), "window 42")
+        expect.equal(track_windows.describe(without_application), 'a window "Window 1"')
+        expect.equal(track_windows.describe(of_word), 'Microsoft Word window "Window 2"')
     end,
 }
