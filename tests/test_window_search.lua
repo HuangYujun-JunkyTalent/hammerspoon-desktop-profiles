@@ -91,6 +91,18 @@ return {
         expect.equal(window_search.find_selected_window_id(search), 21)
     end,
 
+    a_hover_and_a_choice_keep_the_ranking_of_the_typed_words = function()
+        local typed = window_search.type_text(start(nil), "fire")
+        local hovered = window_search.hover_application(typed, MAIL)
+        expect.equal(rawequal(hovered.levels, typed.levels), true)
+        expect.equal(hovered.shown, { 21 })
+        local chosen = window_search.choose_application(hovered, MAIL)
+        expect.equal(rawequal(chosen.levels, typed.levels), true)
+        local released = window_search.choose_application(chosen, MAIL)
+        expect.equal(window_search.hover_application(released, nil).shown, typed.shown)
+        expect.equal(typed.shown, { 11, 12 })
+    end,
+
     a_chosen_application_stays_while_the_mouse_hovers_over_another = function()
         local search = window_search.choose_application(start(21), FIREFOX)
         search = window_search.hover_application(search, MAIL)

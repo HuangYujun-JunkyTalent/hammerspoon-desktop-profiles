@@ -37,8 +37,10 @@ local window_search = {
 ---@field hovered_bundle_id string|nil the application that the mouse hovers over
 ---@field chosen_bundle_id string|nil the application that a click chose
 ---@field shown integer[] the windows in view, in their order
+---@field has_words boolean whether the typed text holds a word
 ---@field levels table<integer, string> the level of `fuzzy_match` of each window that matches the
 ---typed words
+---@field matches integer[] the windows that match the typed words, from the best score down
 ---@field selected_window_id integer|nil a window in view, or nil when no window is in view
 
 ---What the panel shows.
@@ -94,17 +96,11 @@ local function group_applications(entries, number_by_bundle_id)
 end
 
 ---@param search WindowSearch
----@return boolean
-local function has_words(search)
-    return #fuzzy_match.split_words(search.text) > 0
-end
-
----@param search WindowSearch
 ---@return table<integer, string> levels
 ---@return integer[] matches from the best score down, in the order of the entries at equal scores
 local function rank_matches(search)
     local matches = {}
-    if not has_words(search) then
+    if not search.has_words then
         return {}, {}
     end
     for position, entry in ipairs(search.entries) do
@@ -164,8 +160,17 @@ local function copy(search)
     return copied
 end
 
----Works out the matches, the windows in view and the selection of a search whose text,
----applications or entries changed.
+---Scores the entries against the typed words, which only a new text or new entries change.
+---@param search WindowSearch
+---@return WindowSearch the same table, ranked
+local function rank(search)
+    search.has_words = #fuzzy_match.split_words(search.text) > 0
+    search.levels, search.matches = rank_matches(search)
+    return search
+end
+
+---Works out the windows in view and the selection of a ranked search whose text, applications or
+---entries changed.
 ---The preferred window stays selected while it is in view.
 ---Otherwise the initial window is selected while every window shows, and the first window in view
 ---when some show.
@@ -173,14 +178,12 @@ end
 ---@param preferred_window_id integer|nil
 ---@return WindowSearch the same table, updated
 local function update_view(search, preferred_window_id)
-    local levels, matches = rank_matches(search)
-    search.levels = levels
     local focused = find_application(search, search.chosen_bundle_id or search.hovered_bundle_id)
-    local is_every_window_shown = not focused and not has_words(search)
+    local is_every_window_shown = not focused and not search.has_words
     if focused then
         search.shown = focused.window_ids
-    elseif has_words(search) then
-        search.shown = matches
+    elseif search.has_words then
+        search.shown = search.matches
     else
         search.shown = {}
         for _, entry in ipairs(search.entries) do
@@ -202,13 +205,16 @@ end
 ---@param initial_window_id integer|nil
 ---@return WindowSearch
 function window_search.start(entries, number_by_bundle_id, initial_window_id)
-    return update_view({
-        entries = entries,
-        number_by_bundle_id = number_by_bundle_id,
-        applications = group_applications(entries, number_by_bundle_id),
-        initial_window_id = initial_window_id,
-        text = "",
-    }, nil)
+    return update_view(
+        rank({
+            entries = entries,
+            number_by_bundle_id = number_by_bundle_id,
+            applications = group_applications(entries, number_by_bundle_id),
+            initial_window_id = initial_window_id,
+            text = "",
+        }),
+        nil
+    )
 end
 
 ---Takes a new list of the windows, as when the window server reports windows that accessibility
@@ -220,7 +226,7 @@ function window_search.with_entries(search, entries)
     local updated = copy(search)
     updated.entries = entries
     updated.applications = group_applications(entries, search.number_by_bundle_id)
-    return update_view(updated, search.selected_window_id)
+    return update_view(rank(updated), search.selected_window_id)
 end
 
 ---Typing drops the applications of the mouse, so the matches show with the best one selected.
@@ -232,7 +238,7 @@ function window_search.with_text(search, text)
     updated.text = text
     updated.hovered_bundle_id = nil
     updated.chosen_bundle_id = nil
-    return update_view(updated, nil)
+    return update_view(rank(updated), nil)
 end
 
 ---@param search WindowSearch
@@ -383,9 +389,9 @@ function window_search.describe_search_line(search)
         )
     elseif #search.entries == 0 then
         summary = "no window is open"
-    elseif has_words(search) and #search.shown == 0 then
+    elseif search.has_words and #search.shown == 0 then
         summary = "no window matches"
-    elseif has_words(search) then
+    elseif search.has_words then
         summary =
             string.format("%d of %s match", #search.shown, describe_window_count(#search.entries))
     else
@@ -435,7 +441,7 @@ function window_search.describe_view(search)
             app_name = application.app_name,
             number = application.number,
             match_level = level,
-            is_faded = has_words(search) and level == nil,
+            is_faded = search.has_words and level == nil,
             is_hovered = application.bundle_id == search.hovered_bundle_id,
             is_chosen = application.bundle_id == search.chosen_bundle_id,
         })
