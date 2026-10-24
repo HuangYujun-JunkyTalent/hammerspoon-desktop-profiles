@@ -299,15 +299,24 @@ local function handle_mouse(panel, message, id)
     end
 end
 
+---Reads the icon of each application of the entries that the panel lacks.
 ---@param panel SearchPanel
 ---@param entries SearchEntry[]
-local function load_icons_and_previews(panel, entries)
+local function read_missing_icons(panel, entries)
+    local app_icons = panel.images.app_icons
+    for _, entry in ipairs(entries) do
+        if not app_icons[entry.bundle_id] then
+            app_icons[entry.bundle_id] = panel.context.preview_loader:read_app_icon(entry.bundle_id)
+        end
+    end
+end
+
+---Asks for the previews of the entries that the panel has not asked for yet.
+---@param panel SearchPanel
+---@param entries SearchEntry[]
+local function load_previews(panel, entries)
     local window_ids = {}
     for _, entry in ipairs(entries) do
-        if not panel.images.app_icons[entry.bundle_id] then
-            panel.images.app_icons[entry.bundle_id] =
-                panel.context.preview_loader:read_app_icon(entry.bundle_id)
-        end
         if not panel.requested_preview_ids[entry.window_id] then
             panel.requested_preview_ids[entry.window_id] = true
             table.insert(window_ids, entry.window_id)
@@ -345,8 +354,9 @@ local function add_unreached_windows(panel, unreached_windows)
     local entries, window_by_id, unreached_by_id =
         search_windows.list_entries(panel.context.filter_windows, unreached_windows)
     panel.window_by_id, panel.unreached_by_id = window_by_id, unreached_by_id
+    read_missing_icons(panel, entries)
     show_search(panel, window_search.with_entries(panel.search, entries))
-    load_icons_and_previews(panel, entries)
+    load_previews(panel, entries)
 end
 
 ---Shows the panel with the window before the focused one selected, loads the previews, and adds
@@ -383,10 +393,7 @@ function search_windows.open(context)
             key_count = 0,
         },
     }
-    for _, entry in ipairs(entries) do
-        panel.images.app_icons[entry.bundle_id] = panel.images.app_icons[entry.bundle_id]
-            or context.preview_loader:read_app_icon(entry.bundle_id)
-    end
+    read_missing_icons(panel, entries)
     panel.overlay = search_overlay.show(
         window_search.describe_view(panel.search),
         panel.images,
@@ -400,7 +407,7 @@ function search_windows.open(context)
             return handle_key(panel, event)
         end)
         :start()
-    load_icons_and_previews(panel, entries)
+    load_previews(panel, entries)
     context.refresh_unreached_windows(function(unreached_windows, update_started_at)
         add_unreached_windows(panel, unreached_windows)
         panel.times.server_list_after = update_started_at - context.opened_at

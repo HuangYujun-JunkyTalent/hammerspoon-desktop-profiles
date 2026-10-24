@@ -196,6 +196,12 @@ return {
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
         world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        expect.equal(world.read_overlay_images(), {
+            "icon com.apple.Safari",
+            "icon com.microsoft.Word",
+            "icon com.apple.Safari",
+            "icon com.microsoft.Word",
+        })
         world.press_escape()
         world.advance(controller_world.SETTLE_SECONDS)
         world.held_modifiers = { ctrl = true, alt = true }
