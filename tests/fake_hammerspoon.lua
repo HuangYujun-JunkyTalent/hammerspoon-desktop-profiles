@@ -151,6 +151,8 @@ local current_world = nil
 ---`bundle_ids_without_icon` holds the bundle ids for which `hs.image.imageFromAppBundle` gives no
 ---icon.
 ---`filter_reads` counts the calls of `getWindows` of the window filter.
+---`windows_without_application[window_id]` makes `application` of the window give nil, as
+---Hammerspoon may give for a window whose application quits.
 ---Each canvas counts the calls of its `replaceElements` in `replace_count`.
 ---The fake of the helper of the previews, `capture_window_previews.js`, gives its first line
 ---`helper_start_seconds` after its start, 0.15 by default, and each line takes `snapshot_seconds`,
@@ -249,6 +251,7 @@ function fake_hammerspoon.install(spec)
         saved_json = nil,
         json_files = {},
         unwritable_paths = {},
+        windows_without_application = {},
         webview_message_callbacks = {},
         shortcuts_file_path = "/fake/keyboard-shortcuts.json",
         next_window_id = 1000,
@@ -820,6 +823,9 @@ function fake_hammerspoon.install(spec)
             return window.title
         end
         function object:application()
+            if world.windows_without_application[window.id] then
+                return nil
+            end
             return application_object(window.bundle_id)
         end
         function object:isMinimized()

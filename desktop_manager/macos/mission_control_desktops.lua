@@ -774,13 +774,8 @@ local function focus_application(chosen_window, space_id, timing, on_focused)
         on_focused(nil)
         return
     end
-    local application = window:application()
     local focus = {
-        window_description = string.format(
-            "%s window %q",
-            application and application:name() or chosen_window.bundle_id,
-            window:title() or ""
-        ),
+        window_description = track_windows.describe(window),
         waited_seconds = 0,
     }
     local focused_at = hs.timer.secondsSinceEpoch()

@@ -103,4 +103,16 @@ return {
             ["com.microsoft.Word"] = 4,
         })
     end,
+
+    a_window_without_an_application_is_described_as_a_window = function()
+        local world = start_world()
+        world.windows[41].is_unseen = false
+        world.windows[42].is_unseen = false
+        world.windows_without_application[41] = true
+        expect.equal(track_windows.describe(_G.hs.window.get(41)), 'a window "Window 1"')
+        expect.equal(
+            track_windows.describe(_G.hs.window.get(42)),
+            'Microsoft Word window "Window 2"'
+        )
+    end,
 }

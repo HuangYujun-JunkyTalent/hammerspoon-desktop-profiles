@@ -95,12 +95,13 @@ function track_windows.index_ids(windows)
 end
 
 ---@param window table an hs.window
----@return string
+---@return string such as 'Safari window "Inbox"', or 'a window "Inbox"' when Hammerspoon gives the
+---window no application
 function track_windows.describe(window)
     local application = window:application()
     return string.format(
         "%s window %q",
-        application and application:name() or "an",
+        application and application:name() or "a",
         window:title() or ""
     )
 end

@@ -831,6 +831,22 @@ return {
         )
     end,
 
+    a_focused_window_without_an_application_is_logged_as_other_windows_are = function()
+        local world = start_bounce_world()
+        world.windows_without_application[FUTURE_WORK_ID] = true
+        local state = show_presentations_desktop(PRESENTATIONS)
+        world.advance(SETTLE_SECONDS)
+        expect.equal(state.result, "shown")
+        expect.equal(world.window_operations, { "focus " .. FUTURE_WORK_ID })
+        expect.equal(
+            world.log_lines[#world.log_lines],
+            "desktop 2 of DELL S2725DS: "
+                .. 'a window "future-work.tex" focused before the press, frontmost after 0.00'
+                .. " seconds, active after 1.05 seconds, Mission Control closed after 1.05"
+                .. " seconds, one press"
+        )
+    end,
+
     the_focus_before_the_press_keeps_the_desktop_from_bouncing = function()
         local world = start_bounce_world()
         local state = show_presentations_desktop(PRESENTATIONS)
