@@ -91,7 +91,7 @@ local function describe_view(session, settings)
 end
 
 ---@param settings Settings
----@return AppNumberListSettings the settings that the list and the search of the windows share
+---@return AppNumberListSettings the sizes and the titles of the list, from the settings
 local function describe_list_settings(settings)
     return {
         preview_size = settings.preview_size,
