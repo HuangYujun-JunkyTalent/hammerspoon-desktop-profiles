@@ -4,25 +4,33 @@ local list_layout = require("desktop_manager.core.list_layout")
 local list_sizing = require("desktop_manager.core.list_sizing")
 local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
+local monitor_matching = require("desktop_manager.core.monitor_matching")
 local preview_method = require("desktop_manager.core.preview_method")
 local title_overflow = require("desktop_manager.core.title_overflow")
 local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
-local monitor_matching = require("desktop_manager.core.monitor_matching")
 
 local default_settings = {}
 
 ---@class Timing
----@field poll_interval_seconds number
----@field modifier_release_timeout_seconds number
+---@field poll_interval_seconds number the time between two reads of a condition that a wait
+---polls, such as the release of the modifier keys, the arrival of a moved window or the desktop
+---that a press shows
+---@field modifier_release_timeout_seconds number the longest wait for the release of the modifier
+---keys before Mission Control opens, after which Mission Control stays closed and the alert after
+---the switch says so
 ---@field desktop_show_timeout_seconds number the wait after the last press on the thumbnail of a
 ---desktop in Mission Control, the first press or the press of the second opening, until its screen
 ---reports the desktop and Mission Control has closed
 ---@field desktop_press_retry_seconds number the time after the first press on a thumbnail at which
 ---the thumbnail is pressed a second time when the desktop is not active and Mission Control shows,
 ---or Mission Control opens a second time when it has closed
----@field desktop_settle_seconds number
----@field minimize_timeout_seconds number
----@field window_settle_seconds number
+---@field desktop_settle_seconds number the wait after a press has shown its desktop and Mission
+---Control has closed, before the next step
+---@field minimize_timeout_seconds number the longest wait until the windows that a restore
+---unminimizes are no longer minimized
+---@field window_settle_seconds number the wait for the windows to settle after the desktop manager
+---unhides applications, unminimizes windows, sets frames or conceals the windows of a switch, and
+---after a new window opens
 ---@field window_move_timeout_seconds number the wait for each window that moves by its id to
 ---another desktop of its screen
 ---@field window_reach_timeout_seconds number the wait until accessibility reaches a window that
@@ -30,14 +38,20 @@ local default_settings = {}
 ---showed its desktop
 ---@field busy_watchdog_seconds number the longest switch, restore, or press of the list or the
 ---search, after which the desktop manager stops it and reports a failure
----@field mission_control_timeout_seconds number
----@field mission_control_press_gap_seconds number
----@field application_launch_timeout_seconds number
+---@field mission_control_timeout_seconds number the longest wait for Mission Control to show the
+---group of the display after it opens
+---@field mission_control_press_gap_seconds number the wait after Mission Control shows or closes,
+---and after each addition or removal of a desktop, before the next step
+---@field application_launch_timeout_seconds number the longest wait for the new window of an
+---application, after which a notification reports the application
 ---@field application_focus_timeout_seconds number the wait after the focus before a press of the
 ---list or the search until the application of the chosen window is the frontmost application
----@field save_delay_seconds number
----@field periodic_save_seconds number
----@field screen_settle_seconds number
+---@field save_delay_seconds number the wait after a window opens, closes, moves, minimizes or
+---changes its title, before the record of the active profile updates
+---@field periodic_save_seconds number the time between two updates of the record of the active
+---profile and two readings of the list of all windows of macOS that no event starts
+---@field screen_settle_seconds number the wait after a change of the monitors for macOS to move
+---the windows, before the restore of the active profile
 ---@field snapshot_time_limit_seconds number a slower snapshot stops the snapshots until a reload
 
 ---@class Settings
@@ -46,22 +60,22 @@ local default_settings = {}
 ---@field app_number_count integer
 ---@field url_event_name string
 ---@field initial_monitor_matching string
----@field concealment_method string a value of concealment_method
----@field match_windows_by string a value of match_windows_by
----@field missing_window_policy string a value of missing_window_policy
----@field unmatched_window_action string a value of unmatched_window_action
----@field hidden_application_windows string a value of hidden_application_windows
+---@field concealment_method ConcealmentMethod
+---@field match_windows_by MatchWindowsBy
+---@field missing_window_policy MissingWindowPolicy
+---@field unmatched_window_action UnmatchedWindowAction
+---@field hidden_application_windows HiddenApplicationWindows
 ---@field search_highlight_colors table|nil the colors of highlight_colors that replace the
 ---defaults, by name, such as `{ selection = { hex = "#2E8B57", alpha = 0.9 } }`
----@field preview_method string a value of preview_method
+---@field preview_method PreviewMethod
 ---@field preview_blur number 1 or more: a preview keeps 1 / preview_blur of the detail of its size
 ---@field preview_size table the w and h of a preview, as fractions of the width and height of the
 ---screen in front
 ---@field list_font_size number the size of the titles, as a fraction of the height of the screen
 ---in front
----@field list_layout string a value of list_layout
----@field list_sizing string a value of list_sizing
----@field title_overflow string a value of title_overflow
+---@field list_layout ListLayout
+---@field list_sizing ListSizing
+---@field title_overflow TitleOverflow
 ---@field title_line_count integer the most lines of a title under title_overflow wrap
 ---@field builtin_screen_name_patterns string[]
 ---@field timing Timing

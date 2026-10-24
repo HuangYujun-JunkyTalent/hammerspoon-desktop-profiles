@@ -23,6 +23,7 @@ return {
     end,
 
     a_value_outside_a_closed_set_names_the_setting_and_the_value = function()
+        ---@type table the settings with a value outside the closed set of the setting
         local settings = default_settings.create("/fake/state.json")
         settings.list_layout = "grid"
         expect.equal(
@@ -32,6 +33,7 @@ return {
     end,
 
     the_message_names_the_faulty_setting_that_is_checked_first = function()
+        ---@type table the settings with a value outside the closed set of the setting
         local settings = default_settings.create("/fake/state.json")
         settings.concealment_method = "close"
         settings.preview_size = { w = 2, h = 0.1 }
