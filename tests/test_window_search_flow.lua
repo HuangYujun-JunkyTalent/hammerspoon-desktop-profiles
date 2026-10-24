@@ -334,19 +334,22 @@ return {
     end,
 
     a_line_that_names_no_window_and_no_image_ends_the_helper = function()
-        local world = controller_world.start_world()
-        world.advance(controller_world.SETTLE_SECONDS)
-        world.garbled_window_ids[41] = true
-        local lines = controller_world.record_log_lines(world, function()
-            world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
-            world.advance(1)
-        end)
-        expect.equal(lines, {
-            "the helper of the previews gave a line that names no window and no image, so the"
-                .. " windows without a preview show their icons",
-        })
-        expect.equal(world.helpers[1].is_terminated, true)
-        expect.equal(world.read_overlay_images()[2], "icon com.microsoft.Word")
+        for _, gives_helper_lines_at_once in ipairs({ false, true }) do
+            local world = controller_world.start_world()
+            world.advance(controller_world.SETTLE_SECONDS)
+            world.garbled_window_ids[41] = true
+            world.gives_helper_lines_at_once = gives_helper_lines_at_once
+            local lines = controller_world.record_log_lines(world, function()
+                world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+                world.advance(1)
+            end)
+            expect.equal(lines, {
+                "the helper of the previews gave a line that names no window and no image, so the"
+                    .. " windows without a preview show their icons",
+            })
+            expect.equal(world.helpers[1].is_terminated, true)
+            expect.equal(world.read_overlay_images()[2], "icon com.microsoft.Word")
+        end
     end,
 
     closing_the_search_terminates_its_helper_and_the_next_opening_takes_previews = function()
