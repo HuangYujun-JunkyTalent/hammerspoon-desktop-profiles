@@ -1,7 +1,7 @@
+local default_settings = require("window_tiling.default_settings")
 local expect = require("tests.expect")
 local fake_hammerspoon = require("tests.fake_hammerspoon")
 local tiling_controller = require("window_tiling.macos.tiling_controller")
-local default_settings = require("window_tiling.default_settings")
 
 local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
 local EXTERNAL_FRAME = { x = 1440, y = 0, w = 2560, h = 1415 }
