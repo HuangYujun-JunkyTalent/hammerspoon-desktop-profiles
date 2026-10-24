@@ -8,7 +8,6 @@ local busy_message = require("desktop_manager.macos.busy_message")
 local color_window = require("desktop_manager.macos.color_window")
 local concatenate_lists = require("desktop_manager.core.concatenate_lists")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
-local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local diagnostic_lines = require("desktop_manager.macos.diagnostic_lines")
 local extra_desktops = require("desktop_manager.macos.extra_desktops")
@@ -1235,19 +1234,18 @@ end
 ---@param desktop_number integer
 function ProfileController:record_shown_desktop(configuration_key, slot_key, desktop_number)
     local number = self.state.active_profile_number
-    local arrangement = number
-        and profile_state.find_arrangement(self.state, number, configuration_key)
-    if not arrangement then
+    local state = number
+        and profile_state.with_shown_desktop(
+            self.state,
+            number,
+            configuration_key,
+            slot_key,
+            desktop_number
+        )
+    if not state then
         return
     end
-    local recorded = deep_copy.copy(arrangement)
-    for _, monitor in ipairs(recorded.monitors) do
-        if monitor.slot_key == slot_key then
-            monitor.shown_desktop_number = desktop_number
-        end
-    end
-    recorded.focused_slot_key = slot_key
-    self.state = profile_state.with_arrangement(self.state, number, recorded)
+    self.state = state
     self:write_state()
 end
 

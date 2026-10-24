@@ -293,6 +293,35 @@ function profile_state.with_arrangement(state, number, arrangement)
     return profile_state.with_profile(state, profile)
 end
 
+---Records the desktop as the desktop that the screen of the slot shows and the slot as the screen
+---of the focus, in the arrangement of the profile for the monitor configuration.
+---@param state State
+---@param number integer
+---@param monitor_configuration_key string
+---@param slot_key string
+---@param desktop_number integer
+---@return State|nil the new state, or nil when the profile has no arrangement for the configuration
+function profile_state.with_shown_desktop(
+    state,
+    number,
+    monitor_configuration_key,
+    slot_key,
+    desktop_number
+)
+    local arrangement = profile_state.find_arrangement(state, number, monitor_configuration_key)
+    if not arrangement then
+        return nil
+    end
+    local recorded = deep_copy.copy(arrangement)
+    for _, monitor in ipairs(recorded.monitors) do
+        if monitor.slot_key == slot_key then
+            monitor.shown_desktop_number = desktop_number
+        end
+    end
+    recorded.focused_slot_key = slot_key
+    return profile_state.with_arrangement(state, number, recorded)
+end
+
 ---@param state State
 ---@param number integer
 ---@param entries AppNumber[]

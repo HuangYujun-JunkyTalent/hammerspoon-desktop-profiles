@@ -35,6 +35,24 @@ return {
         expect.equal(state.profiles["2"], nil)
     end,
 
+    a_shown_desktop_is_recorded_with_the_focus_in_a_new_state = function()
+        local state = profile_state.new_state(monitor_matching.BY_COUNT)
+        state = profile_state.with_arrangement(state, 3, ARRANGEMENT)
+        local shown = profile_state.with_shown_desktop(state, 3, "built-in", "built-in", 2)
+        local arrangement = profile_state.find_arrangement(shown, 3, "built-in")
+        expect.equal(arrangement.monitors[1].shown_desktop_number, 2)
+        expect.equal(arrangement.focused_slot_key, "built-in")
+        expect.equal(arrangement.windows, ARRANGEMENT.windows)
+        expect.equal(
+            profile_state.find_arrangement(state, 3, "built-in").monitors[1].shown_desktop_number,
+            1
+        )
+        expect.equal(
+            profile_state.with_shown_desktop(state, 3, "built-in + 1 external", "built-in", 2),
+            nil
+        )
+    end,
+
     rename_rejects_a_blank_name = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
         expect.raises(function()
