@@ -1351,6 +1351,7 @@ function ProfileController:open_window_search()
     if self.search_panel then
         return
     end
+    local opened_at = hs.timer.secondsSinceEpoch()
     local hidden = hidden_application_filter.read_hidden_applications(
         self.settings.hidden_application_windows,
         self.hidden_states
@@ -1372,7 +1373,7 @@ function ProfileController:open_window_search()
         unreached_windows = list_unreached_windows(),
         refresh_unreached_windows = function(on_done)
             self:refresh_window_inventory(function()
-                on_done(list_unreached_windows())
+                on_done(list_unreached_windows(), self.window_inventory.last_update_started_at)
             end)
         end,
         app_numbers = self:read_numbering_profile().app_numbers,
@@ -1382,8 +1383,8 @@ function ProfileController:open_window_search()
             highlight_colors = self:current_highlight_colors(),
         },
         switcher = self:switcher_context(),
-        load_previews = function(window_ids, preview_size, is_list_shown, on_image)
-            self.preview_loader:load(window_ids, preview_size, is_list_shown, on_image)
+        load_previews = function(window_ids, request)
+            self.preview_loader:load(window_ids, request)
         end,
         on_closed = function()
             self.search_panel = nil
@@ -1391,6 +1392,8 @@ function ProfileController:open_window_search()
         report_failures = function(messages)
             self:report_failures(messages)
         end,
+        opened_at = opened_at,
+        log = self.log,
     })
 end
 

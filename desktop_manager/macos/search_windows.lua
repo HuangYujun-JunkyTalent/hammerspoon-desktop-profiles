@@ -1,5 +1,6 @@
 local app_switcher = require("desktop_manager.macos.app_switcher")
 local retained_timers = require("desktop_manager.macos.retained_timers")
+local search_opening_log = require("desktop_manager.core.search_opening_log")
 local search_overlay = require("desktop_manager.macos.search_overlay")
 local track_windows = require("desktop_manager.macos.track_windows")
 local window_previews = require("desktop_manager.macos.window_previews")
@@ -18,14 +19,16 @@ local search_windows = {}
 ---first, and the windows of hidden applications that the filter leaves out
 ---@field unreached_windows ServerWindow[] the windows that accessibility does not reach, as the
 ---last refresh found them
----@field refresh_unreached_windows fun(on_done: fun(windows: ServerWindow[])) lists them again
+---@field refresh_unreached_windows fun(on_done: fun(windows: ServerWindow[],
+---update_started_at: number)) lists them again, and gives when the new list began to update
 ---@field app_numbers AppNumber[] the numbers of the numbering profile, which the panel shows
 ---@field overlay_settings SearchOverlaySettings
 ---@field switcher SwitcherContext what brings the selected window to the front
----@field load_previews fun(window_ids: integer[], preview_size: table,
----is_list_shown: fun(): boolean, on_image: fun(window_id: integer, image: table))
+---@field load_previews fun(window_ids: integer[], request: PreviewRequest)
 ---@field on_closed fun()
 ---@field report_failures fun(messages: string[])
+---@field opened_at number when the shortcut asked for the panel, in seconds since the epoch
+---@field log table the hs.logger that takes the line of the opening when the panel closes
 
 ---@class SearchPanel
 ---@field search WindowSearch
@@ -38,6 +41,7 @@ local search_windows = {}
 ---@field context SearchContext
 ---@field is_open boolean
 ---@field is_redraw_due boolean whether a redraw waits for the events that came at once
+---@field times SearchOpeningTimes what happened since the opening, for the console
 
 ---The windows of the search, the most recently focused first, and the windows that accessibility
 ---does not reach after them.
@@ -120,6 +124,13 @@ local function show_search(panel, search)
 end
 
 ---@param panel SearchPanel
+---@return number the seconds since the opening
+local function measure_since_opening(panel)
+    return hs.timer.secondsSinceEpoch() - panel.context.opened_at
+end
+
+---Closes the panel and writes the line of its opening to the console.
+---@param panel SearchPanel
 function search_windows.close(panel)
     if not panel.is_open then
         return
@@ -127,6 +138,7 @@ function search_windows.close(panel)
     panel.is_open = false
     panel.event_tap:stop()
     search_overlay.hide(panel.overlay)
+    panel.context.log.i(search_opening_log.describe(panel.times))
     panel.context.on_closed()
 end
 
@@ -201,6 +213,9 @@ for _, direction in ipairs({
     end
 end
 
+---`hs.eventtap.event:timestamp()` and `hs.timer.absoluteTime()` count nanoseconds on one clock.
+local NANOSECONDS_PER_SECOND = 1e9
+
 ---macOS gives the arrows, the function keys and keys such as Home characters of this range.
 local FIRST_FUNCTION_KEY_CODE_POINT = 0xF700
 local LAST_FUNCTION_KEY_CODE_POINT = 0xF8FF
@@ -228,10 +243,25 @@ end
 
 ---Takes every key while the panel shows: the keys of KEY_ACTIONS act, a character without Command
 ---or Control goes into the search, and the other keys do nothing.
+---Counts the key, and keeps the longest time from a key to the search.
+---A key that the system made carries no time.
+---@param panel SearchPanel
+---@param event table an hs.eventtap.event
+local function time_key(panel, event)
+    panel.times.key_count = panel.times.key_count + 1
+    local timestamp = event:timestamp()
+    if timestamp > 0 then
+        local wait_seconds = (hs.timer.absoluteTime() - timestamp) / NANOSECONDS_PER_SECOND
+        panel.times.longest_key_wait_seconds =
+            math.max(panel.times.longest_key_wait_seconds or 0, wait_seconds)
+    end
+end
+
 ---@param panel SearchPanel
 ---@param event table an hs.eventtap.event
 ---@return boolean that the event stops here
 local function handle_key(panel, event)
+    time_key(panel, event)
     local flags = event:getFlags()
     local action = KEY_ACTIONS[hs.keycodes.map[event:getKeyCode()]]
     if action then
@@ -283,17 +313,26 @@ local function load_icons_and_previews(panel, entries)
             table.insert(window_ids, entry.window_id)
         end
     end
-    panel.context.load_previews(
-        window_ids,
-        search_overlay.read_preview_size(panel.overlay),
-        function()
+    local times = panel.times
+    times.requested_preview_count = times.requested_preview_count + #window_ids
+    panel.context.load_previews(window_ids, {
+        preview_size = search_overlay.read_preview_size(panel.overlay),
+        is_wanted = function()
             return panel.is_open
         end,
-        function(window_id, image)
+        on_image = function(window_id, image)
             panel.images.previews[window_id] = image
             redraw(panel)
-        end
-    )
+            times.preview_count = times.preview_count + 1
+            times.first_preview_after = times.first_preview_after or measure_since_opening(panel)
+            times.last_preview_after = measure_since_opening(panel)
+        end,
+        on_preview_taken = function(_, blocking_seconds)
+            times.preview_blocking_seconds = times.preview_blocking_seconds + blocking_seconds
+            times.longest_preview_blocking_seconds =
+                math.max(times.longest_preview_blocking_seconds, blocking_seconds)
+        end,
+    })
 end
 
 ---Takes the windows that a new list of the window server holds.
@@ -334,6 +373,15 @@ function search_windows.open(context)
         context = context,
         is_open = true,
         is_redraw_due = false,
+        times = {
+            window_count = #entries,
+            shown_after = 0,
+            preview_count = 0,
+            requested_preview_count = 0,
+            preview_blocking_seconds = 0,
+            longest_preview_blocking_seconds = 0,
+            key_count = 0,
+        },
     }
     for _, entry in ipairs(entries) do
         panel.images.app_icons[entry.bundle_id] = panel.images.app_icons[entry.bundle_id]
@@ -353,9 +401,12 @@ function search_windows.open(context)
         end)
         :start()
     load_icons_and_previews(panel, entries)
-    context.refresh_unreached_windows(function(unreached_windows)
+    context.refresh_unreached_windows(function(unreached_windows, update_started_at)
         add_unreached_windows(panel, unreached_windows)
+        panel.times.server_list_after = update_started_at - context.opened_at
+        panel.times.server_list_blocking_seconds = hs.timer.secondsSinceEpoch() - update_started_at
     end)
+    panel.times.shown_after = measure_since_opening(panel)
     return panel
 end
 

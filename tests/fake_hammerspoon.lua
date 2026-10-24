@@ -98,6 +98,7 @@ local CHARACTER_KEY_CODE = 1000
 ---The output of the fake of `list_server_windows.js`, which the fake of hs.json.decode reads.
 local SERVER_WINDOWS_OUTPUT = "server windows"
 local OSASCRIPT_PATH = "/usr/bin/osascript"
+local NANOSECONDS_PER_SECOND = 1e9
 local FIRST_PID = 500
 local WINDOW_MANAGER_BUNDLE_ID = "com.apple.WindowManager"
 
@@ -142,6 +143,8 @@ local current_world = nil
 ---`hidden_reads[bundle_id]` counts the calls of `isHidden` of each application, and
 ---`focused_window_reads[bundle_id]` the calls of `focusedWindow` and `mainWindow`.
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
+---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
+---`type_keys` and `release_modifiers` was made, as `timestamp()` of the event gives it.
 ---`move_delay_seconds` is the time after which `hs.spaces.moveWindowToSpace` moves a window, as a
 ---build with pull request #3889 moves it after the call returns.
 ---`unmovable_window_ids` holds the windows that `hs.spaces.moveWindowToSpace` leaves where they
@@ -239,6 +242,7 @@ function fake_hammerspoon.install(spec)
         hidden_reads = {},
         focused_window_reads = {},
         on_mission_control_open = nil,
+        key_wait_seconds = 0,
         window_levels = { overlay = 102, screenSaver = 1000 },
     }
     current_world = world
@@ -926,6 +930,12 @@ function fake_hammerspoon.install(spec)
         end
     end
 
+    ---@return number the time of a key made `key_wait_seconds` ago, in nanoseconds, on the clock of
+    ---`hs.timer.absoluteTime()`
+    local function read_key_timestamp()
+        return (world.clock - world.key_wait_seconds) * NANOSECONDS_PER_SECOND
+    end
+
     ---Releases every modifier key, as the user lifts the fingers.
     function world.release_modifiers()
         world.held_modifiers = {}
@@ -936,6 +946,7 @@ function fake_hammerspoon.install(spec)
             getFlags = function()
                 return {}
             end,
+            timestamp = read_key_timestamp,
         })
     end
 
@@ -956,6 +967,7 @@ function fake_hammerspoon.install(spec)
             getCharacters = function()
                 return ""
             end,
+            timestamp = read_key_timestamp,
         })
     end
 
@@ -980,6 +992,7 @@ function fake_hammerspoon.install(spec)
                 getCharacters = function()
                     return character
                 end,
+                timestamp = read_key_timestamp,
             })
         end
     end
@@ -1368,6 +1381,9 @@ function fake_hammerspoon.install(spec)
         timer = {
             secondsSinceEpoch = function()
                 return world.clock
+            end,
+            absoluteTime = function()
+                return world.clock * NANOSECONDS_PER_SECOND
             end,
             doAfter = function(seconds, callback)
                 return new_timer(seconds, callback, false)

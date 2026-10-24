@@ -171,6 +171,26 @@ return {
         expect.equal(world.mission_control_actions, {})
     end,
 
+    closing_the_search_writes_how_long_its_opening_took = function()
+        local world = controller_world.start_world()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local lines = controller_world.record_log_lines(world, function()
+            world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+            world.key_wait_seconds = 0.03
+            world.type_keys("d")
+            world.advance(1)
+            world.press_escape()
+            world.advance(0)
+        end)
+        expect.equal(lines, {
+            "search of 2 windows: shown after 0.000 seconds, first preview after 0.050 seconds,"
+                .. " 2 of 2 previews by 0.100 seconds, blocking Hammerspoon for 0.100 seconds in"
+                .. " total and 0.050 seconds at most, list of the window server after 0.200"
+                .. " seconds, blocking Hammerspoon for 0.000 seconds, 2 keys, waiting 0.030"
+                .. " seconds at most",
+        })
+    end,
+
     a_window_found_after_the_panel_opened_joins_it = function()
         local world = controller_world.start_world()
         world.advance(controller_world.SETTLE_SECONDS)

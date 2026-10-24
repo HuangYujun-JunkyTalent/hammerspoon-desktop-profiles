@@ -21,6 +21,8 @@ local SCRIPT_PATH = (
 ---@field is_refreshing boolean
 ---@field waiting fun()[] the calls that wait for the refresh that runs
 ---@field next_waiting fun()[] the calls that wait for a refresh that starts after the one that runs
+---@field last_update_started_at number|nil when the last refresh began to take its list, before
+---the calls that waited for it, in seconds since the epoch
 
 ---@return WindowInventory
 function window_inventory.new()
@@ -91,6 +93,7 @@ end
 local function start_refresh(inventory, list_known_window_ids)
     inventory.is_refreshing = true
     local task = hs.task.new(OSASCRIPT_PATH, function(exit_code, stdout)
+        inventory.last_update_started_at = hs.timer.secondsSinceEpoch()
         inventory.is_refreshing = false
         local is_decoded, rows = pcall(hs.json.decode, stdout or "")
         if exit_code == 0 and is_decoded and type(rows) == "table" then
@@ -115,6 +118,7 @@ local function start_refresh(inventory, list_known_window_ids)
         end
     end, { "-l", "JavaScript", SCRIPT_PATH })
     if not task or not task:start() then
+        inventory.last_update_started_at = hs.timer.secondsSinceEpoch()
         inventory.is_refreshing = false
         local finished = inventory.waiting
         for _, callback in ipairs(inventory.next_waiting) do

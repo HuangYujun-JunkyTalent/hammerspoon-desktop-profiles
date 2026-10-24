@@ -270,13 +270,12 @@ function AppNumberList:load_previews(session)
             table.insert(window_ids, window.window_id)
         end
     end
-    self.context.preview_loader:load(
-        window_ids,
-        app_number_list_overlay.read_preview_size(session.overlay),
-        function()
+    self.context.preview_loader:load(window_ids, {
+        preview_size = app_number_list_overlay.read_preview_size(session.overlay),
+        is_wanted = function()
             return self.session == session
         end,
-        function(window_id, image)
+        on_image = function(window_id, image)
             if session.overlay then
                 session.images.previews[window_id] = image
                 app_number_list_overlay.update(
@@ -285,8 +284,8 @@ function AppNumberList:load_previews(session)
                     session.images
                 )
             end
-        end
-    )
+        end,
+    })
 end
 
 ---Goes to the selection when a modifier of the numbers is released, and closes the list on Escape.
