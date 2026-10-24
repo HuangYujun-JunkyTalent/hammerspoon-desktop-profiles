@@ -39,6 +39,7 @@ The tools run on macOS 27.0.1 with a build of Hammerspoon that holds [pull reque
    In System Settings, Accessibility, Display, turn on "Reduce motion", which also shortens the openings of Mission Control.
 
 The menu bar then shows `◧`, and `◧ 2` while profile 2 is active.
+The menu bar shows `◧ 2 paused` while profile 2 is paused, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-the-start-of-macos-pauses-the-active-profile) says.
 The previews in the list of windows also need the permission for Screen Recording, as [the section on the previews](#the-previews-of-the-list-need-the-permission-for-screen-recording) explains.
 
 ## Command-Option-Shift with a number activates, switches and deactivates profiles
@@ -46,7 +47,8 @@ The previews in the list of windows also need the permission for Screen Recordin
 | Keys | Effect |
 |---|---|
 | Command-Option-Shift-N, for N from 1 to 9 | activates profile N, or switches to it from the active profile |
-| Command-Option-Shift-N while profile N is active | deactivates profile N |
+| Command-Option-Shift-N while profile N is active and not paused | deactivates profile N |
+| Command-Option-Shift-N while profile N is paused | restores the layout of profile N, as an activation does, and ends the pause |
 | Command-Option-Shift-0 | deactivates the active profile |
 
 While a switch works, a message at the top of every screen names its step, and it disappears when the switch ends.
@@ -81,7 +83,10 @@ The desktop manager updates the record of the active profile at four times:
 - at the end of a switch;
 - before a switch to another profile.
 
-When the monitors change while a profile is active, the desktop manager waits for macOS to move the windows, for `screen_settle_seconds` of `timing`, 3 seconds by default, and the message at the top of every screen says so.
+None of the four updates runs while the active profile is paused, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-the-start-of-macos-pauses-the-active-profile) says.
+
+When the monitors change while a profile is active and not paused, the desktop manager waits for macOS to move the windows.
+The wait lasts `screen_settle_seconds` of `timing`, 3 seconds by default, and the message at the top of every screen says so.
 The wait starts again while a switch or a press of the list or the search runs, so the restore follows once that work has ended.
 The message of the wait then shows again.
 A change during the restore of an earlier change starts the wait again as well, and the record of the profile stays as it was until the restore of the last change has ended.
@@ -101,6 +106,33 @@ A choice in the menu bar item sets when two monitor configurations count as the 
 | Name of each external monitor | also the built-in display with `LG TV SSCR2` and the built-in display with `DELL U2720Q` |
 
 The menu bar item also has entries that deactivate the active profile, rename it, update its record at once and print diagnostics.
+
+### The first start of Hammerspoon soon after the start of macOS pauses the active profile
+
+After a restart of the Mac, macOS reopens the windows with new window ids and at places of its own.
+The updates of the active profile would then replace its record with that arrangement within about a minute.
+When Hammerspoon starts for the first time after a start of macOS, and less than `pause_after_macos_start_seconds` after it, 300 seconds by default, the desktop manager keeps the active profile and pauses it.
+The time counts from the start of macOS and leaves out the time asleep, as `hs.timer.absoluteTime()` gives it, so a Reload Config later in the day keeps the updates of the profile going.
+The state file keeps the start of macOS that the last start of Hammerspoon saw, so a second start soon after the first pauses nothing either.
+The value 0 turns the pause off.
+
+While profile 2 is paused, no update changes its record or its application numbers, and a change of the monitors leaves the windows and the desktops to macOS.
+A press of the list or the search records no desktop shown.
+Control-Option with a number reaches the applications of the numbers of profile 2.
+The console of Hammerspoon names the pause at each start, and the state file keeps it, so a reload keeps the pause, also after `pause_after_macos_start_seconds` and also with the value 0.
+
+| Action during the pause | Effect |
+|---|---|
+| Command-Option-Shift-2, its URL, its Asyar item or its item in the menu bar item | restores the layout of profile 2 as an activation does, and the updates go on from the end of the restore |
+| Command-Option-Shift with another number | switches to that profile without the update of profile 2 before the switch |
+| Command-Option-Shift-0 | deactivates profile 2 without an update |
+| "Save arrangement now and end the pause" in the menu bar item, or the URL `action=save` | records the windows as they are and ends the pause |
+| "Clear profile" on profile 2 | empties profile 2, which records the windows from its next update on |
+| "Return N to the default" or Control-Option-0 | gives the default numbers of the record of profile 2 for the monitor configuration, and Control-Option-0 keeps the default numbers that profile 2 had |
+
+A rename, a number given by hand, the managed applications and the choice of the same monitor configuration work as usual.
+A switch that stops after `busy_watchdog_seconds` before it takes windows out of sight leaves the pause as it was.
+The menu bar item shows `◧ 2 paused` with a dash at profile 2, and the diagnostics give "active profile: 2, paused".
 
 ### A profile holds the number of desktops of each screen, and a restore removes the empty desktops beyond it
 
@@ -154,6 +186,7 @@ A cleared profile acts as a new one: activating it takes the windows that other 
 The windows that no profile recorded stay in sight, and the profile records them at its next update.
 A profile with a layout for the monitors instead takes every window of a managed application out of sight that it did not record in sight.
 A cleared active profile stays active and records the windows from its next update on.
+A cleared paused profile ends its pause.
 
 ### "Managed applications…" in the menu bar item leaves some applications to macOS
 
@@ -305,7 +338,7 @@ Each tool hands the module its actions with their default shortcuts, and the mod
 
 | Group | Actions | Default shortcuts |
 |---|---|---|
-| Profiles | Activate profile N, or deactivate it while it is active, and Deactivate the active profile | Command-Option-Shift with 1 to 9, and with 0 |
+| Profiles | Activate profile N, restore it while it is paused, or deactivate it while it is active, and Deactivate the active profile | Command-Option-Shift with 1 to 9, and with 0 |
 | Profiles | Clear profile N, after a confirmation | Control-Option-Command with 1 to 9 |
 | Application numbers | Show the windows of application N, and Return every application number to the default | Control-Option with 1 to 9, and with 0 |
 | Window search | Show the search of the windows, or close it | Control-Option-Command-Space |
@@ -406,6 +439,7 @@ The file writes each choice through its module, such as `list_layout.ROWS` for `
 | `title_overflow` | `wrap` | what happens to a title longer than its space |
 | `title_line_count` | 2 | the most lines of a title under `wrap` |
 | `url_event_name` | `desktop-manager` | the host of the URLs, as [the section on URLs](#a-url-reaches-every-action-of-the-desktop-manager) explains |
+| `pause_after_macos_start_seconds` | 300 | the time after the start of macOS within which the first start of Hammerspoon pauses the active profile, and 0 turns the pause off, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-the-start-of-macos-pauses-the-active-profile) explains |
 | `timing` | | the waits and time limits of a switch, in seconds |
 
 The shortcuts are no settings of this file, as [the section on keyboard shortcuts](#keyboard-shortcuts-in-the-menu-bar-item-changes-the-shortcut-of-every-action) explains.
@@ -466,11 +500,12 @@ The extension adds ten items to the search of [Asyar](https://asyar.org).
 
 | Item | Enter |
 |---|---|
-| Profile 1 to Profile 9, with the name of a renamed profile after it, such as "Profile 2 · Writing" | activates the profile, or deactivates it while it is active |
+| Profile 1 to Profile 9, with the name of a renamed profile after it, such as "Profile 2 · Writing" | activates the profile, or deactivates it while it is active, or restores its layout while it is paused |
 | Reassign App Numbers | returns every number of the active profile, or of profile 0, to the default, as Control-Option-0 does |
 
 The active profile shows a green dot, the label "Active profile" and the line "Active. Enter deactivates it.", and the other profiles show a white dot.
-The extension reads `~/.hammerspoon/desktop-manager-state.json`, and draws the items again when the active profile or a name changes there.
+The paused profile shows a yellow dot, the label "Paused profile" and the line "Paused. Enter restores its layout.".
+The extension reads `~/.hammerspoon/desktop-manager-state.json`, and draws the items again when the active profile, its pause or a name changes there.
 The manifest, `asyar-extension/manifest.json`, limits the extension to three permissions and holds the path of the state file.
 
 | Permission | Scope |
@@ -512,13 +547,13 @@ A script title is fixed, so the titles name the profiles by number.
 
 | Action | Shortcut or menu | URL `hammerspoon://desktop-manager?...` |
 |---|---|---|
-| Activate profile N, or switch to it | Command-Option-Shift-N | `action=activate&profile=N` |
-| Deactivate profile N while it is active | Command-Option-Shift-N | `action=deactivate&profile=N` |
+| Activate profile N, or switch to it, or restore it while it is paused | Command-Option-Shift-N | `action=activate&profile=N` |
+| Deactivate profile N while it is active | Command-Option-Shift-N while profile N is not paused | `action=deactivate&profile=N` |
 | Deactivate the active profile | Command-Option-Shift-0 | `action=deactivate` |
-| Activate profile N, or deactivate it while it is active | Command-Option-Shift-N | `action=toggle&profile=N` |
+| Activate profile N, or deactivate it while it is active, or restore it while it is paused | Command-Option-Shift-N | `action=toggle&profile=N` |
 | Rename profile N | menu, Rename active profile… | `action=rename&profile=N&name=Writing` |
 | Change when monitor configurations are the same | menu, Same monitor configuration by | `action=cycle-monitor-matching` |
-| Update the record of the active profile now | menu, Save arrangement now | `action=save` |
+| Update the record of the active profile now, and end a pause | menu, Save arrangement now | `action=save` |
 | Give number N to a running application | menu, Application numbers | `action=number-app&number=N&app=Firefox` |
 | Return number N to the default | menu, Application numbers | `action=release-app-number&number=N` |
 | Return every number to the default | Control-Option-0 | `action=reset-app-numbers` |
@@ -815,6 +850,7 @@ The rule that a minimized window keeps no desktop holds when `minimized_after` i
 "Print diagnostics to the console" in the menu bar item prints the same into the Hammerspoon console.
 The diagnostics start with the version of Hammerspoon, and give the desktop that each screen shows and the numbers of desktops that the desktop manager tracks.
 They also give the number of desktops and the desktop shown of each screen in the record of the active profile.
+The diagnostics also give whether the active profile is paused.
 Each switch writes its plan and its duration to the console.
 Each opening of Mission Control also writes how long it waited for the release of the modifiers and until Mission Control showed.
 The log line of each press on a thumbnail names the window that it focused before the press and when its application became the frontmost application, or says that it focused none.
@@ -854,6 +890,7 @@ The desktop manager uses Control-Option with the numbers, and the window tiling 
 ### Settings of the window tiling live in `window_tiling/default_settings.lua`
 
 To change a setting, edit the file and choose Reload Config.
+The extension of the window tiling takes `url_event_name` from `asyar-window-tiling/src/settings.generated.json`, which a generator writes from this file, so a change of `url_event_name` also needs `make asyar-window-tiling-settings` and a new build of the extension, as [the section on the code](#the-code-of-each-tool-splits-into-a-tested-core-and-a-macos-layer) says.
 
 | Setting | Default | What it sets |
 |---|---|---|
@@ -917,15 +954,15 @@ Quit Asyar and start it again, so that it loads the extension.
 | `init.lua` | the file that Hammerspoon loads, which starts the center of the shortcuts and the two tools |
 | `keyboard_shortcuts/core/` | the registry of the shortcuts of every tool, with the defaults, the overrides and the shortcuts left out, the shortcuts of macOS that a shortcut collides with, and the content of the window "Keyboard shortcuts…" |
 | `keyboard_shortcuts/macos/` | the center that binds the shortcuts and saves the overrides, the reading and turning off of macOS shortcuts, the window "Keyboard shortcuts…", and the frame of the web windows of both tools |
-| `desktop_manager/core/` | the decisions of the desktop manager: the checks of the settings, the actions with their default shortcuts, monitor configurations, the desktops of each screen, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers and the view of their list, the search of the windows and its scores, the pacing of the previews, the output of the helper of the previews, the windows of macOS that accessibility does not reach and the ones to bring into view, the text of the log of a press in Mission Control, the text of the console line of an opening of the search, URL commands, and the closed sets of the settings |
+| `desktop_manager/core/` | the decisions of the desktop manager: the checks of the settings, the actions with their default shortcuts, monitor configurations, the desktops of each screen, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers and the view of their list, the search of the windows and its scores, the pacing of the previews, the output of the helper of the previews, the windows of macOS that accessibility does not reach and the ones to bring into view, the text of the log of a press in Mission Control, the text of the console line of an opening of the search, the pause of the active profile after a start of macOS, URL commands, and the closed sets of the settings |
 | `desktop_manager/macos/` | the calls of the desktop manager to Hammerspoon: reading screens, desktops and windows, the windows that Hammerspoon knows, the list of all windows of macOS and its script, the helper script that takes the previews, showing, adding and removing desktops through Mission Control, bringing windows into view and moving them by their ids, opening new windows, the watchdog of a switch, switching to the application of a number, the list of the numbered applications and the panel of the search with the elements they share, the windows of hidden applications in them, the menu bar item, the message during a switch, the window of the managed applications, the diagnostics and the controller |
 | `window_tiling/core/` | the positions of the window tiling and the frame of each position on a screen |
 | `window_tiling/macos/` | the controller of the window tiling, which hands its actions to the center of the shortcuts, binds its URLs and sets the frame of the focused window |
 | `tests/` | unit tests of the cores, and tests of the flows of the desktop manager, one file per subject, and of the tiling controller against `tests/fake_hammerspoon.lua`, with the world of the controller in `tests/controller_world.lua` and the fixtures that several files share in `tests/fake_worlds.lua` |
-| `tools/` | the generators of the launcher scripts and of the settings of the Asyar extension of the desktop manager, the script that turns one shortcut of macOS off, and the script that removes one rule of the code at a time to find the rules that no test checks |
+| `tools/` | the generators of the launcher scripts and of the settings of the Asyar extensions of the desktop manager and of the window tiling, the script that turns one shortcut of macOS off, and the script that removes one rule of the code at a time to find the rules that no test checks |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |
-| `asyar-extension/` | the Asyar extension of the desktop manager, in TypeScript, with its manifest, its worker and the unit tests of its items |
-| `asyar-window-tiling/` | the Asyar extension of the window tiling, in TypeScript, with its manifest, its worker and the unit tests of its URL |
+| `asyar-extension/` | the Asyar extension of the desktop manager, in TypeScript, with its manifest, its worker, its generated settings and the unit tests of its items and its worker |
+| `asyar-window-tiling/` | the Asyar extension of the window tiling, in TypeScript, with its manifest, its worker, its generated settings and the unit tests of its URL and its worker |
 | `asyar-trash/` | the Asyar extension that opens and empties the Trash, in TypeScript, with its manifest, its worker and the unit tests of its scripts |
 
 The two tools share the modules of `keyboard_shortcuts/` alone.
@@ -947,6 +984,8 @@ After a change to an extension, run its `make link-...` target again, or `npm ru
 Two generators take the numbers of profiles and of applications, and the host of the URLs, `url_event_name`, from `desktop_manager/default_settings.lua`.
 `make launcher-scripts` runs `tools/write_launcher_scripts.lua`, which writes the scripts.
 `make asyar-extension-settings` runs `tools/write_asyar_extension_settings.lua`, which writes `asyar-extension/src/settings.generated.json`.
+A third generator takes `url_event_name` from `window_tiling/default_settings.lua`.
+`make asyar-window-tiling-settings` runs `tools/write_asyar_window_tiling_settings.lua`, which writes `asyar-window-tiling/src/settings.generated.json`.
 Run them after a change of the settings, because `make check` fails when a generated file differs from the output of its generator.
 
 `lua tools/remove_rules_one_at_a_time.lua <rules file> [word ...]` checks the tests against the rules of the code.
