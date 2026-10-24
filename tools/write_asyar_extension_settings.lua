@@ -17,9 +17,10 @@ if not file then
 end
 file:write(
     string.format(
-        '{\n  "generatedBy": "%s",\n  "profileCount": %d\n}\n',
+        '{\n  "generatedBy": "%s",\n  "profileCount": %d,\n  "urlEventName": "%s"\n}\n',
         GENERATOR_PATH,
-        settings.profile_count
+        settings.profile_count,
+        settings.url_event_name
     )
 )
 file:close()

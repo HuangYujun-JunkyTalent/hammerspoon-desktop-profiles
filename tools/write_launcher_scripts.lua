@@ -4,7 +4,6 @@
 local default_settings = require("desktop_manager.default_settings")
 
 local GENERATOR_PATH = "tools/write_launcher_scripts.lua"
-local URL_PREFIX = "hammerspoon://desktop-manager?"
 local ICON = "🖥️"
 local PACKAGE_NAME = "Desktop Manager"
 local UNUSED_STATE_FILE_PATH = ""
@@ -16,23 +15,24 @@ local UNUSED_STATE_FILE_PATH = ""
 ---@field asyar_arguments string[] the JSON of each argument, in order
 ---@field body string[] the lines of shell after the headers
 
----@param query string
----@return string[]
-local function open_url_body(query)
-    return { string.format('open -g "%s%s"', URL_PREFIX, query) }
+---@param url_event_name string the host of the URLs of the desktop manager
+---@return string the start of every URL of the desktop manager, up to the query
+local function build_url_prefix(url_event_name)
+    return string.format("hammerspoon://%s?", url_event_name)
 end
 
+---@param url_prefix string
 ---@param file_name string
 ---@param title string
 ---@param query string
 ---@return LauncherScript
-local function url_script(file_name, title, query)
+local function url_script(url_prefix, file_name, title, query)
     return {
         file_name = file_name,
         title = title,
         raycast_arguments = {},
         asyar_arguments = {},
-        body = open_url_body(query),
+        body = { string.format('open -g "%s%s"', url_prefix, query) },
     }
 end
 
@@ -80,9 +80,10 @@ end
 
 ---Asyar refuses a required argument after an optional one, and then registers no script of the
 ---folder, so both arguments are required.
+---@param url_prefix string
 ---@param profile_count integer
 ---@return LauncherScript
-local function rename_script(profile_count)
+local function rename_script(url_prefix, profile_count)
     local raycast_profile, asyar_profile =
         number_dropdown_arguments("profile", "Profile", profile_count)
     return {
@@ -95,14 +96,15 @@ local function rename_script(profile_count)
         },
         body = {
             build_argument_encoding_line("encoded_name", 2),
-            'open -g "' .. URL_PREFIX .. 'action=rename&profile=$1&name=$encoded_name"',
+            'open -g "' .. url_prefix .. 'action=rename&profile=$1&name=$encoded_name"',
         },
     }
 end
 
+---@param url_prefix string
 ---@param app_number_count integer
 ---@return LauncherScript
-local function number_app_script(app_number_count)
+local function number_app_script(url_prefix, app_number_count)
     local raycast_number, asyar_number =
         number_dropdown_arguments("number", "Number", app_number_count)
     return {
@@ -115,14 +117,15 @@ local function number_app_script(app_number_count)
         },
         body = {
             build_argument_encoding_line("encoded_app", 2),
-            'open -g "' .. URL_PREFIX .. 'action=number-app&number=$1&app=$encoded_app"',
+            'open -g "' .. url_prefix .. 'action=number-app&number=$1&app=$encoded_app"',
         },
     }
 end
 
+---@param url_prefix string
 ---@param app_number_count integer
 ---@return LauncherScript
-local function release_app_number_script(app_number_count)
+local function release_app_number_script(url_prefix, app_number_count)
     local raycast_number, asyar_number =
         number_dropdown_arguments("number", "Number", app_number_count)
     return {
@@ -130,19 +133,20 @@ local function release_app_number_script(app_number_count)
         title = "Release App Number",
         raycast_arguments = { raycast_number },
         asyar_arguments = { asyar_number },
-        body = { 'open -g "' .. URL_PREFIX .. 'action=release-app-number&number=$1"' },
+        body = { 'open -g "' .. url_prefix .. 'action=release-app-number&number=$1"' },
     }
 end
 
----@param profile_count integer
----@param app_number_count integer
+---@param settings Settings
 ---@return LauncherScript[]
-local function list_scripts(profile_count, app_number_count)
+local function list_scripts(settings)
+    local url_prefix = build_url_prefix(settings.url_event_name)
     local scripts = {}
-    for number = 1, profile_count do
+    for number = 1, settings.profile_count do
         table.insert(
             scripts,
             url_script(
+                url_prefix,
                 string.format("activate-profile-%d.sh", number),
                 string.format("Activate Profile %d", number),
                 string.format("action=activate&profile=%d", number)
@@ -151,6 +155,7 @@ local function list_scripts(profile_count, app_number_count)
         table.insert(
             scripts,
             url_script(
+                url_prefix,
                 string.format("deactivate-profile-%d.sh", number),
                 string.format("Deactivate Profile %d", number),
                 string.format("action=deactivate&profile=%d", number)
@@ -159,12 +164,18 @@ local function list_scripts(profile_count, app_number_count)
     end
     table.insert(
         scripts,
-        url_script("deactivate-active-profile.sh", "Deactivate Active Profile", "action=deactivate")
+        url_script(
+            url_prefix,
+            "deactivate-active-profile.sh",
+            "Deactivate Active Profile",
+            "action=deactivate"
+        )
     )
-    table.insert(scripts, rename_script(profile_count))
+    table.insert(scripts, rename_script(url_prefix, settings.profile_count))
     table.insert(
         scripts,
         url_script(
+            url_prefix,
             "cycle-profile-monitor-matching.sh",
             "Cycle Profile Monitor Matching",
             "action=cycle-monitor-matching"
@@ -172,10 +183,15 @@ local function list_scripts(profile_count, app_number_count)
     )
     table.insert(
         scripts,
-        url_script("save-profile-arrangement.sh", "Save Profile Arrangement", "action=save")
+        url_script(
+            url_prefix,
+            "save-profile-arrangement.sh",
+            "Save Profile Arrangement",
+            "action=save"
+        )
     )
-    table.insert(scripts, number_app_script(app_number_count))
-    table.insert(scripts, release_app_number_script(app_number_count))
+    table.insert(scripts, number_app_script(url_prefix, settings.app_number_count))
+    table.insert(scripts, release_app_number_script(url_prefix, settings.app_number_count))
     return scripts
 end
 
@@ -230,6 +246,6 @@ if not output_folder then
     error("the output folder is missing: lua " .. GENERATOR_PATH .. " <output folder>", 0)
 end
 local settings = default_settings.create(UNUSED_STATE_FILE_PATH)
-for _, script in ipairs(list_scripts(settings.profile_count, settings.app_number_count)) do
+for _, script in ipairs(list_scripts(settings)) do
     write_script(output_folder, script)
 end

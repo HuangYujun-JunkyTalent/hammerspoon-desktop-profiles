@@ -116,7 +116,7 @@ class DesktopProfilesExtension implements Extension {
   }
 
   async executeCommand(commandId: string): Promise<unknown> {
-    const url = findCommandUrl(commandId);
+    const url = findCommandUrl(commandId, settings.urlEventName);
     if (!url) {
       this.log?.warn(`the command ${commandId} is unknown to Desktop Profiles`);
       return undefined;

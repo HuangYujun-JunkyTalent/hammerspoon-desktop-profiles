@@ -56,12 +56,21 @@ describe('describeProfileCommands', () => {
 
 describe('findCommandUrl', () => {
   it('toggles a profile and resets the application numbers', () => {
-    expect(findCommandUrl('profile-4')).toBe(
+    expect(findCommandUrl('profile-4', 'desktop-manager')).toBe(
       'hammerspoon://desktop-manager?action=toggle&profile=4',
     );
-    expect(findCommandUrl(REASSIGN_APP_NUMBERS_COMMAND_ID)).toBe(
+    expect(findCommandUrl(REASSIGN_APP_NUMBERS_COMMAND_ID, 'desktop-manager')).toBe(
       'hammerspoon://desktop-manager?action=reset-app-numbers',
     );
-    expect(findCommandUrl('profile-x')).toBeNull();
+    expect(findCommandUrl('profile-x', 'desktop-manager')).toBeNull();
+  });
+
+  it('opens the URLs of the setting url_event_name', () => {
+    expect(findCommandUrl('profile-4', 'desktops')).toBe(
+      'hammerspoon://desktops?action=toggle&profile=4',
+    );
+    expect(findCommandUrl(REASSIGN_APP_NUMBERS_COMMAND_ID, 'desktops')).toBe(
+      'hammerspoon://desktops?action=reset-app-numbers',
+    );
   });
 });

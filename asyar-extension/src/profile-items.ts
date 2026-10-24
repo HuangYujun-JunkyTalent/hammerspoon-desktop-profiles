@@ -1,6 +1,5 @@
 import type { DynamicCommandRegistration } from 'asyar-sdk/contracts';
 
-const URL_PREFIX = 'hammerspoon://desktop-manager?';
 const PROFILE_COMMAND_PATTERN = /^profile-(\d+)$/;
 
 /** The id of the manifest command that returns the application numbers to the default. */
@@ -78,14 +77,18 @@ export function describeProfileCommands(
   return registrations;
 }
 
-/** The URL of the Hammerspoon desktop manager that a command opens, or null for an unknown id. */
-export function findCommandUrl(commandId: string): string | null {
+/**
+ * The URL of the Hammerspoon desktop manager that a command opens, or null for an unknown id.
+ * The host of the URL is the setting `url_event_name` of the desktop manager.
+ */
+export function findCommandUrl(commandId: string, urlEventName: string): string | null {
+  const urlPrefix = `hammerspoon://${urlEventName}?`;
   if (commandId === REASSIGN_APP_NUMBERS_COMMAND_ID) {
-    return `${URL_PREFIX}action=reset-app-numbers`;
+    return `${urlPrefix}action=reset-app-numbers`;
   }
   const match = PROFILE_COMMAND_PATTERN.exec(commandId);
   if (!match) {
     return null;
   }
-  return `${URL_PREFIX}action=toggle&profile=${match[1]}`;
+  return `${urlPrefix}action=toggle&profile=${match[1]}`;
 }
