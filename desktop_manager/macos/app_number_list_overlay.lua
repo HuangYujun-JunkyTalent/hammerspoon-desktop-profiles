@@ -11,12 +11,6 @@ local app_number_list_overlay = {}
 
 app_number_list_overlay.MAX_TITLE_LENGTH = 60
 
----The images that the list and the search show: the icon of each application, and the preview of
----each window that has one.
----@class IconsAndPreviews
----@field app_icons table<string, table> the hs.image of each bundle id
----@field previews table<integer, table> the hs.image of each window id
-
 ---What the list shows: lines for the rows, or groups of columns.
 ---@class AppNumberListView
 ---@field lines AppNumberListLine[]|nil

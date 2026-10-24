@@ -9,6 +9,12 @@ canvas_elements.BACKGROUND_RADIUS = 14
 ---The radius of the corners of the backdrop behind a selected, hovered or matching item.
 canvas_elements.BACKDROP_RADIUS = 6
 
+---The images that the list and the search show: the icon of each application, and the preview of
+---each window that has one.
+---@class IconsAndPreviews
+---@field app_icons table<string, table> the hs.image of each bundle id
+---@field previews table<integer, table> the hs.image of each window id
+
 ---@param size table the w and h of the canvas
 ---@return table the frame that centers the canvas on the screen in front
 function canvas_elements.center_on_screen(size)
