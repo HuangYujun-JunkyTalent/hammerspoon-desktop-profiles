@@ -6,7 +6,8 @@ local enumeration = require("desktop_manager.core.enumeration")
 ---the record.
 ---Under either way of matching windows, an unrecorded window of the same application with the same
 ---title counts as the reopened window, and takes the records of the closed window in every profile.
----`OPEN_NEW_WINDOW` matches a record by its window id alone, and counts no window as reopened.
+---Under `match_windows_by.ID`, `OPEN_NEW_WINDOW` matches a record by its window id alone, and under
+---either way of matching windows it counts no window as reopened.
 ---`unmatched_window_action` alone decides whether a new window opens for a record that no open
 ---window matches, under either value.
 ---@class MissingWindowPolicyModule: Enumeration
