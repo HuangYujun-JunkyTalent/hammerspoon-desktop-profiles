@@ -219,7 +219,8 @@ The desktop manager waits up to `window_reach_timeout_seconds` of `timing` until
 When no window of the application is a standard window in time, an alert names the application.
 A hidden application that keeps no window gets a new window from the same sources.
 A window chosen in the list or the search during a switch, a restore or another press gives "Desktop Manager is still switching" and does nothing, so that the message of that work stays.
-A profile shortcut gives the same alert while a press of the list or the search shows a desktop, unhides an application or opens a window.
+Every action on a profile gives the same alert while a press of the list or the search shows a desktop, unhides an application or opens a window.
+The action may come from a shortcut, the menu bar item, Asyar or a URL.
 
 The desktop manager gives the default numbers to the applications that the profile records in sight.
 The order follows the screens, then the desktops, then the left edges of the windows, so the numbers read from left to right through the desktops.
@@ -393,7 +394,7 @@ The file writes each choice through its module, such as `list_layout.ROWS` for `
 | `search_highlight_colors` | blue for the selection, orange for the matches | the default colors behind the selected, hovered and matching items of the search of the windows, under the colors of the window "Search colors…", as [the section on the colors of the search](#search-colors-in-the-menu-bar-item-picks-the-colors-of-the-search-of-the-windows) explains |
 | `concealment_method` | `minimize_windows` | how a window goes out of sight: `minimize_windows` minimizes it, and `hide_applications` hides its application once all the windows of the application go out of sight |
 | `match_windows_by` | `title` | how a switch pairs a record with an open window: `title` by the title and then the window id, and `id` by the window id, as [the section on switches](#a-switch-changes-only-the-windows-that-differ-from-the-record) explains |
-| `missing_window_policy` | `match_title_or_open_new_window` | under `match_windows_by` `id`, what replaces a recorded window that no longer exists, as the same section explains |
+| `missing_window_policy` | `match_title` | whether a window of the same application with the same title takes the records of a recorded window that no longer exists, as the same section explains |
 | `unmatched_window_action` | `open_new_window` | what a switch does for a record in sight that no open window matches: `open_new_window` opens a new window of the same application, and `forget` opens none and drops the record from the profile, as the same section explains |
 | `hidden_application_windows` | `leave_out` | which windows of hidden applications the list of Control-Option and the search show |
 | `list_layout` | `columns` | how the list arranges the applications |
@@ -404,6 +405,7 @@ The file writes each choice through its module, such as `list_layout.ROWS` for `
 | `list_font_size` | 0.012 | the size of the titles, as a fraction of the height of the screen in front |
 | `title_overflow` | `wrap` | what happens to a title longer than its space |
 | `title_line_count` | 2 | the most lines of a title under `wrap` |
+| `url_event_name` | `desktop-manager` | the host of the URLs, as [the section on URLs](#a-url-reaches-every-action-of-the-desktop-manager) explains |
 | `timing` | | the waits and time limits of a switch, in seconds |
 
 The shortcuts are no settings of this file, as [the section on keyboard shortcuts](#keyboard-shortcuts-in-the-menu-bar-item-changes-the-shortcut-of-every-action) explains.
@@ -441,7 +443,8 @@ Choosing a window of a hidden application in the list or the search unhides the 
 `leave_out` is the default because it costs the least memory and processor time.
 Hammerspoon asks an application through accessibility whether it is hidden, so the desktop manager asks each application once, the first time that the list or the search needs the answer.
 macOS then reports each hide and each unhide, so the later openings ask nothing.
-After any application quits, the desktop manager asks each application again.
+When an application quits, the desktop manager forgets whether that application was hidden, and asks it again the next time that the list or the search needs the answer.
+When macOS reports a quit without the bundle id and the name of the application, the desktop manager forgets the answers of every application.
 Under `leave_out`, the list and the search skip every window of a hidden application, so accessibility reads none of them.
 Fewer windows then show, and the list and the search take fewer previews.
 Under `list_where_found`, the list and the search ask no application whether it is hidden.
@@ -573,12 +576,16 @@ Under `title`, a window keeps its record when its application reopens it with a 
 A window whose title changed, such as a browser window on another tab, keeps its record through its window id, unless another window took the title.
 A record with an empty title, such as the record of a window that macOS listed before Hammerspoon had the permission for Screen Recording, matches by its window id alone.
 
-Under `id`, macOS gives a window that its application reopens a new window id, so `missing_window_policy` chooses what replaces a recorded window in sight that no longer exists.
+Under `id`, macOS gives a window that its application reopens a new window id, so `missing_window_policy` chooses which open window takes the record of a recorded window in sight that no longer exists.
 
 | Value of `missing_window_policy` | The desktop manager |
 |---|---|
-| `match_title_or_open_new_window`, the default | takes an open window of the same application with the same title, and opens a new window when no title matches |
-| `open_new_window` | opens a new window of the same application |
+| `match_title`, the default | takes an open window of the same application with the same title |
+| `match_id_alone` | takes no other window |
+
+`unmatched_window_action`, below, chooses whether a new window opens for a record that no window takes.
+The values `match_title_or_open_new_window` and `open_new_window` of earlier versions still work as `match_title` and `match_id_alone`, and the console of Hammerspoon names the new value at each start.
+A settings file of an earlier version that writes them as `missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW` and `missing_window_policy.OPEN_NEW_WINDOW` works in the same way.
 
 Under the default, the desktop manager also treats an unrecorded window as the reopened copy of a closed recorded window of the same application with the same title.
 Position and size play no part, because the desktop manager sets them on the window it takes, and because macOS opens a new window at the place of the last closed one.
@@ -607,6 +614,7 @@ An application that opens no new window within ten seconds is reported in a noti
 
 The desktop manager saves the profiles, their records and their application numbers in `~/.hammerspoon/desktop-manager-state.json`.
 A file that the desktop manager cannot read is moved aside to a name that ends in `.unreadable-` and the time, and the desktop manager starts a new state.
+When the move fails, the notification and the console say so, and the next save replaces the unreadable file.
 
 ## Hammerspoon and macOS 27.0.1 limit what the desktop manager can do
 
@@ -670,10 +678,15 @@ The desktop manager works around them as follows.
 
 ### The previews of the list need the permission for Screen Recording
 
-The previews in the list come after the list shows, one window at a time, and need the permission for Screen Recording.
-Hammerspoon takes them with an old screen capture function of macOS.
+The previews in the list and the search come after the list or the panel shows, and need the permission for Screen Recording.
+A helper process, `desktop_manager/macos/capture_window_previews.js`, takes them with an old screen capture function of macOS.
 On 2026-10-10, on macOS 27.0.1, that function blocked Hammerspoon for two minutes with every shortcut unresponsive, and took less than 0.3 seconds after the permission was turned on.
-An image that takes longer than half a second therefore stops the previews until the next reload, and the console says why.
+Hammerspoon starts the helper through `osascript`, so the helper has the permission for Screen Recording of Hammerspoon, and a capture blocks the helper alone.
+The helper captures a window at the resolution of its points, which has a quarter of the pixels on a Retina display, and captures a window smaller than its preview at full resolution.
+Hammerspoon shows each preview as the helper gives it, so a key waits for no capture.
+When the helper reports an image whose capture took longer than half a second, Hammerspoon stops the helper, and the previews stop until the next reload, because a slow image may start a block such as the one of 2026-10-10.
+A helper that gives no output for one and a half seconds, or that fails, stops as well, and the windows that wait for a preview keep their icons until the list or the search opens again.
+The console says why the helper stopped.
 On a machine where Hammerspoon lacks the permission, choose `app_icons`, or time one image first.
 
 1. In System Settings, Privacy & Security, Screen & System Audio Recording, turn on Hammerspoon.
@@ -811,6 +824,10 @@ A press whose desktop did not show by the end of the wait also writes a warning 
 A press whose second opening failed gives the failure at the end of its log line instead.
 The rest of a switch is the animation of macOS, which "Reduce motion" in step 6 of the installation shortens.
 
+Each opening of the search writes one line to the console when the panel closes.
+The line gives the seconds until the panel showed, until the first and the last preview, and until the new list of the window server.
+The line also gives how long the previews and the new list blocked Hammerspoon, and the number of keys with the longest wait of a key before the search took it.
+
 ## Control-Option with Return or an arrow tiles the focused window
 
 The window tiling sets the frame of the focused window to a part of its screen, with the default shortcuts of Rectangle.
@@ -898,13 +915,13 @@ Quit Asyar and start it again, so that it loads the extension.
 | Folder or file | Content |
 |---|---|
 | `init.lua` | the file that Hammerspoon loads, which starts the center of the shortcuts and the two tools |
-| `keyboard_shortcuts/core/` | the registry of the shortcuts of every tool, with the defaults, the overrides and the shortcuts left out, and the shortcuts of macOS that a shortcut collides with |
-| `keyboard_shortcuts/macos/` | the center that binds the shortcuts and saves the overrides, the reading and turning off of macOS shortcuts, and the window "Keyboard shortcuts…" |
-| `desktop_manager/core/` | the decisions of the desktop manager: monitor configurations, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers, the search of the windows and its scores, the windows of macOS that accessibility does not reach and the ones to bring into view, URL commands |
-| `desktop_manager/macos/` | the calls of the desktop manager to Hammerspoon: reading screens, desktops and windows, the list of all windows of macOS and its script, showing, adding and removing desktops through Mission Control, moving windows by their ids, opening new windows, switching to the application of a number, the panel of the search, the menu bar item, the message during a switch, the window of the managed applications and the controller |
+| `keyboard_shortcuts/core/` | the registry of the shortcuts of every tool, with the defaults, the overrides and the shortcuts left out, the shortcuts of macOS that a shortcut collides with, and the content of the window "Keyboard shortcuts…" |
+| `keyboard_shortcuts/macos/` | the center that binds the shortcuts and saves the overrides, the reading and turning off of macOS shortcuts, the window "Keyboard shortcuts…", and the frame of the web windows of both tools |
+| `desktop_manager/core/` | the decisions of the desktop manager: the checks of the settings, the actions with their default shortcuts, monitor configurations, the desktops of each screen, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers and the view of their list, the search of the windows and its scores, the pacing of the previews, the output of the helper of the previews, the windows of macOS that accessibility does not reach and the ones to bring into view, the text of the log of a press in Mission Control, the text of the console line of an opening of the search, URL commands, and the closed sets of the settings |
+| `desktop_manager/macos/` | the calls of the desktop manager to Hammerspoon: reading screens, desktops and windows, the windows that Hammerspoon knows, the list of all windows of macOS and its script, the helper script that takes the previews, showing, adding and removing desktops through Mission Control, bringing windows into view and moving them by their ids, opening new windows, the watchdog of a switch, switching to the application of a number, the list of the numbered applications and the panel of the search with the elements they share, the windows of hidden applications in them, the menu bar item, the message during a switch, the window of the managed applications, the diagnostics and the controller |
 | `window_tiling/core/` | the positions of the window tiling and the frame of each position on a screen |
 | `window_tiling/macos/` | the controller of the window tiling, which hands its actions to the center of the shortcuts, binds its URLs and sets the frame of the focused window |
-| `tests/` | unit tests of the cores, tests of whole switches and of the tiling controller against `tests/fake_hammerspoon.lua` |
+| `tests/` | unit tests of the cores, and tests of the flows of the desktop manager, one file per subject, and of the tiling controller against `tests/fake_hammerspoon.lua`, with the world of the controller in `tests/controller_world.lua` and the fixtures that several files share in `tests/fake_worlds.lua` |
 | `tools/` | the generators of the launcher scripts and of the settings of the Asyar extension of the desktop manager, the script that turns one shortcut of macOS off, and the script that removes one rule of the code at a time to find the rules that no test checks |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |
 | `asyar-extension/` | the Asyar extension of the desktop manager, in TypeScript, with its manifest, its worker and the unit tests of its items |
@@ -918,15 +935,16 @@ A press of the fake moves the focus to the display of its thumbnail, which check
 A test can turn on the return to the replaced desktop after a press from another application, as [the section on the limits of Hammerspoon and macOS 27.0.1](#hammerspoon-and-macos-2701-limit-what-the-desktop-manager-can-do) describes it.
 The tests check the logic of the tools, and say nothing about the behaviour of macOS.
 
-`make check` checks the syntax with `luac -p`, lints with `luacheck`, checks the formatting with `stylua --check`, runs the tests, and compares the generated files with their generators.
+`make check` checks the syntax with `luac -p`, and the syntax of the two scripts of JavaScript for Automation in `desktop_manager/macos/` with `node --check`.
+It also lints with `luacheck`, checks the formatting with `stylua --check`, runs the tests, and compares the generated files with their generators.
 `make format` formats the code with `stylua`.
-The programs of these commands come from Homebrew: `lua@5.4`, `luacheck`, `stylua` and `lua-language-server`.
+The programs of these commands come from Homebrew: `lua@5.4`, `luacheck`, `stylua`, `node` and `lua-language-server`.
 
 `make check-asyar-extension` checks the types of the extension of the desktop manager, runs its unit tests, runs `asyar validate` of the SDK of Asyar, and builds it.
 `make check-asyar-window-tiling` does the same for the extension of the window tiling, and `make check-asyar-trash` for the extension of the Trash.
 After a change to an extension, run its `make link-...` target again, or `npm run build` in its folder, because Asyar loads the built files through the link.
 
-Two generators take the numbers of profiles and of applications from `desktop_manager/default_settings.lua`.
+Two generators take the numbers of profiles and of applications, and the host of the URLs, `url_event_name`, from `desktop_manager/default_settings.lua`.
 `make launcher-scripts` runs `tools/write_launcher_scripts.lua`, which writes the scripts.
 `make asyar-extension-settings` runs `tools/write_asyar_extension_settings.lua`, which writes `asyar-extension/src/settings.generated.json`.
 Run them after a change of the settings, because `make check` fails when a generated file differs from the output of its generator.

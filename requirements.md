@@ -133,7 +133,7 @@ The modifiers with 0 deactivate the active profile.
 The default modifiers are Command-Option-Shift.
 
 Every global shortcut of the tools can be changed, the shortcut of each action on its own.
-One place registers the shortcuts of every utility, so that no utility keeps shortcut settings or binding code of its own.
+One place registers the shortcuts of every tool, so that no tool keeps shortcut settings or binding code of its own.
 A window of the menu bar item lists the actions with their keys, filters them, records a new shortcut, removes one and returns one to its default, and a file keeps the changes.
 When a recorded shortcut belongs to another action or to macOS, the window says so and offers to take it from the other action or to turn the macOS shortcut off.
 
