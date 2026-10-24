@@ -19,6 +19,15 @@ local fuzzy_match = {
 local STRONG_SCORE = 0.9
 local MEDIUM_SCORE = 0.7
 
+local LEVEL_RANKS = { [fuzzy_match.STRONG] = 3, [fuzzy_match.MEDIUM] = 2, [fuzzy_match.WEAK] = 1 }
+
+---@param level string a level of fuzzy_match
+---@param other_level string a level of fuzzy_match
+---@return boolean true when the level holds higher scores than the other level
+function fuzzy_match.is_higher_level(level, other_level)
+    return LEVEL_RANKS[level] > LEVEL_RANKS[other_level]
+end
+
 ---@param character string|nil
 ---@return boolean whether the character belongs to a word, as a letter, a digit or a character
 ---beyond ASCII does

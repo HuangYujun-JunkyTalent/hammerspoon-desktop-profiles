@@ -64,7 +64,7 @@ return {
                 bundle_id = "com.apple.Safari",
             },
             {
-                text = "      Abcdefghij …",
+                text = "Abcdefghij …",
                 is_application = false,
                 is_selected = true,
                 bundle_id = "com.apple.Safari",
@@ -81,8 +81,8 @@ return {
             is_selected = true,
             bundle_id = "com.microsoft.Word",
         })
-        expect.equal(lines[6].text, "      no window, a new one opens")
-        expect.equal(lines[4].text, "      untitled window")
+        expect.equal(lines[6].text, "no window, a new one opens")
+        expect.equal(lines[4].text, "untitled window")
     end,
 
     a_hidden_application_without_listed_windows_is_noted_as_hidden = function()
@@ -95,7 +95,7 @@ return {
             is_hidden = true,
         }
         local lines = switch_list.describe_lines({ hidden_word }, nil, 40)
-        expect.equal(lines[2].text, "      hidden, a press unhides it")
+        expect.equal(lines[2].text, "hidden, a press unhides it")
         local groups = switch_list.describe_application_columns({ hidden_word }, nil)
         expect.equal(groups[1].columns[1].note, "hidden, a press unhides it")
         expect.equal(switch_list.describe_note(APPLICATIONS[1]), nil)

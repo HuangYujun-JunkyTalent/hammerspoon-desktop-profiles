@@ -301,11 +301,10 @@ local function draw_previews(elements, windows, images, layout)
             table.insert(elements, image)
         end
         local text_top = box.y + box.h
-        local title = window.title ~= "" and window.title or "untitled window"
         table.insert(
             elements,
             build_text(
-                title,
+                window.title,
                 { x = box.x, y = text_top, w = box.w, h = layout.line_height },
                 layout.font_size,
                 TEXT_COLOR

@@ -1,5 +1,6 @@
 local list_layout = require("desktop_manager.core.list_layout")
 local utf8_text = require("desktop_manager.core.utf8_text")
+local window_titles = require("desktop_manager.core.window_titles")
 
 ---The list that a press of Control-Option with a number shows: the numbered applications of the
 ---active profile, the titles of their windows, and the selected window.
@@ -57,8 +58,6 @@ local switch_list = {}
 ---@field screen_uuid string
 ---@field name string
 
-local UNTITLED = "untitled window"
-local WINDOW_INDENT = "      "
 local NO_WINDOW_NOTE = "no window, a new one opens"
 local HIDDEN_NOTE = "hidden, a press unhides it"
 
@@ -148,16 +147,15 @@ function switch_list.describe_lines(applications, selection, max_title_length)
         local note = switch_list.describe_note(application)
         if note then
             table.insert(lines, {
-                text = WINDOW_INDENT .. note,
+                text = note,
                 is_application = false,
                 is_selected = false,
                 bundle_id = application.bundle_id,
             })
         end
         for index, window in ipairs(application.windows) do
-            local title = window.title ~= "" and window.title or UNTITLED
             table.insert(lines, {
-                text = WINDOW_INDENT .. utf8_text.shorten(title, max_title_length),
+                text = utf8_text.shorten(window_titles.describe(window.title), max_title_length),
                 is_application = false,
                 is_selected = is_selected_application and selection.window_index == index,
                 bundle_id = application.bundle_id,
@@ -179,7 +177,7 @@ local function build_column(application, selection, is_in_column)
         if is_in_column(window) then
             table.insert(cells, {
                 window_id = window.window_id,
-                title = window.title ~= "" and window.title or UNTITLED,
+                title = window_titles.describe(window.title),
                 is_selected = is_selected_application and selection.window_index == index,
             })
         end

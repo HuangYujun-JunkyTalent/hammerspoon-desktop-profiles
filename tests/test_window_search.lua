@@ -133,6 +133,14 @@ return {
         expect.equal(#window_search.describe_view(search).applications, 3)
     end,
 
+    a_window_without_a_title_shows_as_an_untitled_window = function()
+        local entries = build_entries()
+        entries[2].title = ""
+        local view = window_search.describe_view(window_search.start(entries, {}, nil))
+        expect.equal(view.windows[2].title, "untitled window")
+        expect.equal(view.windows[1].title, "GitHub - pull requests")
+    end,
+
     deleting_the_text_brings_back_the_initial_window = function()
         local search = window_search.type_text(start(12), "pé")
         search = window_search.delete_last_character(search)

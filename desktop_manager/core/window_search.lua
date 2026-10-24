@@ -1,5 +1,6 @@
 local fuzzy_match = require("desktop_manager.core.fuzzy_match")
 local utf8_text = require("desktop_manager.core.utf8_text")
+local window_titles = require("desktop_manager.core.window_titles")
 
 ---The search of the windows: every window, the applications in a row, the typed text, the
 ---application that the mouse hovers over or chose, the windows in view and the selected one.
@@ -53,7 +54,7 @@ local window_search = {
 
 ---@class SearchViewWindow
 ---@field window_id integer
----@field title string
+---@field title string the title, or "untitled window" for an empty title
 ---@field app_name string
 ---@field bundle_id string
 ---@field match_level string|nil
@@ -393,8 +394,6 @@ function window_search.describe_search_line(search)
     return { text = search.text, placeholder = PLACEHOLDER, summary = summary }
 end
 
-local LEVEL_RANKS = { [fuzzy_match.STRONG] = 3, [fuzzy_match.MEDIUM] = 2, [fuzzy_match.WEAK] = 1 }
-
 ---@param search WindowSearch
 ---@param application SearchApplication
 ---@return string|nil the best level among the windows of the application
@@ -402,7 +401,7 @@ local function find_best_level(search, application)
     local best = nil
     for _, window_id in ipairs(application.window_ids) do
         local level = search.levels[window_id]
-        if level and (not best or LEVEL_RANKS[level] > LEVEL_RANKS[best]) then
+        if level and (not best or fuzzy_match.is_higher_level(level, best)) then
             best = level
         end
     end
@@ -421,7 +420,7 @@ function window_search.describe_view(search)
         local entry = entry_by_id[window_id]
         table.insert(windows, {
             window_id = window_id,
-            title = entry.title,
+            title = window_titles.describe(entry.title),
             app_name = entry.app_name,
             bundle_id = entry.bundle_id,
             match_level = search.levels[window_id],
