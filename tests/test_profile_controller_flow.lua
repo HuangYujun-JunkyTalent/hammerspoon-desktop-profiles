@@ -1225,9 +1225,9 @@ return {
         })
         expect.equal(controller.shortcut_window.model.pending.macos.name, "Show Spotlight search")
         world.post_to_webview("shortcuts", { kind = "resolve", turn_off_macos = true })
-        expect.equal(
-            world.tasks[#world.tasks].arguments[1]:match("disable_macos_shortcut%.sh$") ~= nil,
-            true
+        expect.present(
+            world.tasks[#world.tasks].arguments[1]:match("disable_macos_shortcut%.sh$"),
+            "disable_macos_shortcut.sh as the script of the last task"
         )
         expect.equal(world.symbolic_hotkeys["64"].enabled, false)
         expect.present(world.hotkey_by_shortcut["cmd space"], "the hotkey cmd space")
@@ -2461,9 +2461,9 @@ return {
         world.advance(SETTLE_SECONDS)
         open_app_pool_window(world)
         expect.equal(world.webview.is_visible, true)
-        expect.equal(
-            world.webview.page:find('data-app-name="Safari"> Safari', 1, true) ~= nil,
-            true
+        expect.present(
+            world.webview.page:find('data-app-name="Safari"> Safari', 1, true),
+            "Safari unticked in the list"
         )
         world.post_to_webview("appPool", { kind = "mode", mode = "manage_listed" })
         for _, application in ipairs({
@@ -3400,9 +3400,9 @@ return {
             nil
         )
         world.advance(SETTLE_SECONDS)
-        expect.equal(
-            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY) ~= nil,
-            true
+        expect.present(
+            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY),
+            "the arrangement of profile 1"
         )
     end,
 

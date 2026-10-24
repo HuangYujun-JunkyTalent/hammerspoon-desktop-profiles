@@ -104,9 +104,9 @@ return {
         })
         expect.equal(#failures, 1)
         expect.equal(failures[1].window_id, 41)
-        expect.equal(
-            failures[1].message:match("^Hammerspoon refused the move: .*another display") ~= nil,
-            true
+        expect.present(
+            failures[1].message:match("^Hammerspoon refused the move: .*another display"),
+            "the refusal of the move to another display"
         )
         expect.equal(world.windows[41].space_id, 3)
         expect.equal(world.windows[42].space_id, 3)

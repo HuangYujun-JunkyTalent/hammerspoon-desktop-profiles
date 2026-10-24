@@ -666,9 +666,9 @@ return {
         expect.equal(#world.desktop_presses, 1)
         expect.equal(world.is_mission_control_open, false)
         local warning = world.log_lines[#world.log_lines]
-        expect.equal(
-            warning:find("At the second check, reading the desktops failed: ", 1, true) ~= nil,
-            true
+        expect.present(
+            warning:find("At the second check, reading the desktops failed: ", 1, true),
+            "the failed reading in the warning"
         )
     end,
 
