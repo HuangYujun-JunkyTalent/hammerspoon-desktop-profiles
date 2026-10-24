@@ -57,7 +57,6 @@ local TEXT_COLOR = { white = 1, alpha = 1 }
 local DIMMED_TEXT_COLOR = { white = 0.7, alpha = 1 }
 local FADED_TEXT_COLOR = { white = 0.42, alpha = 1 }
 local FADED_IMAGE_ALPHA = 0.3
----The highlight behind a match of the search, stronger for a better match.
 
 ---@param settings SearchOverlaySettings
 ---@param screen table the frame of the screen in front
@@ -145,8 +144,9 @@ end
 ---@param frame table
 ---@param font_size number
 ---@param color table
+---@param id string|nil "faded" for a faded text
 ---@return table a text element of one line, cut at its end when it is too long
-local function build_text(text, frame, font_size, color)
+local function build_text(text, frame, font_size, color, id)
     return {
         type = "text",
         text = text,
@@ -155,8 +155,27 @@ local function build_text(text, frame, font_size, color)
         textColor = color,
         textLineBreak = "truncateTail",
         frame = frame,
-        id = color == FADED_TEXT_COLOR and "faded" or nil,
+        id = id,
     }
+end
+
+---@param is_faded boolean
+---@param color table the color of the text when it does not fade
+---@return table color the color of the text
+---@return string|nil id the id of a faded text
+local function choose_text_color(is_faded, color)
+    if is_faded then
+        return FADED_TEXT_COLOR, "faded"
+    end
+    return color, nil
+end
+
+---@param colors HighlightColors
+---@param match_level string a match level of fuzzy_match
+---@return table color the color behind an item of the match level
+---@return string id the id of the backdrop
+local function choose_match_backdrop(colors, match_level)
+    return colors[match_level .. "_match"], "match-" .. match_level
 end
 
 ---@param frame table
@@ -210,12 +229,13 @@ local function draw_search_line(elements, line, layout)
     table.insert(elements, build_backdrop(field, SEARCH_FIELD_COLOR, "search-field"))
     local summary_width = math.floor(field.w * 0.35)
     local is_typed = line.text ~= ""
+    local typed_color, typed_id = choose_text_color(not is_typed, TEXT_COLOR)
     local typed = build_text(is_typed and line.text .. CARET or line.placeholder, {
         x = field.x + CELL_PADDING,
         y = field.y + CELL_PADDING / 2,
         w = field.w - summary_width - 3 * CELL_PADDING,
         h = field.h - CELL_PADDING,
-    }, layout.font_size + 3, is_typed and TEXT_COLOR or FADED_TEXT_COLOR)
+    }, layout.font_size + 3, typed_color, typed_id)
     typed.textLineBreak = "truncateHead"
     table.insert(elements, typed)
     local summary = build_text(line.summary, {
@@ -240,14 +260,8 @@ local function draw_preview_cell(elements, window, frame, images, layout)
     if window.is_selected then
         table.insert(elements, build_backdrop(frame, layout.colors.selection, "selection"))
     elseif window.match_level then
-        table.insert(
-            elements,
-            build_backdrop(
-                frame,
-                layout.colors[window.match_level .. "_match"],
-                "match-" .. window.match_level
-            )
-        )
+        local color, backdrop_id = choose_match_backdrop(layout.colors, window.match_level)
+        table.insert(elements, build_backdrop(frame, color, backdrop_id))
     end
     local box = {
         x = frame.x + CELL_PADDING,
@@ -337,7 +351,7 @@ local function choose_application_backdrop(application, colors)
         return colors.hover, "hovered"
     end
     if application.match_level then
-        return colors[application.match_level .. "_match"], "match-" .. application.match_level
+        return choose_match_backdrop(colors, application.match_level)
     end
     return nil, nil
 end
@@ -373,6 +387,8 @@ local function draw_applications(elements, applications, images, layout)
             table.insert(elements, image)
         end
         if application.number then
+            local number_color, number_id =
+                choose_text_color(application.is_faded, DIMMED_TEXT_COLOR)
             table.insert(
                 elements,
                 build_text(tostring(application.number), {
@@ -380,15 +396,16 @@ local function draw_applications(elements, applications, images, layout)
                     y = frame.y + CELL_PADDING / 2,
                     w = layout.line_height,
                     h = layout.line_height,
-                }, layout.font_size, application.is_faded and FADED_TEXT_COLOR or DIMMED_TEXT_COLOR)
+                }, layout.font_size, number_color, number_id)
             )
         end
+        local name_color, name_id = choose_text_color(application.is_faded, TEXT_COLOR)
         local name = build_text(application.app_name, {
             x = frame.x + CELL_PADDING / 2,
             y = frame.y + CELL_PADDING + layout.icon_size + 4,
             w = frame.w - CELL_PADDING,
             h = layout.line_height,
-        }, layout.font_size, application.is_faded and FADED_TEXT_COLOR or TEXT_COLOR)
+        }, layout.font_size, name_color, name_id)
         name.textAlignment = "center"
         table.insert(elements, name)
         table.insert(elements, build_tracker(frame, "application:" .. application.bundle_id))

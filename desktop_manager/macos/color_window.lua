@@ -9,11 +9,20 @@ local MESSAGE_HANDLER = "colors"
 local WINDOW_SIZE = { w = 640, h = 760 }
 
 local LABELS = {
-    selection = { "Selection", "The selected window or application" },
-    hover = { "Hover", "The application under the mouse pointer" },
-    strong_match = { "Strong match", "A title or name that matches the words well" },
-    medium_match = { "Medium match", "A title or name that matches the words in part" },
-    weak_match = { "Weak match", "A title or name that matches the words a little" },
+    selection = { label = "Selection", description = "The selected window or application" },
+    hover = { label = "Hover", description = "The application under the mouse pointer" },
+    strong_match = {
+        label = "Strong match",
+        description = "A title or name that matches the words well",
+    },
+    medium_match = {
+        label = "Medium match",
+        description = "A title or name that matches the words in part",
+    },
+    weak_match = {
+        label = "Weak match",
+        description = "A title or name that matches the words a little",
+    },
 }
 
 ---@class ColorWindowActions
@@ -25,6 +34,7 @@ local LABELS = {
 ---@class ColorWindow
 ---@field view table the hs.webview
 ---@field actions ColorWindowActions
+---@field model table the content of the page when the window opened
 
 ---@param colors HighlightColors
 ---@return table<string, table> each color as hex and alpha, by name
@@ -39,14 +49,18 @@ end
 
 ---@param actions ColorWindowActions
 ---@return table the content of the page: the colors now, the defaults, the presets and the labels
-function color_window.build_model(actions)
+local function build_model(actions)
     local presets = {}
     for _, preset in ipairs(highlight_colors.PRESETS) do
         table.insert(presets, { name = preset.name, colors = to_page_colors(preset.colors) })
     end
     local rows = {}
     for _, name in ipairs(highlight_colors.NAMES) do
-        table.insert(rows, { name = name, label = LABELS[name][1], description = LABELS[name][2] })
+        table.insert(rows, {
+            name = name,
+            label = LABELS[name].label,
+            description = LABELS[name].description,
+        })
     end
     return {
         colors = to_page_colors(actions.read_colors()),
@@ -198,7 +212,7 @@ local PREVIEW = [[
 
 ---@param model table
 ---@return string html
-function color_window.build_page(model)
+local function build_page(model)
     return table.concat({
         "<!DOCTYPE html><html><head><meta charset='utf-8'><style>",
         STYLE,
@@ -285,8 +299,8 @@ function color_window.open(actions)
                 actions.on_closed()
             end
         end)
-    window.model = color_window.build_model(actions)
-    window.view:html(color_window.build_page(window.model))
+    window.model = build_model(actions)
+    window.view:html(build_page(window.model))
     window.view:show()
     focus(window)
     return window

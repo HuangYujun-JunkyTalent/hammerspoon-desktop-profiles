@@ -1,3 +1,12 @@
+local focus_before_press = require("desktop_manager.macos.focus_before_press")
+local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
+local poll_until = require("desktop_manager.macos.poll_until")
+local read_desktops = require("desktop_manager.macos.read_desktops")
+local read_screens = require("desktop_manager.macos.read_screens")
+local retained_timers = require("desktop_manager.macos.retained_timers")
+local thumbnail_press_log = require("desktop_manager.core.thumbnail_press_log")
+local track_windows = require("desktop_manager.macos.track_windows")
+
 ---Shows, adds and removes desktops by pressing the elements of Mission Control through
 ---accessibility, and is the one module of the desktop manager that opens Mission Control.
 ---macOS 27 keeps the accessibility tree of Mission Control under the process WindowManager, where
@@ -10,15 +19,6 @@
 ---one desktop, at its end, pressed a second time when the first press has not shown it in time.
 ---A press for a chosen window may first focus another window of its application, and a press whose
 ---desktop is still inactive after Mission Control closed opens Mission Control a second time.
-local focus_before_press = require("desktop_manager.macos.focus_before_press")
-local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
-local poll_until = require("desktop_manager.macos.poll_until")
-local read_desktops = require("desktop_manager.macos.read_desktops")
-local read_screens = require("desktop_manager.macos.read_screens")
-local retained_timers = require("desktop_manager.macos.retained_timers")
-local thumbnail_press_log = require("desktop_manager.core.thumbnail_press_log")
-local track_windows = require("desktop_manager.macos.track_windows")
-
 local mission_control_desktops = {}
 
 ---The desktops to add to one screen and to remove from it, in one opening of Mission Control.

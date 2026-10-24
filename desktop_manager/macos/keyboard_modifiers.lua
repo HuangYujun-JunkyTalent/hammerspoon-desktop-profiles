@@ -1,14 +1,14 @@
+local poll_until = require("desktop_manager.macos.poll_until")
+
 ---Reads the modifier keys that the user holds.
 ---The list of the application numbers shows while the user holds the modifiers of its shortcut, and
 ---Mission Control opens once the user has released every modifier key.
-local poll_until = require("desktop_manager.macos.poll_until")
-
 local keyboard_modifiers = {}
 
 local MODIFIER_KEYS = { "cmd", "alt", "shift", "ctrl" }
 
 ---@return boolean
-function keyboard_modifiers.are_released()
+local function are_released()
     local held = hs.eventtap.checkKeyboardModifiers()
     for _, key in ipairs(MODIFIER_KEYS) do
         if held[key] then
@@ -42,7 +42,7 @@ end
 ---@param on_done fun(are_released: boolean) false when a key stays held past the time limit
 function keyboard_modifiers.wait_for_release(timing, on_done)
     poll_until.wait(
-        keyboard_modifiers.are_released,
+        are_released,
         timing.modifier_release_timeout_seconds,
         timing.poll_interval_seconds,
         on_done

@@ -48,7 +48,7 @@ end
 ---@param preview_size table the setting preview_size, in points
 ---@return table|nil image an hs.image, or nil when macOS gives no snapshot
 ---@return number seconds the time the snapshot took
-function window_previews.take_blurred_snapshot(window_id, blur, preview_size)
+local function take_blurred_snapshot(window_id, blur, preview_size)
     local started_at = hs.timer.secondsSinceEpoch()
     local snapshot = hs.window.snapshotForID(window_id)
     local seconds = hs.timer.secondsSinceEpoch() - started_at
@@ -71,8 +71,7 @@ function window_previews.load_one_at_a_time(window_ids, loading)
         if not window_id or not loading.is_wanted() then
             return
         end
-        local image, seconds =
-            window_previews.take_blurred_snapshot(window_id, loading.blur, loading.preview_size)
+        local image, seconds = take_blurred_snapshot(window_id, loading.blur, loading.preview_size)
         if seconds > loading.time_limit_seconds then
             loading.on_too_slow(seconds)
             return

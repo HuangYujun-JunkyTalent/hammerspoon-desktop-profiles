@@ -1,9 +1,9 @@
----Finds the window to focus before a press on the thumbnail of a desktop, so that the application
----of the chosen window is the frontmost application when the press ends, as the README says under
----the limits of Hammerspoon and macOS 27.0.1.
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local track_windows = require("desktop_manager.macos.track_windows")
 
+---Finds the window to focus before a press on the thumbnail of a desktop, so that the application
+---of the chosen window is the frontmost application when the press ends, as the README says under
+---the limits of Hammerspoon and macOS 27.0.1.
 local focus_before_press = {}
 
 ---The window that a press of the list or the search brings to the front.

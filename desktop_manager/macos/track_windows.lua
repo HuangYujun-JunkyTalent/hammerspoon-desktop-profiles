@@ -17,6 +17,9 @@ track_windows.REGULAR_APPLICATION_KIND = 1
 ---Minimized windows and the windows of hidden applications count as well.
 ---@return table filter an hs.window.filter
 function track_windows.new_filter()
+    -- The field holds for every window filter of Hammerspoon and makes each ask the applications
+    -- for their windows again at each change of desktop, so that the windows of a desktop that
+    -- shows for the first time join the filter at once.
     hs.window.filter.forceRefreshOnSpaceChange = true -- luacheck: ignore 122
     return hs.window.filter.new():setDefaultFilter({ allowRoles = "AXStandardWindow" })
 end

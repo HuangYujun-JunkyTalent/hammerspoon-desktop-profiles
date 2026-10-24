@@ -124,9 +124,7 @@ local function truncate_title(title, visible_count)
 end
 
 local TITLE_LAYOUTS = {
-    [title_overflow.TRUNCATE] = function(title, visible_count)
-        return truncate_title(title, visible_count)
-    end,
+    [title_overflow.TRUNCATE] = truncate_title,
     [title_overflow.WRAP] = function(title, visible_count, _, line_limit)
         local needed = math.ceil(utf8_text.count_characters(title) / visible_count)
         return {
