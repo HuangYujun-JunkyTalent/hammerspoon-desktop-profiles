@@ -963,6 +963,7 @@ Quit Asyar and start it again, so that it loads the extension.
 | `window_tiling/macos/` | the controller of the window tiling, which hands its actions to the center of the shortcuts, binds its URLs and sets the frame of the focused window |
 | `tests/` | unit tests of the cores, and tests of the flows of the desktop manager, one file per subject, and of the tiling controller against `tests/fake_hammerspoon.lua`, with the world of the controller in `tests/controller_world.lua` and the fixtures that several files share in `tests/fake_worlds.lua` |
 | `tools/` | the generators of the launcher scripts and of the settings of the Asyar extensions of the desktop manager and of the window tiling, the script that turns one shortcut of macOS off, and the script that removes one rule of the code at a time to find the rules that no test checks |
+| `type_definitions/` | the signatures of the functions of Hammerspoon that the code calls with arguments that `tests/fake_hammerspoon.lua` leaves out, which lua-language-server reads in place of the functions of the fake, and which nothing loads at run time |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |
 | `asyar-extension/` | the Asyar extension of the desktop manager, in TypeScript, with its manifest, its worker, its generated settings and the unit tests of its items and its worker |
 | `asyar-window-tiling/` | the Asyar extension of the window tiling, in TypeScript, with its manifest, its worker, its generated settings and the unit tests of its URL and its worker |
@@ -977,6 +978,8 @@ The tests check the logic of the tools, and say nothing about the behaviour of m
 
 `make check` checks the syntax with `luac -p`, and the syntax of the two scripts of JavaScript for Automation in `desktop_manager/macos/` with `node --check`.
 It also lints with `luacheck`, checks the formatting with `stylua --check`, runs the tests, and compares the generated files with their generators.
+`make check` also runs `make type-check`, which checks the annotations with `lua-language-server --check . --checklevel=Warning` in about 6 seconds and fails on any warning.
+A warning that only a slower or less correct code would remove stays, with a `---@diagnostic disable-next-line: <code>` annotation and a comment beside it that gives the reason.
 `make format` formats the code with `stylua`.
 The programs of these commands come from Homebrew: `lua@5.4`, `luacheck`, `stylua`, `node` and `lua-language-server`.
 
