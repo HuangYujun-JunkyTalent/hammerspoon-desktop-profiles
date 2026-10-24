@@ -98,7 +98,12 @@ local CRITERIA_BY_TITLE = { has_same_id_and_title, has_same_given_title, has_sam
 ---Under `match_windows_by.ID`, a window keeps its id while it stays open, so the id decides first,
 ---and under the policy that matches titles a window with the same title takes a record whose window
 ---no longer exists.
----Under `match_windows_by.TITLE`, the title decides first, and the policy plays no part.
+---Under `match_windows_by.TITLE`, the title decides first, and the policy plays no part in this
+---match.
+---Under both ways, the policy also decides whether the controller gives the records of a closed
+---window to a reopened window before the match.
+---A record that no window takes stays unmatched, and `unmatched_window_action` alone decides
+---whether a new window opens for it.
 ---@param match_key string a value of match_windows_by
 ---@param policy string a value of missing_window_policy
 ---@param records WindowRecord[]

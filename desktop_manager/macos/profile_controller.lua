@@ -191,9 +191,7 @@ end
 ---the same title as a recorded window that no longer exists.
 ---@param windows table[] the hs.window objects that the tool knows
 function ProfileController:rename_reopened_windows(windows)
-    if
-        self.settings.missing_window_policy ~= missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW
-    then
+    if not missing_window_policy.matches_titles(self.settings.missing_window_policy) then
         return
     end
     local recorded = profile_state.index_recorded_windows(self.state)
