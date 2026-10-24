@@ -357,7 +357,7 @@ return {
             world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
             world.advance(0.26)
             world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
-            world.advance(1)
+            world.advance(2)
         end)
         expect.equal(world.helpers[1].is_terminated, true)
         expect.equal(world.snapshot_count, snapshots_before + 1)
