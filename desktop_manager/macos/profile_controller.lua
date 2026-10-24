@@ -706,15 +706,17 @@ function ProfileController:switch_to_profile(number, name, started_at, work_numb
     }
     local windows = self:list_switch_windows(switch)
     local unreached = self.known_windows:list_unreached_managed(windows)
-    local arrangement, match_result, candidates =
-        self:mark_switch_windows(switch, windows, unreached)
-    local window_ids_to_reach =
-        reach_plan.select_concealed(self.settings.concealment_method, unreached, candidates)
+    local marked_windows = self:mark_switch_windows(switch, windows, unreached)
+    local window_ids_to_reach = reach_plan.select_concealed(
+        self.settings.concealment_method,
+        unreached,
+        marked_windows.candidates
+    )
     if switch.has_layout then
         window_ids_to_reach = concatenate_lists.concatenate(
             reach_plan.select_misplaced(
                 unreached,
-                match_result.matches,
+                marked_windows.match_result.matches,
                 configuration,
                 read_desktops.read_desktop_layout()
             ),
@@ -726,7 +728,7 @@ function ProfileController:switch_to_profile(number, name, started_at, work_numb
         self:conceal_and_restore(switch, {})
         return
     end
-    self:bring_into_view(arrangement, windows_to_reach, function(failures)
+    self:bring_into_view(marked_windows.arrangement, windows_to_reach, function(failures)
         self:conceal_and_restore(switch, failures)
     end)
 end
@@ -749,12 +751,17 @@ function ProfileController:list_switch_windows(switch)
     return windows
 end
 
+---The records of a switch and the open windows that it keeps or takes out of sight.
+---@class MarkedWindows
+---@field arrangement Arrangement the arrangement of the switch, without the records of the
+---applications that the desktop manager leaves to macOS
+---@field match_result WindowMatchResult
+---@field candidates SwitchCandidate[] the known and the unreached windows, marked by the switch
+
 ---@param switch RunningSwitch
 ---@param managed_windows table[]
 ---@param unreached ServerWindow[]
----@return Arrangement arrangement
----@return WindowMatchResult match_result
----@return SwitchCandidate[] candidates
+---@return MarkedWindows
 function ProfileController:mark_switch_windows(switch, managed_windows, unreached)
     local arrangement = app_pool.keep_managed_records(
         self.state.app_pool,
@@ -769,7 +776,7 @@ function ProfileController:mark_switch_windows(switch, managed_windows, unreache
             open_windows,
             profile_state.index_recorded_windows(self.state)
         )
-    return arrangement, match_result, candidates
+    return { arrangement = arrangement, match_result = match_result, candidates = candidates }
 end
 
 ---@param switch RunningSwitch
@@ -795,24 +802,24 @@ end
 function ProfileController:conceal_and_restore(switch, earlier_failures)
     self:show_busy_message(switch.busy_text)
     local windows = self:list_switch_windows(switch)
-    local arrangement, match_result, candidates = self:mark_switch_windows(
+    local marked_windows = self:mark_switch_windows(
         switch,
         windows,
         self.known_windows:list_unreached_managed(windows)
     )
     self.window_ids_out_of_sight = {}
-    for _, candidate in ipairs(candidates) do
+    for _, candidate in ipairs(marked_windows.candidates) do
         if not candidate.is_kept then
             self.window_ids_out_of_sight[candidate.window_id] = true
         end
     end
     local concealment =
-        profile_switch.plan_concealment(self.settings.concealment_method, candidates)
+        profile_switch.plan_concealment(self.settings.concealment_method, marked_windows.candidates)
     self.log.f(
         "switching to profile %d: %d of %d saved windows open, concealing %s",
         switch.number,
-        #match_result.matches,
-        #arrangement.windows,
+        #marked_windows.match_result.matches,
+        #marked_windows.arrangement.windows,
         inspect_on_one_line(concealment)
     )
     local window_by_id = track_windows.index_by_id(windows)
@@ -831,7 +838,13 @@ function ProfileController:conceal_and_restore(switch, earlier_failures)
     retained_timers.after(
         self.settings.timing.window_settle_seconds,
         self.watchdog:continue(function()
-            self:restore_profile_layout(switch, arrangement, match_result, window_by_id, failures)
+            self:restore_profile_layout(
+                switch,
+                marked_windows.arrangement,
+                marked_windows.match_result,
+                window_by_id,
+                failures
+            )
         end)
     )
 end
