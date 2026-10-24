@@ -245,10 +245,8 @@ local function is_typeable(characters)
     return is_valid and is_typeable_text
 end
 
----Takes every key while the panel shows: the keys of KEY_ACTIONS act, a character without Command
----or Control goes into the search, and the other keys do nothing.
 ---Counts the key, and keeps the longest time from a key to the search.
----A key that the system made carries no time.
+---A key that a program made carries the timestamp 0, which gives no wait.
 ---@param panel SearchPanel
 ---@param event table an hs.eventtap.event
 local function time_key(panel, event)
@@ -261,6 +259,8 @@ local function time_key(panel, event)
     end
 end
 
+---Takes every key while the panel shows: the keys of KEY_ACTIONS act, a character without Command
+---or Control goes into the search, and the other keys do nothing.
 ---@param panel SearchPanel
 ---@param event table an hs.eventtap.event
 ---@return boolean that the event stops here
