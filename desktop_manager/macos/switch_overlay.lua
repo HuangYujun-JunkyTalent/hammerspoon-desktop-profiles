@@ -226,6 +226,88 @@ local function add_title(elements, title, layout, frame, style, visible_count)
     return { element_index = #elements, title = title, visible_count = visible_count }
 end
 
+---The sizes in points that the rows derive from the sizes of the list.
+---@class RowMetrics
+---@field application_line_height number
+---@field preview_inset number the left edge of a preview
+---@field window_text_inset number the left edge of the title of a window
+---@field application_text_inset number the left edge of the name of an application
+---@field width number the width of the list
+---@field visible_count integer the characters of a title that one line holds
+
+---@param sizes SwitchSizes
+---@return RowMetrics
+local function measure_rows(sizes)
+    local preview_inset = PADDING + GAP
+    local window_text_inset = preview_inset + sizes.preview_size.w + GAP
+    local title_width = math.floor(
+        switch_overlay.MAX_TITLE_LENGTH * sizes.font_size * CHARACTER_WIDTH_PER_POINT + 0.5
+    )
+    return {
+        application_line_height = math.max(sizes.icon_size, sizes.text_height) + 8,
+        preview_inset = preview_inset,
+        window_text_inset = window_text_inset,
+        application_text_inset = PADDING + sizes.icon_size + 10,
+        width = window_text_inset + title_width + PADDING,
+        visible_count = count_fitting_characters(title_width, sizes.font_size),
+    }
+end
+
+---Draws one line of the rows, an application or a window with its preview, from its top.
+---@param elements table[]
+---@param line SwitchLine
+---@param top number
+---@param context DrawingContext
+---@param metrics RowMetrics
+---@return number the height of the line
+---@return ScrollingTitle|nil
+local function draw_row_line(elements, line, top, context, metrics)
+    local sizes, images = context.sizes, context.images
+    local width, visible_count = metrics.width, metrics.visible_count
+    local text = line.is_application and line.text or (line.text:gsub("^%s+", ""))
+    local layout = { text = text, line_count = 1, is_scrolling = false }
+    if not line.is_application and line.window_id then
+        layout = lay_out_title(text, visible_count, line.is_selected, context.settings)
+    end
+    local text_height = line.is_application and sizes.text_height
+        or layout.line_count * sizes.title_height
+    local height = line.is_application and metrics.application_line_height
+        or math.max(sizes.preview_size.h, text_height) + 7
+    if line.is_selected then
+        table.insert(
+            elements,
+            build_selection({ x = PADDING / 2, y = top, w = width - PADDING, h = height })
+        )
+    end
+    local preview = line.window_id and images.previews[line.window_id]
+    local box = { x = metrics.preview_inset, y = top, w = sizes.preview_size.w, h = height }
+    if line.is_application then
+        box = { x = PADDING, y = top, w = sizes.icon_size, h = height }
+    end
+    local image = canvas_elements.build_centered_image(
+        preview or images.app_icons[line.bundle_id],
+        box,
+        choose_image_size(sizes, preview),
+        nil
+    )
+    if image then
+        table.insert(elements, image)
+    end
+    local inset = line.is_application and metrics.application_text_inset
+        or metrics.window_text_inset
+    local scrolling = add_title(elements, text, layout, {
+        x = inset,
+        y = top + (height - text_height) / 2,
+        w = width - inset - PADDING,
+        h = text_height,
+    }, {
+        font_size = line.is_application and sizes.application_font_size or sizes.font_size,
+        is_bold = line.is_application,
+        is_bright = line.is_application or line.is_selected,
+    }, visible_count)
+    return height, scrolling
+end
+
 ---Draws the rows: each application on a line, and under it a line per window with its preview.
 ---@param lines SwitchLine[]
 ---@param context DrawingContext
@@ -233,62 +315,15 @@ end
 ---@return table size the w and h of the list
 ---@return ScrollingTitle|nil
 local function draw_rows(lines, context)
-    local sizes, images = context.sizes, context.images
-    local application_line_height = math.max(sizes.icon_size, sizes.text_height) + 8
-    local preview_inset = PADDING + GAP
-    local window_text_inset = preview_inset + sizes.preview_size.w + GAP
-    local application_text_inset = PADDING + sizes.icon_size + 10
-    local title_width = math.floor(
-        switch_overlay.MAX_TITLE_LENGTH * sizes.font_size * CHARACTER_WIDTH_PER_POINT + 0.5
-    )
-    local width = window_text_inset + title_width + PADDING
-    local visible_count = count_fitting_characters(title_width, sizes.font_size)
+    local metrics = measure_rows(context.sizes)
     local elements, scrolling = { build_background() }, nil
     local top = PADDING
     for _, line in ipairs(lines) do
-        local text = line.is_application and line.text or (line.text:gsub("^%s+", ""))
-        local layout = { text = text, line_count = 1, is_scrolling = false }
-        if not line.is_application and line.window_id then
-            layout = lay_out_title(text, visible_count, line.is_selected, context.settings)
-        end
-        local text_height = line.is_application and sizes.text_height
-            or layout.line_count * sizes.title_height
-        local height = line.is_application and application_line_height
-            or math.max(sizes.preview_size.h, text_height) + 7
-        if line.is_selected then
-            table.insert(
-                elements,
-                build_selection({ x = PADDING / 2, y = top, w = width - PADDING, h = height })
-            )
-        end
-        local preview = line.window_id and images.previews[line.window_id]
-        local box = { x = preview_inset, y = top, w = sizes.preview_size.w, h = height }
-        if line.is_application then
-            box = { x = PADDING, y = top, w = sizes.icon_size, h = height }
-        end
-        local image = canvas_elements.build_centered_image(
-            preview or images.app_icons[line.bundle_id],
-            box,
-            choose_image_size(sizes, preview),
-            nil
-        )
-        if image then
-            table.insert(elements, image)
-        end
-        local inset = line.is_application and application_text_inset or window_text_inset
-        scrolling = add_title(elements, text, layout, {
-            x = inset,
-            y = top + (height - text_height) / 2,
-            w = width - inset - PADDING,
-            h = text_height,
-        }, {
-            font_size = line.is_application and sizes.application_font_size or sizes.font_size,
-            is_bold = line.is_application,
-            is_bright = line.is_application or line.is_selected,
-        }, visible_count) or scrolling
+        local height, line_scrolling = draw_row_line(elements, line, top, context, metrics)
+        scrolling = line_scrolling or scrolling
         top = top + height
     end
-    return elements, { w = width, h = top + PADDING }, scrolling
+    return elements, { w = metrics.width, h = top + PADDING }, scrolling
 end
 
 ---The sizes in points that the columns derive from the sizes of the list.
@@ -359,6 +394,57 @@ local function draw_column_header(elements, column, origin, context, metrics)
     )
 end
 
+---Draws one window of a column, a preview with its title under it, from the top of its cell.
+---@param elements table[]
+---@param column SwitchColumn
+---@param cell SwitchCell
+---@param origin table the x of the column and the y of the top of the cell
+---@param context DrawingContext
+---@param metrics ColumnMetrics
+---@return number the height of the cell
+---@return ScrollingTitle|nil
+local function draw_column_cell(elements, column, cell, origin, context, metrics)
+    local sizes = context.sizes
+    local top = origin.y
+    local layout =
+        lay_out_title(cell.title, metrics.visible_count, cell.is_selected, context.settings)
+    local title_height = layout.line_count * sizes.title_height
+    local cell_height = sizes.preview_size.h + title_height + 3 * CELL_PADDING / 2
+    if cell.is_selected then
+        table.insert(
+            elements,
+            build_selection({
+                x = origin.x,
+                y = top,
+                w = metrics.column_width,
+                h = cell_height,
+            })
+        )
+    end
+    local preview = context.images.previews[cell.window_id]
+    local icon = context.images.app_icons[column.bundle_id]
+    local image = canvas_elements.build_centered_image(preview or icon, {
+        x = origin.x + CELL_PADDING,
+        y = top + CELL_PADDING / 2,
+        w = metrics.title_width,
+        h = sizes.preview_size.h,
+    }, choose_image_size(sizes, preview), nil)
+    if image then
+        table.insert(elements, image)
+    end
+    local scrolling = add_title(elements, cell.title, layout, {
+        x = origin.x + CELL_PADDING,
+        y = top + CELL_PADDING + sizes.preview_size.h,
+        w = metrics.title_width,
+        h = title_height,
+    }, {
+        font_size = sizes.font_size,
+        is_bold = false,
+        is_bright = cell.is_selected,
+    }, metrics.visible_count)
+    return cell_height, scrolling
+end
+
 ---Draws the windows of a column downward, each a preview with its title under it.
 ---@param elements table[]
 ---@param column SwitchColumn
@@ -383,42 +469,9 @@ local function draw_column_cells(elements, column, origin, context, metrics)
     end
     local top, scrolling = origin.y, nil
     for _, cell in ipairs(column.cells) do
-        local layout =
-            lay_out_title(cell.title, metrics.visible_count, cell.is_selected, context.settings)
-        local title_height = layout.line_count * sizes.title_height
-        local cell_height = sizes.preview_size.h + title_height + 3 * CELL_PADDING / 2
-        if cell.is_selected then
-            table.insert(
-                elements,
-                build_selection({
-                    x = origin.x,
-                    y = top,
-                    w = metrics.column_width,
-                    h = cell_height,
-                })
-            )
-        end
-        local preview = context.images.previews[cell.window_id]
-        local icon = context.images.app_icons[column.bundle_id]
-        local image = canvas_elements.build_centered_image(preview or icon, {
-            x = origin.x + CELL_PADDING,
-            y = top + CELL_PADDING / 2,
-            w = metrics.title_width,
-            h = sizes.preview_size.h,
-        }, choose_image_size(sizes, preview), nil)
-        if image then
-            table.insert(elements, image)
-        end
-        scrolling = add_title(elements, cell.title, layout, {
-            x = origin.x + CELL_PADDING,
-            y = top + CELL_PADDING + sizes.preview_size.h,
-            w = metrics.title_width,
-            h = title_height,
-        }, {
-            font_size = sizes.font_size,
-            is_bold = false,
-            is_bright = cell.is_selected,
-        }, metrics.visible_count) or scrolling
+        local cell_height, cell_scrolling =
+            draw_column_cell(elements, column, cell, { x = origin.x, y = top }, context, metrics)
+        scrolling = cell_scrolling or scrolling
         top = top + cell_height
     end
     return top - origin.y, scrolling
@@ -462,6 +515,24 @@ local function fold_columns(groups, line_count)
     return lines
 end
 
+---Draws the name of the display of a segment above its columns.
+---@param elements table[]
+---@param segment ColumnSegment
+---@param origin table the x and y of the label
+---@param sizes SwitchSizes
+---@param metrics ColumnMetrics
+local function draw_display_label(elements, segment, origin, sizes, metrics)
+    local segment_width = #segment.columns * (metrics.column_width + COLUMN_GAP) - COLUMN_GAP
+    table.insert(
+        elements,
+        build_text(
+            segment.display_name,
+            { x = origin.x, y = origin.y, w = segment_width, h = sizes.title_height },
+            { font_size = sizes.font_size, is_bold = false, is_bright = false }
+        )
+    )
+end
+
 ---Draws the columns: a column per application with its windows stacked downward, the name of a
 ---display above its columns, and the columns folded into the lines of the context.
 ---@param groups SwitchColumnGroup[]
@@ -487,16 +558,7 @@ local function draw_columns(groups, context)
         local left = PADDING
         for segment_index, segment in ipairs(segments) do
             if segment.display_name then
-                local segment_width = #segment.columns * (metrics.column_width + COLUMN_GAP)
-                    - COLUMN_GAP
-                table.insert(
-                    elements,
-                    build_text(
-                        segment.display_name,
-                        { x = left, y = top, w = segment_width, h = sizes.title_height },
-                        { font_size = sizes.font_size, is_bold = false, is_bright = false }
-                    )
-                )
+                draw_display_label(elements, segment, { x = left, y = top }, sizes, metrics)
             end
             for _, column in ipairs(segment.columns) do
                 draw_column_header(

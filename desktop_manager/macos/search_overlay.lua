@@ -228,6 +228,65 @@ local function draw_search_line(elements, line, layout)
     table.insert(elements, summary)
 end
 
+---Draws one window in the grid of the previews: its backdrop when it is selected or matches, its
+---preview or else the icon of its application, its title, the name of its application, and the
+---element that tracks the mouse.
+---@param elements table[]
+---@param window SearchViewWindow
+---@param frame table the x, y, w and h of the cell
+---@param images SwitchImages
+---@param layout SearchLayout
+local function draw_preview_cell(elements, window, frame, images, layout)
+    if window.is_selected then
+        table.insert(elements, build_backdrop(frame, layout.colors.selection, "selection"))
+    elseif window.match_level then
+        table.insert(
+            elements,
+            build_backdrop(
+                frame,
+                layout.colors[window.match_level .. "_match"],
+                "match-" .. window.match_level
+            )
+        )
+    end
+    local box = {
+        x = frame.x + CELL_PADDING,
+        y = frame.y + CELL_PADDING,
+        w = layout.preview_size.w,
+        h = layout.preview_size.h,
+    }
+    local preview = images.previews[window.window_id]
+    local image = build_image(
+        preview or images.app_icons[window.bundle_id],
+        box,
+        preview and layout.preview_size or { w = layout.icon_size, h = layout.icon_size },
+        false
+    )
+    if image then
+        table.insert(elements, image)
+    end
+    local text_top = box.y + box.h
+    table.insert(
+        elements,
+        build_text(
+            window.title,
+            { x = box.x, y = text_top, w = box.w, h = layout.line_height },
+            layout.font_size,
+            TEXT_COLOR
+        )
+    )
+    table.insert(
+        elements,
+        build_text(window.app_name, {
+            x = box.x,
+            y = text_top + layout.line_height,
+            w = box.w,
+            h = layout.line_height,
+        }, layout.font_size, DIMMED_TEXT_COLOR)
+    )
+    table.insert(elements, build_tracker(frame, "window:" .. window.window_id))
+end
+
 ---@param elements table[]
 ---@param windows SearchViewWindow[]
 ---@param images SwitchImages
@@ -257,60 +316,12 @@ local function draw_previews(elements, windows, images, layout)
     local left = area.x + (area.w - grid_width) / 2
     local top = area.y + (area.h - grid_height) / 2
     for index, window in ipairs(windows) do
-        local frame = {
+        draw_preview_cell(elements, window, {
             x = left + ((index - 1) % columns) * (cell.w + GAP),
             y = top + math.floor((index - 1) / columns) * (cell.h + GAP),
             w = cell.w,
             h = cell.h,
-        }
-        if window.is_selected then
-            table.insert(elements, build_backdrop(frame, layout.colors.selection, "selection"))
-        elseif window.match_level then
-            table.insert(
-                elements,
-                build_backdrop(
-                    frame,
-                    layout.colors[window.match_level .. "_match"],
-                    "match-" .. window.match_level
-                )
-            )
-        end
-        local box = {
-            x = frame.x + CELL_PADDING,
-            y = frame.y + CELL_PADDING,
-            w = layout.preview_size.w,
-            h = layout.preview_size.h,
-        }
-        local preview = images.previews[window.window_id]
-        local image = build_image(
-            preview or images.app_icons[window.bundle_id],
-            box,
-            preview and layout.preview_size or { w = layout.icon_size, h = layout.icon_size },
-            false
-        )
-        if image then
-            table.insert(elements, image)
-        end
-        local text_top = box.y + box.h
-        table.insert(
-            elements,
-            build_text(
-                window.title,
-                { x = box.x, y = text_top, w = box.w, h = layout.line_height },
-                layout.font_size,
-                TEXT_COLOR
-            )
-        )
-        table.insert(
-            elements,
-            build_text(window.app_name, {
-                x = box.x,
-                y = text_top + layout.line_height,
-                w = box.w,
-                h = layout.line_height,
-            }, layout.font_size, DIMMED_TEXT_COLOR)
-        )
-        table.insert(elements, build_tracker(frame, "window:" .. window.window_id))
+        }, images, layout)
     end
 end
 
