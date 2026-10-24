@@ -129,20 +129,23 @@ function macos_shortcuts.list(symbolic_hotkeys)
         local parameters = type(entry) == "table"
             and type(entry.value) == "table"
             and entry.value.parameters
-        if id and type(parameters) == "table" and type(parameters[2]) == "number" then
+        if id then
             is_listed[id] = true
-            if parameters[2] ~= NO_KEY then
-                table.insert(shortcuts, {
-                    id = id,
-                    name = macos_shortcuts.name_of(id),
-                    ascii = parameters[1],
-                    key_code = parameters[2],
-                    flags = parameters[3] or 0,
-                    is_enabled = entry.enabled == true or entry.enabled == 1,
-                })
-            end
-        elseif id then
-            is_listed[id] = true
+        end
+        if
+            id
+            and type(parameters) == "table"
+            and type(parameters[2]) == "number"
+            and parameters[2] ~= NO_KEY
+        then
+            table.insert(shortcuts, {
+                id = id,
+                name = macos_shortcuts.name_of(id),
+                ascii = parameters[1],
+                key_code = parameters[2],
+                flags = parameters[3] or 0,
+                is_enabled = entry.enabled == true or entry.enabled == 1,
+            })
         end
     end
     for id, parameters in pairs(DEFAULT_PARAMETERS_BY_ID) do

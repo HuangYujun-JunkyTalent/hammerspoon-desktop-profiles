@@ -93,18 +93,25 @@ function shortcut_registry.check(value)
 end
 
 ---@param shortcut Shortcut
----@return string the same text for two shortcuts that macOS treats as one
-local function combination_key(shortcut)
+---@return string[] the modifiers of the shortcut in the order in which macOS shows them
+local function list_modifiers_in_order(shortcut)
     local held = {}
     for _, modifier in ipairs(shortcut.modifiers) do
         held[modifier] = true
     end
-    local parts = {}
+    local modifiers = {}
     for _, modifier in ipairs(MODIFIER_ORDER) do
         if held[modifier] then
-            table.insert(parts, modifier)
+            table.insert(modifiers, modifier)
         end
     end
+    return modifiers
+end
+
+---@param shortcut Shortcut
+---@return string the same text for two shortcuts that macOS treats as one
+local function combination_key(shortcut)
+    local parts = list_modifiers_in_order(shortcut)
     table.insert(parts, shortcut.key:lower())
     return table.concat(parts, "+")
 end
@@ -119,15 +126,9 @@ end
 ---@param shortcut Shortcut
 ---@return string such as "Control-Option-Command-Space"
 function shortcut_registry.describe(shortcut)
-    local held = {}
-    for _, modifier in ipairs(shortcut.modifiers) do
-        held[modifier] = true
-    end
     local parts = {}
-    for _, modifier in ipairs(MODIFIER_ORDER) do
-        if held[modifier] then
-            table.insert(parts, MODIFIER_NAMES[modifier])
-        end
+    for _, modifier in ipairs(list_modifiers_in_order(shortcut)) do
+        table.insert(parts, MODIFIER_NAMES[modifier])
     end
     table.insert(parts, KEY_NAMES[shortcut.key:lower()] or shortcut.key:upper())
     return table.concat(parts, "-")
