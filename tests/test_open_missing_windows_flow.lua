@@ -4,6 +4,25 @@ local match_windows_by = require("desktop_manager.core.match_windows_by")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 
+---Records the window "Shopping" of Notes in sight in profile 1, switches to profile 2, and then
+---removes the window and quits Notes, so that the next switch to profile 1 launches Notes.
+---@param world table
+local function record_shopping_and_quit_notes(world)
+    world.hotkeys["1"]()
+    world.advance(controller_world.SETTLE_SECONDS)
+    local shopping = world.create_window("com.apple.Notes", "Shopping")
+    world.advance(controller_world.SETTLE_SECONDS)
+    world.hotkeys["2"]()
+    world.advance(controller_world.SETTLE_SECONDS)
+    world.windows[shopping.id] = nil
+    for index, window_id in ipairs(world.window_order) do
+        if window_id == shopping.id then
+            table.remove(world.window_order, index)
+        end
+    end
+    world.applications["com.apple.Notes"].is_running = false
+end
+
 return {
     a_new_window_for_another_screen_goes_there_without_a_desktop_switch = function()
         local world = controller_world.start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
@@ -153,19 +172,7 @@ return {
 
     an_application_that_is_not_running_is_launched = function()
         local world, controller = controller_world.start_world()
-        world.hotkeys["1"]()
-        world.advance(controller_world.SETTLE_SECONDS)
-        local shopping = world.create_window("com.apple.Notes", "Shopping")
-        world.advance(controller_world.SETTLE_SECONDS)
-        world.hotkeys["2"]()
-        world.advance(controller_world.SETTLE_SECONDS)
-        world.windows[shopping.id] = nil
-        for index, window_id in ipairs(world.window_order) do
-            if window_id == shopping.id then
-                table.remove(world.window_order, index)
-            end
-        end
-        world.applications["com.apple.Notes"].is_running = false
+        record_shopping_and_quit_notes(world)
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
         local relaunched = nil
@@ -177,6 +184,28 @@ return {
         expect.present(relaunched, "the window titled Shopping")
         expect.equal(controller_world.recorded_sight(controller, 1, relaunched.id), "in sight")
         expect.equal(relaunched.is_minimized, false)
+    end,
+
+    an_application_that_quits_once_its_launch_opened_a_window_is_reported = function()
+        local world = controller_world.start_world()
+        record_shopping_and_quit_notes(world)
+        -- Notes quits once the poll after its launch has found the new window.
+        local get_application = _G.hs.application.get
+        _G.hs.application.get = function(hint)
+            local application = get_application(hint)
+            if hint == "com.apple.Notes" and application and #application:allWindows() > 0 then
+                world.terminate_application("com.apple.Notes")
+            end
+            return application
+        end
+        world.swallows_timer_errors = true
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(world.timer_errors, {})
+        expect.equal(world.notifications, {
+            "Notes quit after a launch opened its new window"
+                .. " (1 problems in the Hammerspoon console)",
+        })
     end,
 
     the_console_names_the_window_that_the_profile_forgets = function()

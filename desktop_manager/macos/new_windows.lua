@@ -112,6 +112,13 @@ function NewWindowSession:wait_for_launched_window(record, on_done)
         "a launch",
         function(window)
             local application = hs.application.get(record.bundle_id)
+            if not application then
+                on_done(
+                    nil,
+                    string.format("%s quit after a launch opened its new window", record.app_name)
+                )
+                return
+            end
             for window_id in pairs(track_windows.index_ids(application:allWindows())) do
                 self.launched_ids[window_id] = true
             end
