@@ -143,6 +143,7 @@ local current_world = nil
 ---`hidden_reads[bundle_id]` counts the calls of `isHidden` of each application, and
 ---`focused_window_reads[bundle_id]` the calls of `focusedWindow` and `mainWindow`.
 ---`icon_reads[bundle_id]` counts the calls of `hs.image.imageFromAppBundle` for each application.
+---`filter_reads` counts the calls of `getWindows` of the window filter.
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
 ---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
 ---`type_keys` and `release_modifiers` was made, as `timestamp()` of the event gives it.
@@ -243,6 +244,7 @@ function fake_hammerspoon.install(spec)
         hidden_reads = {},
         focused_window_reads = {},
         icon_reads = {},
+        filter_reads = 0,
         on_mission_control_open = nil,
         key_wait_seconds = 0,
         window_levels = { overlay = 102, screenSaver = 1000 },
@@ -1356,6 +1358,7 @@ function fake_hammerspoon.install(spec)
         return filter_object
     end
     function filter_object:getWindows()
+        world.filter_reads = world.filter_reads + 1
         local windows = {}
         for _, window_id in ipairs(world.window_order) do
             local window = world.windows[window_id]

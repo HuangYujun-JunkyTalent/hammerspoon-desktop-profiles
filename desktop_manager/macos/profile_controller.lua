@@ -1356,24 +1356,23 @@ function ProfileController:open_window_search()
         self.settings.hidden_application_windows,
         self.hidden_states
     )
-    local function list_unreached_windows()
+    ---@param known_window_ids table<integer, boolean> the windows of the window filter
+    local function list_unreached_windows(known_window_ids)
         return hidden_application_filter.keep_shown_unreached_windows(
             hidden,
-            window_inventory.list_unreached_windows(
-                self.window_inventory,
-                self:list_filter_window_ids()
-            )
+            window_inventory.list_unreached_windows(self.window_inventory, known_window_ids)
         )
     end
+    local all_filter_windows = self.window_filter:getWindows()
     self.search_panel = search_windows.open({
-        filter_windows = hidden_application_filter.list_search_windows(
-            hidden,
-            self.window_filter:getWindows()
-        ),
-        unreached_windows = list_unreached_windows(),
+        filter_windows = hidden_application_filter.list_search_windows(hidden, all_filter_windows),
+        unreached_windows = list_unreached_windows(track_windows.index_ids(all_filter_windows)),
         refresh_unreached_windows = function(on_done)
             self:refresh_window_inventory(function()
-                on_done(list_unreached_windows(), self.window_inventory.last_update_started_at)
+                on_done(
+                    list_unreached_windows(self:list_filter_window_ids()),
+                    self.window_inventory.last_update_started_at
+                )
             end)
         end,
         app_numbers = self:read_numbering_profile().app_numbers,

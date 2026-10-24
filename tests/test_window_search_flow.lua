@@ -210,6 +210,20 @@ return {
         expect.equal(world.icon_reads, { ["com.apple.Safari"] = 2, ["com.microsoft.Word"] = 1 })
     end,
 
+    the_search_reads_the_window_filter_once_before_the_panel_shows = function()
+        local world = controller_world.start_world()
+        world.create_unseen_window("com.apple.Safari", "Reading list", 64)
+        world.advance(controller_world.SETTLE_SECONDS)
+        local reads_before = world.filter_reads
+        world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        expect.equal(world.filter_reads - reads_before, 1)
+        expect.equal(world.read_search_panel().windows, {
+            "selection Inbox | Safari",
+            "plain Draft.docx | Microsoft Word",
+            "plain Reading list | Safari",
+        })
+    end,
+
     a_window_found_after_the_panel_opened_joins_it = function()
         local world = controller_world.start_world()
         world.advance(controller_world.SETTLE_SECONDS)
