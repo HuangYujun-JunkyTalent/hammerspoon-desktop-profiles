@@ -11,7 +11,7 @@ local WINDOW_ROLE = "AXWindow"
 ---Whether each application is hidden, by bundle id.
 ---`hs.application:isHidden()` asks the application through accessibility, so an application
 ---enters the table the first time that the list or the search asks about it, and the events of
----`hs.application.watcher` keep its entry current afterwards.
+---`hs.application.watcher` keep its entry current afterwards, until the application quits.
 ---@alias HiddenStates table<string, boolean>
 
 ---What the list or the search knows of the hidden applications while it opens.
@@ -20,21 +20,34 @@ local WINDOW_ROLE = "AXWindow"
 ---@field is_hidden fun(bundle_id: string, application: table|nil): boolean whether the application
 ---is hidden
 
+---Forgets the state of the application that quit, so that the application is asked once more when
+---it starts again.
+---A quit that names no application by its bundle id or its name forgets every state.
+---@param hidden_states HiddenStates
+---@param bundle_id string the application that quit, as `track_windows.bundle_id_of` gives it
+local function forget_quit_application(hidden_states, bundle_id)
+    if bundle_id ~= track_windows.UNKNOWN_BUNDLE_ID then
+        hidden_states[bundle_id] = nil
+        return
+    end
+    for known_bundle_id in pairs(hidden_states) do
+        hidden_states[known_bundle_id] = nil
+    end
+end
+
 ---Updates the hidden states on an event of `hs.application.watcher`.
 ---The hidden states are a cache of `hs.application:isHidden()`, which these events keep current.
----A quit forgets every state, so that an application that starts again is asked once more.
 ---@param hidden_states HiddenStates
 ---@param event any the event of the watcher
 ---@param application table|nil the hs.application of the event
 function hidden_application_filter.update_hidden_states(hidden_states, event, application)
+    local bundle_id = track_windows.bundle_id_of(application)
     if event == hs.application.watcher.terminated then
-        for bundle_id in pairs(hidden_states) do
-            hidden_states[bundle_id] = nil
-        end
+        forget_quit_application(hidden_states, bundle_id)
     elseif application and event == hs.application.watcher.hidden then
-        hidden_states[track_windows.bundle_id_of(application)] = true
+        hidden_states[bundle_id] = true
     elseif application and event == hs.application.watcher.unhidden then
-        hidden_states[track_windows.bundle_id_of(application)] = false
+        hidden_states[bundle_id] = false
     end
 end
 

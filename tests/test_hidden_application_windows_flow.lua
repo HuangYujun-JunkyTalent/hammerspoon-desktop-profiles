@@ -224,10 +224,29 @@ return {
         expect.equal(hidden_reads, 0)
         world.hide_application("com.apple.Safari")
         world.terminate_application("com.apple.Notes")
+        texts, hidden_reads = read_list_and_close()
+        expect.equal(texts[4], " hidden, a press unhides it")
+        expect.equal(hidden_reads, 0)
+        world.terminate_application("com.apple.Safari")
         world.applications["com.apple.Safari"].is_hidden = false
+        world.applications["com.apple.Safari"].is_running = true
         texts, hidden_reads = read_list_and_close()
         expect.equal(texts, shown)
-        expect.equal(hidden_reads, 2)
+        expect.equal(hidden_reads, 1)
+        local nameless = {
+            bundleID = function()
+                return nil
+            end,
+            name = function()
+                return nil
+            end,
+        }
+        for _, application in ipairs({ false, nameless }) do
+            world.report_quit_of(application or nil)
+            texts, hidden_reads = read_list_and_close()
+            expect.equal(texts, shown)
+            expect.equal(hidden_reads, 2)
+        end
     end,
 
     the_list_searches_no_window_for_a_numbered_application_that_is_closed = function()

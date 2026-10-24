@@ -1161,6 +1161,15 @@ function fake_hammerspoon.install(spec)
         end
     end
 
+    ---Reports a quit to the application watchers with the application that the event gives, which
+    ---may be nil or an application without a bundle id and a name.
+    ---@param application table|nil
+    function world.report_quit_of(application)
+        for _, watcher in ipairs(world.application_watchers) do
+            watcher(nil, hs.application.watcher.terminated, application)
+        end
+    end
+
     new_timer = function(seconds, callback, is_repeating)
         local timer = { due = world.clock + seconds, interval = seconds, callback = callback }
         timer.is_repeating = is_repeating

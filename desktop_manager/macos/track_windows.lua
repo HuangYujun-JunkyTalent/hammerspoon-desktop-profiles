@@ -13,6 +13,9 @@ local REACH_POLL_SECONDS = 0.2
 ---The kind of an hs.application with a Dock icon.
 track_windows.REGULAR_APPLICATION_KIND = 1
 
+---What `bundle_id_of` gives for an application without a bundle id and a name.
+track_windows.UNKNOWN_BUNDLE_ID = "unknown"
+
 ---A window filter that sees the standard windows of every desktop.
 ---Minimized windows and the windows of hidden applications count as well.
 ---@return table filter an hs.window.filter
@@ -31,9 +34,9 @@ end
 ---@return string
 function track_windows.bundle_id_of(application)
     if not application then
-        return "unknown"
+        return track_windows.UNKNOWN_BUNDLE_ID
     end
-    return application:bundleID() or application:name() or "unknown"
+    return application:bundleID() or application:name() or track_windows.UNKNOWN_BUNDLE_ID
 end
 
 ---@param application table|nil an hs.application
