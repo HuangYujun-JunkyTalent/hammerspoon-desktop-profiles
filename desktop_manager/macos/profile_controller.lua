@@ -296,14 +296,14 @@ function ProfileController:capture_active_arrangement()
         return
     end
     local configuration = self:read_monitor_configuration()
-    local known_windows = self.known_windows:list_managed(
+    local managed_windows = self.known_windows:list_managed(
         profile_state.list_recorded_window_ids(
             profile_state.find_arrangement(self.state, number, configuration.key)
         )
     )
-    self:rename_reopened_windows(known_windows)
+    self:rename_reopened_windows(managed_windows)
     local previous = profile_state.find_arrangement(self.state, number, configuration.key)
-    local observations, observed_ids = observe_windows(known_windows)
+    local observations, observed_ids = observe_windows(managed_windows)
     local previous_records =
         app_pool.keep_managed(self.state.app_pool, previous and previous.windows or {})
     local previous_by_id = {}
@@ -312,7 +312,7 @@ function ProfileController:capture_active_arrangement()
             previous_by_id[record.window_id] = record
         end
     end
-    for _, window in ipairs(self.known_windows:list_unreached_managed(known_windows)) do
+    for _, window in ipairs(self.known_windows:list_unreached_managed(managed_windows)) do
         if not observed_ids[window.window_id] then
             observed_ids[window.window_id] = true
             table.insert(
@@ -524,16 +524,16 @@ function ProfileController:restore_matched_windows(
     )
 end
 
----Matches the records of the arrangement against the known windows and the windows that
----accessibility does not reach, so that a record of an unseen window takes that window, and no new
----window opens for it.
+---Matches the records of the arrangement against the known windows of the managed applications and
+---the windows that accessibility does not reach, so that a record of an unseen window takes that
+---window, and no new window opens for it.
 ---@param arrangement Arrangement
----@param known_windows table[] hs.window objects
+---@param managed_windows table[] hs.window objects
 ---@param unreached ServerWindow[]
 ---@return WindowMatchResult
 ---@return OpenWindow[] open_windows the known and the unseen windows, for the marks of a switch
-function ProfileController:match_with_unseen(arrangement, known_windows, unreached)
-    local open_windows, live_windows = describe_open_windows(known_windows)
+function ProfileController:match_with_unseen(arrangement, managed_windows, unreached)
+    local open_windows, live_windows = describe_open_windows(managed_windows)
     for _, window in ipairs(unreached) do
         table.insert(open_windows, {
             window_id = window.window_id,
@@ -705,19 +705,19 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
         return windows
     end
     local has_layout = read_arrangement() ~= nil
-    ---@param known_windows table[]
+    ---@param managed_windows table[]
     ---@param unreached ServerWindow[]
     ---@return Arrangement arrangement
     ---@return WindowMatchResult match_result
     ---@return SwitchCandidate[] candidates
-    local function mark_windows(known_windows, unreached)
+    local function mark_windows(managed_windows, unreached)
         local arrangement = app_pool.keep_managed_records(
             self.state.app_pool,
             read_arrangement()
                 or { monitor_configuration_key = configuration.key, monitors = {}, windows = {} }
         )
         local match_result, open_windows =
-            self:match_with_unseen(arrangement, known_windows, unreached)
+            self:match_with_unseen(arrangement, managed_windows, unreached)
         local candidates = has_layout
                 and profile_switch.mark_kept_windows(open_windows, match_result.matches)
             or profile_switch.mark_kept_windows_for_new_profile(
@@ -2176,10 +2176,10 @@ function ProfileController:print_diagnostics()
             self.state.active_profile_number,
             configuration.key
         )
-    local known_windows =
+    local managed_windows =
         self.known_windows:list_managed(profile_state.list_recorded_window_ids(active_arrangement))
-    add("windows out of reach: %d", #self.known_windows:list_unreached_managed(known_windows))
-    for _, window in ipairs(known_windows) do
+    add("windows out of reach: %d", #self.known_windows:list_unreached_managed(managed_windows))
+    for _, window in ipairs(managed_windows) do
         local observation = track_windows.observe(window)
         local recorded_states = {}
         for number = 1, self.settings.profile_count do

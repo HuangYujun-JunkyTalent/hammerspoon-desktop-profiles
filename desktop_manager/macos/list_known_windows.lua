@@ -133,14 +133,14 @@ end
 
 ---The windows of the managed applications that the window server listed on a desktop out of view
 ---at the last refresh of the inventory, and that Hammerspoon has not seen.
----@param known_windows table[] hs.window objects
+---@param managed_windows table[] hs.window objects
 ---@return ServerWindow[]
-function KnownWindows:list_unreached_managed(known_windows)
+function KnownWindows:list_unreached_managed(managed_windows)
     return app_pool.keep_managed(
         self.read_app_pool(),
         window_inventory.list_unreached_windows(
             self.window_inventory,
-            track_windows.index_ids(known_windows)
+            track_windows.index_ids(managed_windows)
         )
     )
 end
