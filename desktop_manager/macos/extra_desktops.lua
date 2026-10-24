@@ -11,8 +11,8 @@ local track_windows = require("desktop_manager.macos.track_windows")
 local window_inventory = require("desktop_manager.macos.window_inventory")
 
 ---Shows the recorded desktops of the screens through Mission Control, removes the empty desktops
----beyond the number of each display, and gives the focus back to the screen of the focus, at the
----end of a switch or a restore.
+---beyond the number of each display, and gives the focus back to the screen of the focus, for a
+---switch and a restore.
 local extra_desktops = {}
 
 ---@class ExtraDesktopsContext
