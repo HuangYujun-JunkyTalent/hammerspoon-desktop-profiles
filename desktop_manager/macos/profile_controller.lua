@@ -1,6 +1,7 @@
 local app_numbers = require("desktop_manager.core.app_numbers")
 local app_pool = require("desktop_manager.core.app_pool")
 local app_pool_window = require("desktop_manager.macos.app_pool_window")
+local app_number_list = require("desktop_manager.macos.app_number_list")
 local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local busy_message = require("desktop_manager.macos.busy_message")
@@ -10,7 +11,6 @@ local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local extra_desktops = require("desktop_manager.macos.extra_desktops")
-local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_known_windows = require("desktop_manager.macos.list_known_windows")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
@@ -35,8 +35,6 @@ local shortcut_center = require("keyboard_shortcuts.macos.shortcut_center")
 local shortcut_window = require("keyboard_shortcuts.macos.shortcut_window")
 local state_file = require("desktop_manager.macos.state_file")
 local status_menu = require("desktop_manager.macos.status_menu")
-local switch_list = require("desktop_manager.core.switch_list")
-local switch_overlay = require("desktop_manager.macos.switch_overlay")
 local track_windows = require("desktop_manager.macos.track_windows")
 local url_command = require("desktop_manager.core.url_command")
 local window_matching = require("desktop_manager.core.window_matching")
@@ -77,7 +75,7 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---@field screen_signature string the screens that the last arrangement was restored for
 ---@field window_ids_out_of_sight table<integer, boolean> the windows that the last switch took out
 ---of sight
----@field switch_session SwitchSession|nil the list of applications while it shows
+---@field app_number_list AppNumberList the list of numbered applications
 ---@field search_panel SearchPanel|nil the panel of the search of the windows while it shows
 ---@field window_inventory WindowInventory the windows that accessibility does not reach
 ---@field known_windows KnownWindows the windows that Hammerspoon knows
@@ -85,19 +83,6 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---snapshot stops until a reload
 ---@field hidden_states HiddenStates whether each application that the list or the search asked
 ---about is hidden
-
----The list of numbered applications that a press of their modifiers with a number opens.
----@class SwitchSession
----@field entries AppNumber[]
----@field applications SwitchApplication[]
----@field window_by_id table<integer, table> the hs.window of each window id in the list
----@field unreached_by_id table<integer, ServerWindow> the windows of the list that accessibility
----does not reach
----@field selection SwitchSelection|nil
----@field images SwitchImages the icons and the previews that the list shows
----@field displays SwitchDisplay[] the displays from left to right, for the columns per display
----@field overlay table|nil the hs.canvas of the list
----@field event_tap table|nil the hs.eventtap that watches the modifiers and Escape
 local ProfileController = {}
 ProfileController.__index = ProfileController
 
@@ -1163,7 +1148,7 @@ end
 ---numbers that the user chose, and gives the default numbers again.
 ---Nothing happens while the list shows, so that a slip during a press keeps the chosen numbers.
 function ProfileController:reset_app_numbers()
-    if self.switch_session then
+    if self.app_number_list:is_open() then
         return
     end
     local number = profile_state.find_numbering_profile_number(self.state)
@@ -1198,252 +1183,6 @@ function ProfileController:list_recorded_window_ids_of_application(bundle_id)
         end
     end
     return window_ids
-end
-
----Opens the list of numbered applications with the window of the number selected, or moves the
----selection while the list shows.
----A number that the active profile, or profile 0 while no profile is active, gives to no
----application passes its keys through to the application in front while the list is closed.
----@param app_number integer
----@param binding ShortcutBinding the shortcut of the number and its hs.hotkey
-function ProfileController:press_app_number(app_number, binding)
-    local session = self.switch_session
-    if session then
-        session.selection = switch_list.press(session.applications, session.selection, app_number)
-        if session.overlay then
-            switch_overlay.update(
-                session.overlay,
-                self:describe_switch_view(session),
-                session.images
-            )
-        end
-        return
-    end
-    local entries = self:read_numbering_profile().app_numbers
-    if not app_numbers.find_by_number(entries, app_number) then
-        binding.hotkey:disable()
-        hs.eventtap.keyStroke(binding.shortcut.modifiers, binding.shortcut.key, 0)
-        binding.hotkey:enable()
-        return
-    end
-    self:open_switch_list(entries, app_number, binding.shortcut.modifiers)
-end
-
----@param session SwitchSession
----@return SwitchView
-function ProfileController:describe_switch_view(session)
-    return switch_list.describe_view(
-        self.settings.list_layout,
-        session.applications,
-        session.selection,
-        session.displays,
-        switch_overlay.MAX_TITLE_LENGTH
-    )
-end
-
----@return SwitchListSettings the settings that the list and the search of the windows share
-function ProfileController:describe_list_settings()
-    return {
-        preview_size = self.settings.preview_size,
-        font_size = self.settings.list_font_size,
-        sizing = self.settings.list_sizing,
-        title_overflow = self.settings.title_overflow,
-        title_line_count = self.settings.title_line_count,
-    }
-end
-
----@return SwitchDisplay[] the displays in the order in which they stand from left to right
-function ProfileController:list_displays_from_left()
-    local screens = read_screens.describe_screens(self.settings.builtin_screen_name_patterns)
-    table.sort(screens, function(first, second)
-        return first.frame.x < second.frame.x
-    end)
-    local displays = {}
-    for _, screen in ipairs(screens) do
-        table.insert(displays, { screen_uuid = screen.uuid, name = screen.name })
-    end
-    return displays
-end
-
----Shows the list while the user holds the modifiers, and goes to the selection when they are
----released, or at once when they were released before the event tap started.
----@param entries AppNumber[]
----@param app_number integer
----@param modifiers string[] the modifiers of the shortcut that opened the list, which the user
----holds
-function ProfileController:open_switch_list(entries, app_number, modifiers)
-    local hidden = app_switcher.read_hidden_applications(
-        self.settings.hidden_application_windows,
-        self.hidden_states
-    )
-    local all_filter_windows = self.window_filter:getWindows()
-    local filter_windows = app_switcher.keep_shown_filter_windows(hidden, all_filter_windows)
-    local unreached_windows = app_switcher.keep_shown_unreached_windows(
-        hidden,
-        window_inventory.list_unreached_windows(
-            self.window_inventory,
-            track_windows.index_ids(all_filter_windows)
-        )
-    )
-    self:refresh_window_inventory(nil)
-    local screen_uuid_by_space =
-        read_desktops.index_screen_of_each_space(read_desktops.read_desktop_layout())
-    local applications, window_by_id = {}, {}
-    for _, entry in ipairs(entries) do
-        local application, windows = app_switcher.describe_application(
-            entry,
-            filter_windows,
-            unreached_windows,
-            screen_uuid_by_space,
-            hidden
-        )
-        table.insert(applications, application)
-        for window_id, window in pairs(windows) do
-            window_by_id[window_id] = window
-        end
-    end
-    local unreached_by_id = {}
-    for _, window in ipairs(unreached_windows) do
-        unreached_by_id[window.window_id] = window
-    end
-    local app_icons = {}
-    for _, entry in ipairs(entries) do
-        app_icons[entry.bundle_id] = window_previews.read_app_icon(entry.bundle_id)
-    end
-    local session = {
-        entries = entries,
-        applications = applications,
-        window_by_id = window_by_id,
-        unreached_by_id = unreached_by_id,
-        selection = switch_list.press(applications, nil, app_number),
-        images = { app_icons = app_icons, previews = {} },
-        displays = self:list_displays_from_left(),
-        modifiers = modifiers,
-    }
-    self.switch_session = session
-    if not keyboard_modifiers.are_held(modifiers) then
-        self:go_to_switch_selection()
-        return
-    end
-    session.overlay = switch_overlay.show(
-        self:describe_switch_view(session),
-        session.images,
-        self:describe_list_settings()
-    )
-    local event_types = hs.eventtap.event.types
-    session.event_tap = hs.eventtap
-        .new({ event_types.flagsChanged, event_types.keyDown }, function(event)
-            return self:handle_switch_event(event)
-        end)
-        :start()
-    if not keyboard_modifiers.are_held(modifiers) then
-        self:go_to_switch_selection()
-        return
-    end
-    self:load_switch_previews(session)
-end
-
----Draws the preview of each window of the list in the place of the icon, as the snapshot comes.
----@param session SwitchSession
-function ProfileController:load_switch_previews(session)
-    local window_ids = {}
-    for _, application in ipairs(session.applications) do
-        for _, window in ipairs(application.windows) do
-            table.insert(window_ids, window.window_id)
-        end
-    end
-    self.preview_loader:load(
-        window_ids,
-        switch_overlay.read_preview_size(session.overlay),
-        function()
-            return self.switch_session == session
-        end,
-        function(window_id, image)
-            if session.overlay then
-                session.images.previews[window_id] = image
-                switch_overlay.update(
-                    session.overlay,
-                    self:describe_switch_view(session),
-                    session.images
-                )
-            end
-        end
-    )
-end
-
----Goes to the selection when a modifier of the numbers is released, and closes the list on Escape.
----The work runs after the event tap returns, so that the tap has stopped before Mission Control
----opens to show another desktop.
----@param event table an hs.eventtap.event
----@return boolean whether the event stops here
-function ProfileController:handle_switch_event(event)
-    local event_types = hs.eventtap.event.types
-    if event:getType() == event_types.keyDown then
-        if event:getKeyCode() == hs.keycodes.map.escape then
-            retained_timers.defer(function()
-                self:close_switch_list()
-            end)
-            return true
-        end
-        return false
-    end
-    if not keyboard_modifiers.are_all_in(event:getFlags(), self.switch_session.modifiers) then
-        retained_timers.defer(function()
-            self:go_to_switch_selection()
-        end)
-    end
-    return false
-end
-
----@return SwitchSession|nil the session that was open
-function ProfileController:close_switch_list()
-    local session = self.switch_session
-    if not session then
-        return nil
-    end
-    self.switch_session = nil
-    if session.event_tap then
-        session.event_tap:stop()
-    end
-    if session.overlay then
-        switch_overlay.hide(session.overlay)
-    end
-    return session
-end
-
-function ProfileController:go_to_switch_selection()
-    local session = self:close_switch_list()
-    if not session or not session.selection or self:refuse_while_busy() then
-        return
-    end
-    local entry = app_numbers.find_by_number(session.entries, session.selection.number)
-    local window_id = switch_list.find_selected_window_id(session.applications, session.selection)
-    local function report(error_message)
-        if error_message then
-            self:report_failures({ error_message })
-        end
-    end
-    local unreached = window_id and session.unreached_by_id[window_id]
-    if unreached then
-        app_switcher.reach_window(unreached, self:switcher_context(), report)
-        return
-    end
-    if switch_list.find_application(session.applications, session.selection.number).is_hidden then
-        app_switcher.unhide_application(
-            entry,
-            self:list_recorded_window_ids_of_application(entry.bundle_id),
-            self:switcher_context(),
-            report
-        )
-        return
-    end
-    app_switcher.switch_to_selection(
-        entry,
-        window_id and session.window_by_id[window_id],
-        self:list_recorded_window_ids_of_application(entry.bundle_id),
-        self:switcher_context(),
-        report
-    )
 end
 
 ---Runs a press of the list or the search that takes time, with the text as the busy message.
@@ -1548,6 +1287,35 @@ function ProfileController:show_space(space_id, after_shown, on_done, chosen_win
             run_after_shown(on_pressed)
         end, chosen_window)
     end, on_done)
+end
+
+---@return AppNumberListContext
+function ProfileController:app_number_list_context()
+    return {
+        settings = self.settings,
+        window_filter = self.window_filter,
+        window_inventory = self.window_inventory,
+        hidden_states = self.hidden_states,
+        preview_loader = self.preview_loader,
+        read_numbering_profile = function()
+            return self:read_numbering_profile()
+        end,
+        list_recorded_window_ids_of_application = function(bundle_id)
+            return self:list_recorded_window_ids_of_application(bundle_id)
+        end,
+        refresh_window_inventory = function()
+            self:refresh_window_inventory(nil)
+        end,
+        refuse_while_busy = function()
+            return self:refuse_while_busy()
+        end,
+        read_switcher_context = function()
+            return self:switcher_context()
+        end,
+        report_failures = function(failures)
+            self:report_failures(failures)
+        end,
+    }
 end
 
 ---@return SwitcherContext the presses of the list and the search, through this controller
@@ -1989,7 +1757,7 @@ function ProfileController:list_shortcut_actions()
             self:clear_profile(number)
         end,
         press_app_number = function(app_number, binding)
-            self:press_app_number(app_number, binding)
+            self.app_number_list:press(app_number, binding)
         end,
         reset_app_numbers = function()
             self:reset_app_numbers()
@@ -2099,6 +1867,7 @@ function profile_controller.start(unchecked_settings, shortcuts)
             return controller.state.app_pool
         end
     )
+    controller.app_number_list = app_number_list.new(controller:app_number_list_context())
     controller.menubar = hs.menubar.new()
     controller:refresh_menu()
     controller.shortcuts = shortcuts or shortcut_center.new(nil)
