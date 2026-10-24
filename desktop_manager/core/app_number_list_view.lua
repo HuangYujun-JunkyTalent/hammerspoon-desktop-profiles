@@ -259,7 +259,7 @@ end
 ---@param selection AppNumberListSelection|nil
 ---@param _ AppNumberListDisplay[]
 ---@param max_title_length integer
----@return SwitchView
+---@return AppNumberListView
 local function describe_rows(applications, selection, _, max_title_length)
     local lines = app_number_list_view.describe_lines(applications, selection, max_title_length)
     return { lines = lines }
@@ -267,7 +267,7 @@ end
 
 ---@param applications NumberedApplication[]
 ---@param selection AppNumberListSelection|nil
----@return SwitchView
+---@return AppNumberListView
 local function describe_columns(applications, selection)
     return { groups = app_number_list_view.describe_application_columns(applications, selection) }
 end
@@ -275,7 +275,7 @@ end
 ---@param applications NumberedApplication[]
 ---@param selection AppNumberListSelection|nil
 ---@param displays AppNumberListDisplay[]
----@return SwitchView
+---@return AppNumberListView
 local function describe_columns_per_display(applications, selection, displays)
     return {
         groups = app_number_list_view.describe_display_columns(applications, selection, displays),
@@ -294,7 +294,7 @@ local VIEW_BUILDERS = {
 ---@param displays AppNumberListDisplay[] the displays from left to right, for the columns per
 ---display
 ---@param max_title_length integer the longest title of a line, for the rows
----@return SwitchView the lines or the groups of columns that the list draws under the layout
+---@return AppNumberListView the lines or the groups of columns that the list draws under the layout
 function app_number_list_view.describe_view(
     layout,
     applications,

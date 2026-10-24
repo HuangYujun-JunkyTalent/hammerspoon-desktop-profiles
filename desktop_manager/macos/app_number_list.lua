@@ -1,3 +1,4 @@
+local app_number_list_overlay = require("desktop_manager.macos.app_number_list_overlay")
 local app_number_list_view = require("desktop_manager.core.app_number_list_view")
 local app_numbers = require("desktop_manager.core.app_numbers")
 local app_switcher = require("desktop_manager.macos.app_switcher")
@@ -6,7 +7,6 @@ local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
 local retained_timers = require("desktop_manager.macos.retained_timers")
-local switch_overlay = require("desktop_manager.macos.switch_overlay")
 local track_windows = require("desktop_manager.macos.track_windows")
 local window_inventory = require("desktop_manager.macos.window_inventory")
 local window_previews = require("desktop_manager.macos.window_previews")
@@ -34,14 +34,14 @@ local app_number_list = {}
 ---@field report_failures fun(failures: string[])
 
 ---The list of numbered applications that a press of their modifiers with a number opens.
----@class SwitchSession
+---@class AppNumberListSession
 ---@field entries AppNumber[]
 ---@field applications NumberedApplication[]
 ---@field window_by_id table<integer, table> the hs.window of each window id in the list
 ---@field unreached_by_id table<integer, ServerWindow> the windows of the list that accessibility
 ---does not reach
 ---@field selection AppNumberListSelection|nil
----@field images SwitchImages the icons and the previews that the list shows
+---@field images IconsAndPreviews the icons and the previews that the list shows
 ---@field displays AppNumberListDisplay[] the displays from left to right, for the columns per
 ---display
 ---@field modifiers string[] the modifiers of the shortcut that opened the list, which the user
@@ -60,7 +60,7 @@ local app_number_list = {}
 
 ---@class AppNumberList
 ---@field context AppNumberListContext
----@field session SwitchSession|nil the list while it shows
+---@field session AppNumberListSession|nil the list while it shows
 local AppNumberList = {}
 AppNumberList.__index = AppNumberList
 
@@ -75,21 +75,21 @@ function AppNumberList:is_open()
     return self.session ~= nil
 end
 
----@param session SwitchSession
+---@param session AppNumberListSession
 ---@param settings Settings
----@return SwitchView
+---@return AppNumberListView
 local function describe_view(session, settings)
     return app_number_list_view.describe_view(
         settings.list_layout,
         session.applications,
         session.selection,
         session.displays,
-        switch_overlay.MAX_TITLE_LENGTH
+        app_number_list_overlay.MAX_TITLE_LENGTH
     )
 end
 
 ---@param settings Settings
----@return SwitchListSettings the settings that the list and the search of the windows share
+---@return AppNumberListSettings the settings that the list and the search of the windows share
 local function describe_list_settings(settings)
     return {
         preview_size = settings.preview_size,
@@ -194,7 +194,7 @@ function AppNumberList:press(app_number, binding)
         session.selection =
             app_number_list_view.press(session.applications, session.selection, app_number)
         if session.overlay then
-            switch_overlay.update(
+            app_number_list_overlay.update(
                 session.overlay,
                 describe_view(session, self.context.settings),
                 session.images
@@ -246,9 +246,9 @@ function AppNumberList:open(entries, app_number, modifiers)
 end
 
 ---Shows the canvas of the list and starts the event tap that watches the modifiers and Escape.
----@param session SwitchSession
+---@param session AppNumberListSession
 function AppNumberList:show(session)
-    session.overlay = switch_overlay.show(
+    session.overlay = app_number_list_overlay.show(
         describe_view(session, self.context.settings),
         session.images,
         describe_list_settings(self.context.settings)
@@ -262,7 +262,7 @@ function AppNumberList:show(session)
 end
 
 ---Draws the preview of each window of the list in the place of the icon, as the snapshot comes.
----@param session SwitchSession
+---@param session AppNumberListSession
 function AppNumberList:load_previews(session)
     local window_ids = {}
     for _, application in ipairs(session.applications) do
@@ -272,14 +272,14 @@ function AppNumberList:load_previews(session)
     end
     self.context.preview_loader:load(
         window_ids,
-        switch_overlay.read_preview_size(session.overlay),
+        app_number_list_overlay.read_preview_size(session.overlay),
         function()
             return self.session == session
         end,
         function(window_id, image)
             if session.overlay then
                 session.images.previews[window_id] = image
-                switch_overlay.update(
+                app_number_list_overlay.update(
                     session.overlay,
                     describe_view(session, self.context.settings),
                     session.images
@@ -313,7 +313,7 @@ function AppNumberList:handle_event(event)
     return false
 end
 
----@return SwitchSession|nil the session that was open
+---@return AppNumberListSession|nil the session that was open
 function AppNumberList:close()
     local session = self.session
     if not session then
@@ -324,7 +324,7 @@ function AppNumberList:close()
         session.event_tap:stop()
     end
     if session.overlay then
-        switch_overlay.hide(session.overlay)
+        app_number_list_overlay.hide(session.overlay)
     end
     return session
 end

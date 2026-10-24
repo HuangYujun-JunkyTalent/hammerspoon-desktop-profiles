@@ -7,23 +7,23 @@ local utf8_text = require("desktop_manager.core.utf8_text")
 
 ---Draws the list of numbered applications and their windows in the middle of the screen in front,
 ---as rows of lines or as columns of applications.
-local switch_overlay = {}
+local app_number_list_overlay = {}
 
-switch_overlay.MAX_TITLE_LENGTH = 60
+app_number_list_overlay.MAX_TITLE_LENGTH = 60
 
----The images that the list shows: the icon of each application, and the preview of each window that
----has one.
----@class SwitchImages
+---The images that the list and the search show: the icon of each application, and the preview of
+---each window that has one.
+---@class IconsAndPreviews
 ---@field app_icons table<string, table> the hs.image of each bundle id
 ---@field previews table<integer, table> the hs.image of each window id
 
 ---What the list shows: lines for the rows, or groups of columns.
----@class SwitchView
+---@class AppNumberListView
 ---@field lines AppNumberListLine[]|nil
 ---@field groups AppNumberListColumnGroup[]|nil
 
 ---The settings of the list: its sizes as fractions of the screen in front, and its titles.
----@class SwitchListSettings
+---@class AppNumberListSettings
 ---@field preview_size table the w and h of a preview, as fractions of the width and height
 ---@field font_size number the size of the titles, as a fraction of the height
 ---@field sizing string a value of list_sizing
@@ -31,7 +31,7 @@ switch_overlay.MAX_TITLE_LENGTH = 60
 ---@field title_line_count integer the most lines of a title under title_overflow wrap
 
 ---The sizes of the list in points, which the fit to the screen chose.
----@class SwitchSizes
+---@class AppNumberListSizes
 ---@field preview_size table the w and h of a preview in points
 ---@field font_size number the size of the titles in points
 ---@field application_font_size number
@@ -47,18 +47,18 @@ switch_overlay.MAX_TITLE_LENGTH = 60
 
 ---What a drawing of the list reads.
 ---@class DrawingContext
----@field images SwitchImages
----@field sizes SwitchSizes
+---@field images IconsAndPreviews
+---@field sizes AppNumberListSizes
 ---@field line_count integer the lines of the columns, which the rows do not use
----@field settings SwitchListSettings
+---@field settings AppNumberListSettings
 
 ---A list on the screen: its canvas, its sizes in points, the number of lines of its columns, and
 ---the timers of a scrolling title.
----@class SwitchOverlay
+---@class AppNumberListOverlay
 ---@field canvas table an hs.canvas
----@field sizes SwitchSizes
+---@field sizes AppNumberListSizes
 ---@field line_count integer
----@field settings SwitchListSettings
+---@field settings AppNumberListSettings
 ---@field scroll_timers table[]
 
 local PADDING = 16
@@ -86,7 +86,7 @@ local DIMMED_TEXT_COLOR = { white = 0.75, alpha = 1 }
 
 ---@param preview_size table the w and h of a preview in points
 ---@param font_size number the size of the titles in points
----@return SwitchSizes
+---@return AppNumberListSizes
 local function create_sizes(preview_size, font_size)
     local application_font_size = font_size + 2
     return {
@@ -148,7 +148,7 @@ local TITLE_LAYOUTS = {
 ---@param title string
 ---@param visible_count integer the characters that one line holds
 ---@param is_selected boolean
----@param settings SwitchListSettings
+---@param settings AppNumberListSettings
 ---@return TitleLayout
 local function lay_out_title(title, visible_count, is_selected, settings)
     return TITLE_LAYOUTS[settings.title_overflow](
@@ -159,7 +159,7 @@ local function lay_out_title(title, visible_count, is_selected, settings)
     )
 end
 
----@param sizes SwitchSizes
+---@param sizes AppNumberListSizes
 ---@param preview table|nil the hs.image of the preview of a window
 ---@return table the w and h of the preview when there is one, and of an icon otherwise
 local function choose_image_size(sizes, preview)
@@ -233,13 +233,13 @@ end
 ---@field width number the width of the list
 ---@field visible_count integer the characters of a title that one line holds
 
----@param sizes SwitchSizes
+---@param sizes AppNumberListSizes
 ---@return RowMetrics
 local function measure_rows(sizes)
     local preview_inset = PADDING + GAP
     local window_text_inset = preview_inset + sizes.preview_size.w + GAP
     local title_width = math.floor(
-        switch_overlay.MAX_TITLE_LENGTH * sizes.font_size * CHARACTER_WIDTH_PER_POINT + 0.5
+        app_number_list_overlay.MAX_TITLE_LENGTH * sizes.font_size * CHARACTER_WIDTH_PER_POINT + 0.5
     )
     return {
         application_line_height = math.max(sizes.icon_size, sizes.text_height) + 8,
@@ -331,7 +331,7 @@ end
 ---@field title_width number
 ---@field visible_count integer the characters of a title that one line holds
 
----@param sizes SwitchSizes
+---@param sizes AppNumberListSizes
 ---@return ColumnMetrics
 local function measure_columns(sizes)
     local column_width = math.max(
@@ -517,7 +517,7 @@ end
 ---@param elements table[]
 ---@param segment ColumnSegment
 ---@param origin table the x and y of the label
----@param sizes SwitchSizes
+---@param sizes AppNumberListSizes
 ---@param metrics ColumnMetrics
 local function draw_display_label(elements, segment, origin, sizes, metrics)
     local segment_width = #segment.columns * (metrics.column_width + COLUMN_GAP) - COLUMN_GAP
@@ -588,7 +588,7 @@ local function draw_columns(groups, context)
     return elements, { w = width, h = top + PADDING }, scrolling
 end
 
----@param view SwitchView
+---@param view AppNumberListView
 ---@param context DrawingContext
 ---@return table[] elements
 ---@return table size the w and h of the list
@@ -600,10 +600,10 @@ local function draw_list(view, context)
     return draw_columns(view.groups, context)
 end
 
----@param settings SwitchListSettings
+---@param settings AppNumberListSettings
 ---@param screen table the frame of the screen in front
 ---@param scale number
----@return SwitchSizes the sizes of the settings in points, times the scale
+---@return AppNumberListSizes the sizes of the settings in points, times the scale
 local function scale_sizes(settings, screen, scale)
     return create_sizes({
         w = settings.preview_size.w * screen.w * scale,
@@ -614,12 +614,12 @@ end
 ---The largest scale up to the limit at which the list fits within the screen.
 ---Each round shrinks the scale by the share by which the list is too large, and the paddings,
 ---which do not scale, need a few rounds.
----@param view SwitchView
+---@param view AppNumberListView
 ---@param context DrawingContext the images, the settings and the lines; the sizes are replaced
 ---@param screen table
 ---@param max_scale number
 ---@return number scale
----@return SwitchSizes sizes
+---@return AppNumberListSizes sizes
 local function find_largest_scale(view, context, screen, max_scale)
     local scale = max_scale
     local trial = {
@@ -641,7 +641,7 @@ local function find_largest_scale(view, context, screen, max_scale)
     return scale, trial.sizes
 end
 
----@param view SwitchView
+---@param view AppNumberListView
 ---@return integer the number of columns of the view, or 0 for the rows
 local function count_columns(view)
     local count = 0
@@ -655,9 +655,9 @@ end
 ---Under fill_screen the previews may grow up to MAX_FILL_SCALE times the setting, and under fixed
 ---they keep the setting at most.
 ---A second line wins only when it makes the previews larger by REQUIRED_GAIN_OF_ANOTHER_LINE.
----@param view SwitchView
----@param images SwitchImages
----@param settings SwitchListSettings
+---@param view AppNumberListView
+---@param images IconsAndPreviews
+---@param settings AppNumberListSettings
 ---@param screen table the frame of the screen in front
 ---@return DrawingContext
 local function fit_to_screen(view, images, settings, screen)
@@ -675,7 +675,7 @@ local function fit_to_screen(view, images, settings, screen)
     return best_context
 end
 
----@param overlay SwitchOverlay
+---@param overlay AppNumberListOverlay
 local function stop_scrolling(overlay)
     for _, timer in ipairs(overlay.scroll_timers) do
         retained_timers.stop(timer)
@@ -684,7 +684,7 @@ local function stop_scrolling(overlay)
 end
 
 ---Scrolls the title after a pause, one character per step, until the list changes or closes.
----@param overlay SwitchOverlay
+---@param overlay AppNumberListOverlay
 ---@param scrolling ScrollingTitle|nil
 local function start_scrolling(overlay, scrolling)
     stop_scrolling(overlay)
@@ -714,11 +714,11 @@ local function start_scrolling(overlay, scrolling)
     )
 end
 
----@param view SwitchView
----@param images SwitchImages
----@param settings SwitchListSettings
----@return SwitchOverlay
-function switch_overlay.show(view, images, settings)
+---@param view AppNumberListView
+---@param images IconsAndPreviews
+---@param settings AppNumberListSettings
+---@return AppNumberListOverlay
+function app_number_list_overlay.show(view, images, settings)
     local context = fit_to_screen(view, images, settings, hs.screen.mainScreen():frame())
     local elements, size, scrolling = draw_list(view, context)
     local canvas = hs.canvas.new(canvas_elements.center_on_screen(size))
@@ -736,10 +736,10 @@ function switch_overlay.show(view, images, settings)
     return overlay
 end
 
----@param overlay SwitchOverlay
----@param view SwitchView
----@param images SwitchImages
-function switch_overlay.update(overlay, view, images)
+---@param overlay AppNumberListOverlay
+---@param view AppNumberListView
+---@param images IconsAndPreviews
+function app_number_list_overlay.update(overlay, view, images)
     local elements, size, scrolling = draw_list(view, {
         images = images,
         sizes = overlay.sizes,
@@ -751,16 +751,16 @@ function switch_overlay.update(overlay, view, images)
     start_scrolling(overlay, scrolling)
 end
 
----@param overlay SwitchOverlay
+---@param overlay AppNumberListOverlay
 ---@return table the w and h of a preview in points, which the snapshots render for
-function switch_overlay.read_preview_size(overlay)
+function app_number_list_overlay.read_preview_size(overlay)
     return overlay.sizes.preview_size
 end
 
----@param overlay SwitchOverlay
-function switch_overlay.hide(overlay)
+---@param overlay AppNumberListOverlay
+function app_number_list_overlay.hide(overlay)
     stop_scrolling(overlay)
     overlay.canvas:delete()
 end
 
-return switch_overlay
+return app_number_list_overlay

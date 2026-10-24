@@ -254,7 +254,7 @@ end
 ---@param elements table[]
 ---@param window SearchViewWindow
 ---@param frame table the x, y, w and h of the cell
----@param images SwitchImages
+---@param images IconsAndPreviews
 ---@param layout SearchLayout
 local function draw_preview_cell(elements, window, frame, images, layout)
     if window.is_selected then
@@ -303,7 +303,7 @@ end
 
 ---@param elements table[]
 ---@param windows SearchViewWindow[]
----@param images SwitchImages
+---@param images IconsAndPreviews
 ---@param layout SearchLayout
 local function draw_previews(elements, windows, images, layout)
     local area = layout.preview_area
@@ -358,7 +358,7 @@ end
 
 ---@param elements table[]
 ---@param applications SearchViewApplication[]
----@param images SwitchImages
+---@param images IconsAndPreviews
 ---@param layout SearchLayout
 local function draw_applications(elements, applications, images, layout)
     local button = layout.button_size
@@ -413,7 +413,7 @@ local function draw_applications(elements, applications, images, layout)
 end
 
 ---@param view SearchView
----@param images SwitchImages
+---@param images IconsAndPreviews
 ---@param layout SearchLayout
 ---@return table[] elements
 local function draw_panel(view, images, layout)
@@ -432,7 +432,7 @@ local function draw_panel(view, images, layout)
 end
 
 ---@param view SearchView
----@param images SwitchImages
+---@param images IconsAndPreviews
 ---@param settings SearchOverlaySettings
 ---@param on_mouse fun(message: string, id: string) receives "mouseEnter", "mouseExit" and
 ---"mouseUp" with the id of the element, and "mouseExit" with "_canvas_" when the mouse leaves the
@@ -453,7 +453,7 @@ end
 
 ---@param overlay SearchOverlay
 ---@param view SearchView
----@param images SwitchImages
+---@param images IconsAndPreviews
 function search_overlay.update(overlay, view, images)
     local layout = lay_out(view, overlay.settings, hs.screen.mainScreen():frame())
     overlay.canvas:frame(canvas_elements.center_on_screen(layout.size))

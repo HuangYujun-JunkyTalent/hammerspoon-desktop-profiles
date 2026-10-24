@@ -31,7 +31,7 @@ local search_windows = {}
 ---@field search WindowSearch
 ---@field window_by_id table<integer, table> the hs.window of each window that accessibility reaches
 ---@field unreached_by_id table<integer, ServerWindow>
----@field images SwitchImages
+---@field images IconsAndPreviews
 ---@field requested_preview_ids table<integer, boolean> the windows whose previews were asked for
 ---@field overlay SearchOverlay
 ---@field event_tap table an hs.eventtap
