@@ -375,6 +375,7 @@ local function draw_applications(elements, applications, images, layout)
         }
         local color, backdrop_id = choose_application_backdrop(application, layout.colors)
         if color then
+            -- choose_application_backdrop gives an id with each color.
             table.insert(elements, build_backdrop(frame, color, backdrop_id --[[@as string]]))
         end
         local image = build_image(images.app_icons[application.bundle_id], {

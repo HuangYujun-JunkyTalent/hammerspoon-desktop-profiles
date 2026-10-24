@@ -1521,6 +1521,7 @@ function ProfileController:run_url_command(params)
         app_number_count = self.settings.app_number_count,
     })
     if not command then
+        -- Each nil of url_command.parse comes with a message.
         notify(error_message --[[@as string]])
         return
     end

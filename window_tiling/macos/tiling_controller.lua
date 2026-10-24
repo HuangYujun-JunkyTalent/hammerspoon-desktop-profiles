@@ -59,6 +59,7 @@ end
 function TilingController:run_url_command(params)
     local position, error_message = tiling_position.parse(params.position)
     if not position then
+        -- Each nil of tiling_position.parse comes with a message.
         self:notify(error_message --[[@as string]])
         return
     end
