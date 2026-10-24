@@ -69,7 +69,7 @@ end
 ---@param variable string the shell variable that takes the encoded argument
 ---@param position integer the position of the argument, such as 2 for `$2`
 ---@return string the line of shell that encodes the argument as a part of a URL into the variable
-local function encode_argument_line(variable, position)
+local function build_argument_encoding_line(variable, position)
     return string.format(
         "%s=$(osascript -l JavaScript"
             .. " -e 'function run(argv) { return encodeURIComponent(argv[0]) }' \"$%d\")",
@@ -94,7 +94,7 @@ local function rename_script(profile_count)
             '{ "name": "name", "type": "text", "placeholder": "New name", "required": true }',
         },
         body = {
-            encode_argument_line("encoded_name", 2),
+            build_argument_encoding_line("encoded_name", 2),
             'open -g "' .. URL_PREFIX .. 'action=rename&profile=$1&name=$encoded_name"',
         },
     }
@@ -114,7 +114,7 @@ local function number_app_script(app_number_count)
             '{ "name": "app", "type": "text", "placeholder": "Running app", "required": true }',
         },
         body = {
-            encode_argument_line("encoded_app", 2),
+            build_argument_encoding_line("encoded_app", 2),
             'open -g "' .. URL_PREFIX .. 'action=number-app&number=$1&app=$encoded_app"',
         },
     }
