@@ -128,9 +128,9 @@ local function find_display_group(screen_id)
     if not application then
         return nil
     end
+    local is_display_group = has_identifier("mc.display")
     return find_descendant(hs.axuielement.applicationElement(application), function(element)
-        return read_attribute(element, "AXIdentifier") == "mc.display"
-            and read_attribute(element, "AXDisplayID") == screen_id
+        return is_display_group(element) and read_attribute(element, "AXDisplayID") == screen_id
     end, DISPLAY_SEARCH_DEPTH)
 end
 
@@ -158,6 +158,24 @@ local function find_position(space_ids, space_id)
         end
     end
     return nil
+end
+
+---The thumbnail of the desktop in the list of the desktops of its screen in Mission Control.
+---The position of the thumbnail is the position of the desktop among every space of its screen,
+---full-screen ones included, as in `hs.spaces.gotoSpace`.
+---@param spaces_list table|nil the `mc.spaces.list` element of the screen, or nil when it did not
+---show
+---@param screen_uuid string
+---@param space_id integer
+---@return table|nil thumbnail an hs.axuielement
+---@return integer|nil position
+local function find_listed_thumbnail(spaces_list, screen_uuid, space_id)
+    local position =
+        find_position(read_desktops.list_all_space_ids_of_screen(screen_uuid), space_id)
+    local thumbnail = spaces_list
+        and position
+        and (read_attribute(spaces_list, "AXChildren") or {})[position]
+    return thumbnail, position
 end
 
 ---@param space_id integer
@@ -364,9 +382,7 @@ local function remove_desktops(display_group, edit, find_keeping_window, timing,
             remove_next()
             return
         end
-        local position =
-            find_position(read_desktops.list_all_space_ids_of_screen(edit.screen_uuid), space_id)
-        local thumbnail = position and (read_attribute(spaces_list, "AXChildren") or {})[position]
+        local thumbnail, position = find_listed_thumbnail(spaces_list, edit.screen_uuid, space_id)
         if not thumbnail then
             table.insert(
                 failures,
@@ -429,24 +445,44 @@ end
 
 ---The thumbnail of the desktop in the list of its screen in Mission Control, read anew at each
 ---call, because an element read before a press may no longer stand for the thumbnail.
----The position of the thumbnail is the position of the desktop among every space of its screen,
----full-screen ones included, as in `hs.spaces.gotoSpace`.
 ---@param space_id integer
 ---@param screen_uuid string|nil the screen whose spaces hold the desktop
 ---@return table|nil thumbnail an hs.axuielement
 ---@return integer|nil position
 ---@return boolean is_group_shown whether the group of the screen showed in Mission Control
 local function find_thumbnail(space_id, screen_uuid)
-    local screen = screen_uuid and read_screens.find_screen(screen_uuid)
+    if not screen_uuid then
+        return nil, nil, false
+    end
+    local screen = read_screens.find_screen(screen_uuid)
     local display_group = screen and find_display_group(screen:id())
     local spaces_list = display_group
         and find_descendant(display_group, has_identifier("mc.spaces.list"), BUTTON_SEARCH_DEPTH)
-    local position = screen_uuid
-        and find_position(read_desktops.list_all_space_ids_of_screen(screen_uuid), space_id)
-    local thumbnail = spaces_list
-        and position
-        and (read_attribute(spaces_list, "AXChildren") or {})[position]
+    local thumbnail, position = find_listed_thumbnail(spaces_list, screen_uuid, space_id)
     return thumbnail, position, display_group ~= nil
+end
+
+---Finds the thumbnail anew for the second press, in the same opening or in the second opening, as
+---`find_thumbnail` does, and gives the text of the failure when the read of the desktops fails or
+---Mission Control lists no thumbnail at the position of the desktop.
+---@param space_id integer
+---@param screen_uuid string|nil the screen whose spaces hold the desktop
+---@return table|nil thumbnail an hs.axuielement
+---@return string|nil failure the text of the failure when no thumbnail was found
+---@return boolean|nil is_group_shown whether the group of the screen showed in Mission Control, or
+---nil when the read of the desktops failed
+local function find_thumbnail_for_second_press(space_id, screen_uuid)
+    local is_read, thumbnail, position, is_group_shown =
+        pcall(find_thumbnail, space_id, screen_uuid)
+    if not is_read then
+        return nil, string.format("reading the desktops failed: %s", tostring(thumbnail)), nil
+    end
+    if not thumbnail then
+        return nil,
+            string.format("Mission Control listed no thumbnail at position %s", tostring(position)),
+            is_group_shown
+    end
+    return thumbnail, nil, is_group_shown
 end
 
 ---The focus of a window of the application of the chosen window before a press, so that the
@@ -655,22 +691,14 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
     ---@param waited_seconds number
     local function press_again(waited_seconds)
         press.second_press_after = waited_seconds
-        local is_read, second_thumbnail, second_position, is_group_shown =
-            pcall(find_thumbnail, space_id, screen_uuid)
-        if not is_read then
-            press.second_press_error =
-                string.format("reading the desktops failed: %s", tostring(second_thumbnail))
-            return
-        end
-        if not is_group_shown then
+        local second_thumbnail, failure, is_group_shown =
+            find_thumbnail_for_second_press(space_id, screen_uuid)
+        if is_group_shown == false then
             press.is_closed_at_second_check = true
             return
         end
         if not second_thumbnail then
-            press.second_press_error = string.format(
-                "Mission Control listed no thumbnail at position %s",
-                tostring(second_position)
-            )
+            press.second_press_error = failure
             return
         end
         press.is_second_press_made = true
@@ -703,18 +731,8 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
     local function open_again()
         press.is_opened_again = true
         open_mission_control(screen_id, timing, function()
-            local is_read, again_thumbnail, again_position =
-                pcall(find_thumbnail, space_id, screen_uuid)
-            local failure
-            if not is_read then
-                failure =
-                    string.format("reading the desktops failed: %s", tostring(again_thumbnail))
-            elseif not again_thumbnail then
-                failure = string.format(
-                    "Mission Control listed no thumbnail at position %s",
-                    tostring(again_position)
-                )
-            else
+            local again_thumbnail, failure = find_thumbnail_for_second_press(space_id, screen_uuid)
+            if again_thumbnail then
                 failure = perform(again_thumbnail, "AXPress")
             end
             if failure then
