@@ -50,8 +50,9 @@ local STILL_SWITCHING_MESSAGE = "Desktop Manager is still switching"
 local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please wait"
 
 ---Owns the state, the hotkeys, the URL event, the menu bar item and the watchers.
----`is_busy` is true while a switch or a restore moves windows, and then no arrangement is saved.
----`is_showing_desktop` is true while a press of the list or the search shows a desktop through
+---`is_switch_or_restore_running` is true while a switch or a restore moves windows, and then no
+---arrangement is saved.
+---`is_press_running` is true while a press of the list or the search shows a desktop through
 ---Mission Control, unhides an application or opens a window, and then no switch starts.
 ---@class ProfileController
 ---@field settings Settings
@@ -61,8 +62,8 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---@field menubar table an hs.menubar
 ---@field shortcuts ShortcutCenter
 ---@field watchers table[]
----@field is_busy boolean
----@field is_showing_desktop boolean
+---@field is_switch_or_restore_running boolean
+---@field is_press_running boolean
 ---@field watchdog WorkWatchdog the numbers of the switches, the restores and the presses, and the
 ---timer that stops the one that does not end
 ---@field busy_message BusyMessage|nil the message on the screens while a switch, a restore or a
@@ -261,7 +262,7 @@ end
 ---windows and the desktops are on their way, and the end of that work schedules a save.
 function ProfileController:capture_active_arrangement()
     local number = self.state.active_profile_number
-    if not number or self.is_busy or self.are_saves_suspended then
+    if not number or self.is_switch_or_restore_running or self.are_saves_suspended then
         return
     end
     local configuration = self:read_monitor_configuration()
@@ -362,13 +363,13 @@ function ProfileController:update_records_and_numbers()
 end
 
 function ProfileController:schedule_save()
-    if self.is_busy or self.are_saves_suspended then
+    if self.is_switch_or_restore_running or self.are_saves_suspended then
         return
     end
     retained_timers.stop(self.save_timer)
     self.save_timer = retained_timers.after(self.settings.timing.save_delay_seconds, function()
         self.save_timer = nil
-        if not self.is_busy and not self.are_saves_suspended then
+        if not self.is_switch_or_restore_running and not self.are_saves_suspended then
             self:update_records_and_numbers()
         end
     end)
@@ -635,7 +636,7 @@ function ProfileController:end_switch_work(work_number)
     if not self.watchdog:stop(work_number) then
         return false
     end
-    self.is_busy = false
+    self.is_switch_or_restore_running = false
     self:end_busy_message()
     return true
 end
@@ -650,8 +651,8 @@ function ProfileController:stop_unfinished_work()
     )
     self.log.e(message)
     mission_control_desktops.stop_openings()
-    self.is_busy = false
-    self.is_showing_desktop = false
+    self.is_switch_or_restore_running = false
+    self.is_press_running = false
     self:end_busy_message()
     self:report_failures({ message })
     self:resume_saves()
@@ -667,7 +668,7 @@ function ProfileController:activate_profile(number)
     end
     local started_at = hs.timer.secondsSinceEpoch()
     self:capture_active_arrangement()
-    self.is_busy = true
+    self.is_switch_or_restore_running = true
     local work_number = self.watchdog:start()
     retained_timers.stop(self.save_timer)
     local name = profile_state.profile_or_default(self.state, number).name
@@ -883,7 +884,7 @@ function ProfileController:restore_profile_layout(
 end
 
 function ProfileController:deactivate_profile()
-    if self.is_busy then
+    if self.is_switch_or_restore_running then
         hs.alert.show(STILL_SWITCHING_MESSAGE)
         return
     end
@@ -947,7 +948,7 @@ end
 ---An active profile stays active and records the windows from its next update on.
 ---@param number integer
 function ProfileController:clear_profile(number)
-    if self.is_busy then
+    if self.is_switch_or_restore_running then
         hs.alert.show(STILL_SWITCHING_MESSAGE)
         return
     end
@@ -1099,7 +1100,7 @@ end
 ---While a switch runs, the state is written alone, because the update at the end of the switch
 ---gives the defaults.
 function ProfileController:apply_numbers_change()
-    if self.is_busy then
+    if self.is_switch_or_restore_running then
         self:write_state()
     else
         self:update_records_and_numbers()
@@ -1190,14 +1191,14 @@ function ProfileController:run_press(text, press, on_done)
         on_done(STILL_SWITCHING_MESSAGE)
         return
     end
-    self.is_showing_desktop = true
+    self.is_press_running = true
     local work_number = self.watchdog:start()
     self:show_busy_message(text)
     press(function(error_message)
         if not self.watchdog:stop(work_number) then
             return
         end
-        self.is_showing_desktop = false
+        self.is_press_running = false
         self:end_busy_message()
         on_done(error_message)
     end)
@@ -1205,7 +1206,7 @@ end
 
 ---@return boolean whether a switch, a restore or a press of the list or the search runs
 function ProfileController:is_work_running()
-    return self.is_busy or self.is_showing_desktop
+    return self.is_switch_or_restore_running or self.is_press_running
 end
 
 ---Shows "Desktop Manager is still switching" while a switch, a restore or a press runs, so that a
@@ -1467,7 +1468,7 @@ end
 ---After an unhide that the user makes, the next capture records the windows in sight.
 ---@param application table an hs.application
 function ProfileController:handle_application_unhidden(application)
-    if not self.is_busy or not application then
+    if not self.is_switch_or_restore_running or not application then
         return
     end
     for _, window in ipairs(application:allWindows()) do
@@ -1568,7 +1569,7 @@ function ProfileController:restore_after_screens_changed()
     end
     local configuration = self:read_monitor_configuration()
     local saved_arrangement = profile_state.find_arrangement(self.state, number, configuration.key)
-    self.is_busy = true
+    self.is_switch_or_restore_running = true
     local work_number = self.watchdog:start()
     local function finish(failures)
         if not self:end_switch_work(work_number) then
@@ -1779,8 +1780,8 @@ function profile_controller.start(unchecked_settings, shortcuts)
         settings = settings,
         log = hs.logger.new("desktop_mgr", "info"),
         watchers = {},
-        is_busy = false,
-        is_showing_desktop = false,
+        is_switch_or_restore_running = false,
+        is_press_running = false,
         are_saves_suspended = false,
         window_ids_out_of_sight = {},
         window_inventory = window_inventory.new(),

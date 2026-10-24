@@ -115,9 +115,9 @@ return {
         world.hotkeys["1"]()
         world.desktop_read_error = "macOS stopped answering"
         world.advance(60)
-        expect.equal(controller.is_busy, true)
+        expect.equal(controller.is_switch_or_restore_running, true)
         world.advance(40)
-        expect.equal(controller.is_busy, false)
+        expect.equal(controller.is_switch_or_restore_running, false)
         expect.equal(#world.timer_errors > 0, true)
         local message = "Desktop Manager stopped a switch that did not finish within 90 seconds"
             .. " (1 problems in the Hammerspoon console)"
@@ -155,7 +155,7 @@ return {
         world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(0.5)
-        expect.equal(controller.is_busy, true)
+        expect.equal(controller.is_switch_or_restore_running, true)
         expect.equal(controller_world.recorded_sight(controller, 2, reopened.id), "out of sight")
         expect.equal(controller_world.recorded_sight(controller, 2, 42), nil)
         world.advance(controller_world.SETTLE_SECONDS)

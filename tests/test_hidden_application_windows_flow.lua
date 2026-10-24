@@ -287,14 +287,14 @@ return {
         local shown, visible_while_waiting = controller_world.read_busy_messages(world)
         expect.equal(shown[#shown], "Showing desktop 3 of built-in… please wait")
         expect.equal(visible_while_waiting, 1)
-        expect.equal(controller.is_showing_desktop, true)
+        expect.equal(controller.is_press_running, true)
         world.advance(controller_world.SETTLE_SECONDS)
         expect.equal(world.focused_window_id, notes.id)
         expect.equal(world.menu_selections, {})
         expect.equal(#world.window_order, window_count)
         local _, visible_count = controller_world.read_busy_messages(world)
         expect.equal(visible_count, 0)
-        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(controller.is_press_running, false)
     end,
 
     a_window_on_another_desktop_without_a_standard_subrole_in_time_is_reported = function()
@@ -343,7 +343,7 @@ return {
         local shown, visible_while_waiting = controller_world.read_busy_messages(world)
         expect.equal(shown[#shown], "Unhiding Microsoft Word… please wait")
         expect.equal(visible_while_waiting, 1)
-        expect.equal(controller.is_showing_desktop, true)
+        expect.equal(controller.is_press_running, true)
         world.advance(0.4)
         expect.equal(world.focused_window_id, 42)
         world.advance(controller_world.SETTLE_SECONDS)
@@ -353,7 +353,7 @@ return {
         expect.equal(#world.window_order, window_count)
         local _, visible_count = controller_world.read_busy_messages(world)
         expect.equal(visible_count, 0)
-        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(controller.is_press_running, false)
         expect.equal(world.notifications, {})
     end,
 
@@ -386,7 +386,7 @@ return {
         expect.equal(world.focused_window_id == other.id, false)
         local shown = controller_world.read_busy_messages(world)
         expect.equal(shown[#shown], "Unhiding Microsoft Word… please wait")
-        expect.equal(controller.is_showing_desktop, true)
+        expect.equal(controller.is_press_running, true)
         world.advance(controller_world.SETTLE_SECONDS)
         expect.equal(world.focused_window_id, other.id)
         expect.equal(world.windows[other.id].is_minimized, false)

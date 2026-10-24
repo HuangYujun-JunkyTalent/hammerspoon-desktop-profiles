@@ -39,7 +39,7 @@ return {
             "Showing desktop 2 of built-in… please wait",
         })
         expect.equal(visible_count, 0)
-        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(controller.is_press_running, false)
     end,
 
     a_press_of_the_list_during_a_switch_is_refused = function()
@@ -57,7 +57,7 @@ return {
         expect.equal(visible_count, 1)
         world.advance(controller_world.SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 1)
-        expect.equal(controller.is_busy, false)
+        expect.equal(controller.is_switch_or_restore_running, false)
         expect.equal(world.mission_control_actions, {})
         expect.equal(world.displays[1].active_space_id, 3)
     end,
@@ -67,12 +67,12 @@ return {
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
         world.app_hotkeys["2"]()
-        expect.equal(controller.is_showing_desktop, true)
+        expect.equal(controller.is_press_running, true)
         world.hotkeys["2"]()
         expect.equal(world.alerts[#world.alerts], "Desktop Manager is still switching")
         world.advance(controller_world.SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 1)
-        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(controller.is_press_running, false)
         expect.equal(world.focused_window_id, 41)
     end,
 
@@ -87,8 +87,8 @@ return {
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
         world.advance(0.3)
-        expect.equal(controller.is_showing_desktop, true)
-        expect.equal(controller.is_busy, false)
+        expect.equal(controller.is_press_running, true)
+        expect.equal(controller.is_switch_or_restore_running, false)
         world.advance(controller_world.SETTLE_SECONDS)
         expect.equal(world.mission_control_actions, { "show 14" })
         expect.equal(world.displays[1].active_space_id, 14)
@@ -98,7 +98,7 @@ return {
             "Monitors changed, waiting for macOS… please wait",
             "Arranging Profile 1 for built-in… please wait",
         })
-        expect.equal(controller.is_busy, false)
+        expect.equal(controller.is_switch_or_restore_running, false)
         expect.equal(controller.are_saves_suspended, false)
         controller_world.expect_frame_near(
             world.windows[42].frame,
@@ -483,11 +483,11 @@ return {
         local shown, visible_while_opening = controller_world.read_busy_messages(world)
         expect.equal(shown[#shown], "Opening a window of Microsoft Word… please wait")
         expect.equal(visible_while_opening, 1)
-        expect.equal(controller.is_showing_desktop, true)
+        expect.equal(controller.is_press_running, true)
         world.advance(controller_world.SETTLE_SECONDS)
         local _, visible_count = controller_world.read_busy_messages(world)
         expect.equal(visible_count, 0)
-        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(controller.is_press_running, false)
         expect.equal(
             world.focused_window_id,
             controller_world.find_window_titled(world, "Document1").id
@@ -766,7 +766,7 @@ return {
             if world.focused_window_id == reading.id then
                 break
             end
-            if #world.mission_control_actions > 0 and not controller.is_showing_desktop then
+            if #world.mission_control_actions > 0 and not controller.is_press_running then
                 was_released_before_the_focus = true
             end
         end
@@ -774,7 +774,7 @@ return {
         expect.equal(world.focused_window_id, reading.id)
         expect.equal(was_released_before_the_focus, false)
         world.advance(1)
-        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(controller.is_press_running, false)
         local _, visible_count = controller_world.read_busy_messages(world)
         expect.equal(visible_count, 0)
     end,

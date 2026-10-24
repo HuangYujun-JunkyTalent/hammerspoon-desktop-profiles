@@ -102,11 +102,11 @@ return {
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
         world.advance(0.6)
-        expect.equal(controller.is_busy, true)
+        expect.equal(controller.is_switch_or_restore_running, true)
         world.advance(controller_world.SETTLE_SECONDS)
         local shown = controller_world.read_busy_messages(world)
         expect.equal(shown[#shown], "Arranging Profile 1 for built-in… please wait")
-        expect.equal(controller.is_busy, false)
+        expect.equal(controller.is_switch_or_restore_running, false)
         expect.equal(controller.are_saves_suspended, false)
         controller_world.expect_frame_near(
             world.windows[42].frame,
@@ -220,13 +220,13 @@ return {
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
         world.advance(3.1)
-        expect.equal(controller.is_busy, true)
+        expect.equal(controller.is_switch_or_restore_running, true)
         world.screens[1].frame = controller_world.BUILTIN_SCREEN.frame
         world.screen_watchers[1]()
         local is_message_shown_between = false
         for _ = 1, 100 do
             world.advance(0.05)
-            if not controller.is_busy and controller.screen_timer then
+            if not controller.is_switch_or_restore_running and controller.screen_timer then
                 expect.equal(controller.are_saves_suspended, true)
                 is_message_shown_between = controller.busy_message_text
                     == "Monitors changed, waiting for macOS… please wait"
@@ -250,7 +250,7 @@ return {
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
         world.advance(3.1)
-        expect.equal(controller.is_busy, true)
+        expect.equal(controller.is_switch_or_restore_running, true)
         world.hotkeys["0"]()
         expect.equal(world.alerts[#world.alerts], "Desktop Manager is still switching")
         world.advance(controller_world.SETTLE_SECONDS)

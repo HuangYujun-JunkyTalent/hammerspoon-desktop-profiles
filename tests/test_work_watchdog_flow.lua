@@ -35,7 +35,7 @@ return {
         expect.equal(world.mission_control_actions, {})
         expect.equal(world.displays[1].space_ids, { 3, 14, 64, 98, 99 })
         expect.equal(world.is_mission_control_open, false)
-        expect.equal(controller.is_busy, false)
+        expect.equal(controller.is_switch_or_restore_running, false)
     end,
 
     the_watchdog_closes_mission_control_after_a_step_that_raised_while_it_showed = function()
@@ -55,7 +55,7 @@ return {
         world.desktop_read_error = nil
         world.advance(90)
         expect.equal(world.is_mission_control_open, false)
-        expect.equal(controller.is_busy, false)
+        expect.equal(controller.is_switch_or_restore_running, false)
         expect.equal(world.notifications, { WATCHDOG_MESSAGE })
     end,
 
@@ -68,12 +68,12 @@ return {
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
         world.advance(3.1)
-        expect.equal(controller.is_busy, true)
+        expect.equal(controller.is_switch_or_restore_running, true)
         world.desktop_read_error = "macOS stopped answering"
         world.advance(91)
         world.desktop_read_error = nil
         expect.equal(#world.timer_errors > 0, true)
-        expect.equal(controller.is_busy, false)
+        expect.equal(controller.is_switch_or_restore_running, false)
         expect.equal(controller.are_saves_suspended, false)
         expect.equal(world.notifications, { WATCHDOG_MESSAGE })
         world.windows[42].frame = { x = 100, y = 125, w = 600, h = 500 }
@@ -90,10 +90,10 @@ return {
         make_desktops_unreadable_once_mission_control_opens(world)
         world.app_hotkeys["2"]()
         world.advance(5)
-        expect.equal(controller.is_showing_desktop, true)
+        expect.equal(controller.is_press_running, true)
         world.desktop_read_error = nil
         world.advance(90)
-        expect.equal(controller.is_showing_desktop, false)
+        expect.equal(controller.is_press_running, false)
         expect.equal(world.is_mission_control_open, false)
         expect.equal(world.notifications, { WATCHDOG_MESSAGE })
         local _, visible_count = controller_world.read_busy_messages(world)
