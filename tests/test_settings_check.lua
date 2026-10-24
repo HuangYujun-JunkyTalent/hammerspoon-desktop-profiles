@@ -65,6 +65,20 @@ return {
         })
     end,
 
+    a_former_name_of_the_module_gives_way_to_the_new_value_and_passes_the_check = function()
+        ---@type table the settings that write the former values through the module
+        local settings = default_settings.create("/fake/state.json")
+        settings.missing_window_policy = missing_window_policy.OPEN_NEW_WINDOW
+        local replaced, lines = settings_check.replace_old_values(settings)
+        expect.equal(replaced.missing_window_policy, missing_window_policy.MATCH_ID_ALONE)
+        expect.equal(#lines, 1)
+        expect.present(settings_check.check(replaced), "the checked settings")
+        settings.missing_window_policy = missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW
+        replaced = settings_check.replace_old_values(settings)
+        expect.equal(replaced.missing_window_policy, missing_window_policy.MATCH_TITLE)
+        expect.present(settings_check.check(replaced), "the checked settings")
+    end,
+
     the_current_values_give_no_line = function()
         local settings = default_settings.create("/fake/state.json")
         local replaced, lines = settings_check.replace_old_values(settings)

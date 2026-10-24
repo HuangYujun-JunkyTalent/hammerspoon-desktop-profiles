@@ -13,6 +13,9 @@ local enumeration = require("desktop_manager.core.enumeration")
 ---@class MissingWindowPolicyModule: Enumeration
 ---@field MATCH_ID_ALONE "match_id_alone"
 ---@field MATCH_TITLE "match_title"
+---@field OPEN_NEW_WINDOW "open_new_window" the former name of `MATCH_ID_ALONE`
+---@field MATCH_TITLE_OR_OPEN_NEW_WINDOW "match_title_or_open_new_window" the former name of
+---`MATCH_TITLE`
 local missing_window_policy = enumeration.define({
     MATCH_ID_ALONE = "match_id_alone",
     MATCH_TITLE = "match_title",
@@ -20,12 +23,18 @@ local missing_window_policy = enumeration.define({
 
 ---@alias MissingWindowPolicy "match_id_alone"|"match_title"
 
+---The former names of the values, which a copy of the settings from an earlier version may write.
+---Each gives its former value, which `is_valid` refuses and `settings_check.replace_old_values`
+---replaces.
+missing_window_policy.OPEN_NEW_WINDOW = "open_new_window"
+missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW = "match_title_or_open_new_window"
+
 ---The former values of the setting, which named a new window that `unmatched_window_action`
 ---decides, with the value that takes the place of each.
 ---@type table<string, MissingWindowPolicy>
 missing_window_policy.OLD_VALUES = {
-    open_new_window = missing_window_policy.MATCH_ID_ALONE,
-    match_title_or_open_new_window = missing_window_policy.MATCH_TITLE,
+    [missing_window_policy.OPEN_NEW_WINDOW] = missing_window_policy.MATCH_ID_ALONE,
+    [missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW] = missing_window_policy.MATCH_TITLE,
 }
 
 ---@param policy string a value of missing_window_policy

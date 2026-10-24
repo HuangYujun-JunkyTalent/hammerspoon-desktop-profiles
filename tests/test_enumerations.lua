@@ -13,6 +13,8 @@ local unmatched_window_action = require("desktop_manager.core.unmatched_window_a
 ---@field name string the name of the module
 ---@field module table the module of the closed set
 ---@field constants table<string, string> the constants that the module must hold, with their values
+---@field former_constants table<string, string>|nil the constants of the former values, which the
+---module also holds and `is_valid` refuses
 
 ---@type EnumerationCase[]
 local CASES = {
@@ -59,6 +61,10 @@ local CASES = {
             MATCH_ID_ALONE = "match_id_alone",
             MATCH_TITLE = "match_title",
         },
+        former_constants = {
+            OPEN_NEW_WINDOW = "open_new_window",
+            MATCH_TITLE_OR_OPEN_NEW_WINDOW = "match_title_or_open_new_window",
+        },
     },
     {
         name = "preview_method",
@@ -78,7 +84,7 @@ local CASES = {
 }
 
 return {
-    each_closed_set_accepts_exactly_the_values_of_its_constants = function()
+    each_closed_set_accepts_exactly_the_values_of_its_current_constants = function()
         for _, case in ipairs(CASES) do
             local module_constants = {}
             for name, value in pairs(case.module) do
@@ -86,7 +92,19 @@ return {
                     module_constants[name] = value
                 end
             end
-            expect.equal({ case.name, module_constants }, { case.name, case.constants })
+            local all_constants = {}
+            for name, value in pairs(case.constants) do
+                all_constants[name] = value
+            end
+            for name, value in pairs(case.former_constants or {}) do
+                all_constants[name] = value
+                expect.equal({ case.name, value, case.module.is_valid(value) }, {
+                    case.name,
+                    value,
+                    false,
+                })
+            end
+            expect.equal({ case.name, module_constants }, { case.name, all_constants })
             for _, value in pairs(case.constants) do
                 expect.equal({ case.name, value, case.module.is_valid(value) }, {
                     case.name,
