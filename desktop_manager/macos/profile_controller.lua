@@ -632,7 +632,7 @@ end
 ---its message.
 ---@param work_number integer
 ---@return boolean whether the work still ran, and the watchdog had not stopped it
-function ProfileController:end_switch_work(work_number)
+function ProfileController:end_switch_or_restore_work(work_number)
     if not self.watchdog:stop(work_number) then
         return false
     end
@@ -775,7 +775,7 @@ end
 ---@param switch RunningSwitch
 ---@param failures string[]
 function ProfileController:finish_switch(switch, failures)
-    if not self:end_switch_work(switch.work_number) then
+    if not self:end_switch_or_restore_work(switch.work_number) then
         return
     end
     self:schedule_save()
@@ -1570,7 +1570,7 @@ function ProfileController:restore_after_screens_changed()
     self.is_switch_or_restore_running = true
     local work_number = self.watchdog:start()
     local function finish(failures)
-        if not self:end_switch_work(work_number) then
+        if not self:end_switch_or_restore_work(work_number) then
             return
         end
         self:report_failures(failures)
