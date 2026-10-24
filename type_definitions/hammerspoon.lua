@@ -1,7 +1,9 @@
 ---@meta
 
----The signatures of the functions of Hammerspoon that the code calls with optional arguments, as
----the documentation of Hammerspoon 1.1.1 gives them.
+---The signatures of the functions of Hammerspoon that the code calls with arguments that
+---`tests/fake_hammerspoon.lua` leaves out, as the documentation of Hammerspoon 1.1.1 gives them.
+---`hs.canvas.new` is declared as well, because it returns the canvas whose method
+---`behaviorAsLabels` is one of those functions.
 ---lua-language-server reads this file alone, and nothing loads it at run time.
 ---Without it, lua-language-server takes each signature from `tests/fake_hammerspoon.lua`, whose
 ---functions leave out the arguments that the fake ignores.
