@@ -10,9 +10,11 @@ local read_screens = require("desktop_manager.macos.read_screens")
 local track_windows = require("desktop_manager.macos.track_windows")
 local window_inventory = require("desktop_manager.macos.window_inventory")
 
----Shows the recorded desktops of the screens through Mission Control, removes the empty desktops
----beyond the number of each display, and gives the focus back to the screen of the focus, for a
----switch and a restore.
+---Shows desktops of the screens through Mission Control, removes the empty desktops beyond the
+---number of each display, and gives the focus back to the screen of the focus, for a switch and a
+---restore.
+---The desktops to show are the recorded desktops, and desktop 1 of a screen in full screen whose
+---record names no desktop shown.
 local extra_desktops = {}
 
 ---@class ExtraDesktopsContext
