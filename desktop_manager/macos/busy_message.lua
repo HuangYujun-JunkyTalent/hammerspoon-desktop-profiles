@@ -51,6 +51,13 @@ local function show_on_screen(text, screen_frame, text_size)
     return canvas
 end
 
+---@param desktop_number integer
+---@param slot_key string
+---@return string the text of the message while Mission Control shows the desktop
+function busy_message.describe_showing_desktop(desktop_number, slot_key)
+    return string.format("Showing desktop %d of %s… please wait", desktop_number, slot_key)
+end
+
 ---@param text string
 ---@return BusyMessage
 function busy_message.show(text)

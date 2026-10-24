@@ -9,6 +9,7 @@ local concatenate_lists = require("desktop_manager.core.concatenate_lists")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
+local extra_desktops = require("desktop_manager.macos.extra_desktops")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_known_windows = require("desktop_manager.macos.list_known_windows")
@@ -110,13 +111,6 @@ end
 ---@return string
 local function inspect_on_one_line(value)
     return hs.inspect(value, { newline = " ", indent = "" })
-end
-
----@param desktop_number integer
----@param slot_key string
----@return string the busy message while Mission Control shows the desktop
-local function describe_showing(desktop_number, slot_key)
-    return string.format("Showing desktop %d of %s… please wait", desktop_number, slot_key)
 end
 
 ---@param name string the name of the profile
@@ -632,12 +626,13 @@ end
 ---@param arrangement Arrangement|nil
 ---@param on_done fun(failures: string[])
 function ProfileController:leave_full_screen(arrangement, on_done)
-    self:show_desktops(
+    extra_desktops.show_desktops(
         restore_plan.plan_exits_from_full_screen(
             arrangement,
             self:read_monitor_configuration(),
             read_desktops.read_desktop_layout()
         ),
+        self:extra_desktops_context(),
         on_done
     )
 end
@@ -888,9 +883,10 @@ function ProfileController:restore_profile_layout(
                 window_by_id,
                 switch.busy_text,
                 function(restore_failures, desktops_to_show)
-                    self:show_desktops_and_remove_extra_ones(
+                    extra_desktops.show_desktops_and_remove_extra_ones(
                         arrangement,
                         desktops_to_show,
+                        self:extra_desktops_context(),
                         function(desktop_failures)
                             self:finish_switch(
                                 switch,
@@ -1601,7 +1597,8 @@ function ProfileController:show_space(space_id, after_shown, on_done, chosen_win
     local location = locate_desktops.locate_space(read_desktops.read_desktop_layout(), space_id)
     local slot = location
         and monitor_configuration.find_slot_of_screen(configuration, location.screen.screen_uuid)
-    local text = slot and describe_showing(location.desktop_number, slot.slot_key)
+    local text = slot
+            and busy_message.describe_showing_desktop(location.desktop_number, slot.slot_key)
         or "Showing another desktop… please wait"
     self:run_press(text, function(on_pressed)
         mission_control_desktops.show_space(space_id, self.settings.timing, function(error_message)
@@ -1753,288 +1750,43 @@ function ProfileController:handle_application_unhidden(application)
     end
 end
 
----A window of an application that the desktop manager leaves to macOS keeps its desktop in every
----state, and a window of a managed application keeps it while it is in sight.
----@param window table an hs.window
----@return boolean
-function ProfileController:does_known_window_keep_desktop(window)
-    local application = window:application()
-    if not app_pool.is_managed(self.state.app_pool, track_windows.bundle_id_of(application)) then
-        return true
-    end
-    return not window:isMinimized() and not (application ~= nil and application:isHidden())
+---@return ExtraDesktopsContext the context of the desktops to show and the desktops to remove
+function ProfileController:extra_desktops_context()
+    return {
+        timing = self.settings.timing,
+        log = self.log,
+        read_monitor_configuration = function()
+            return self:read_monitor_configuration()
+        end,
+        known_windows = self.known_windows,
+        window_inventory = self.window_inventory,
+        read_app_pool = function()
+            return self.state.app_pool
+        end,
+        list_filter_window_ids = function()
+            return self:list_filter_window_ids()
+        end,
+        show_busy_message = function(text)
+            self:show_busy_message(text)
+        end,
+        continue = function(callback)
+            return self.watchdog:continue(callback)
+        end,
+    }
 end
 
----The desktops that hold a window that keeps them from a removal.
----A window that Hammerspoon knows keeps its desktop as `does_known_window_keep_desktop` says.
----A window that the window server listed out of view at the last refresh of the inventory, and that
----Hammerspoon has not seen, keeps its desktop, because it is in sight there.
----A window that macOS lists on several desktops holds none of them.
----@return table<integer, boolean>
-function ProfileController:find_occupied_space_ids()
-    local occupied = {}
-    local known_by_id = track_windows.index_by_id(self.known_windows:list_all({}))
-    for window_id, space_id in pairs(self.window_inventory.occupying_windows) do
-        if not known_by_id[window_id] then
-            occupied[space_id] = true
-        end
-    end
-    for window_id, window in pairs(known_by_id) do
-        local space_ids = read_desktops.list_window_space_ids(window_id)
-        if #space_ids == 1 and self:does_known_window_keep_desktop(window) then
-            occupied[space_ids[1]] = true
-        end
-    end
-    return occupied
-end
-
----The window among those that macOS lists on a desktop that keeps the desktop, at the check right
----before the removal of the desktop, as `does_known_window_keep_desktop` says.
----A window that macOS shows on every desktop keeps none of them.
----A window that Hammerspoon has not seen counts in the plan of the removal alone, through the
----inventory, which also leaves out the small windows and the windows without a Dock icon.
----The windows that the window filter leaves out come from one walk of every window of every
----application, instead of one walk for each window as `hs.window.get` does.
+---The window among the windows of the ids that keeps their desktop at the check right before a
+---removal, as `extra_desktops.find_window_that_keeps_desktop` says.
 ---@param window_ids integer[]
 ---@return integer|nil
 function ProfileController:find_window_that_keeps_desktop(window_ids)
-    local known_by_id = track_windows.index_by_id(self.known_windows:list_all({}))
-    local all_by_id = nil
-    for _, window_id in ipairs(window_ids) do
-        if #read_desktops.list_window_space_ids(window_id) == 1 then
-            local window = known_by_id[window_id]
-            if not window then
-                all_by_id = all_by_id or track_windows.index_by_id(hs.window.allWindows())
-                window = all_by_id[window_id]
-            end
-            if window and self:does_known_window_keep_desktop(window) then
-                return window_id
-            end
-        end
-    end
-    return nil
+    return extra_desktops.find_window_that_keeps_desktop(window_ids, self:extra_desktops_context())
 end
 
 ---@param window_id integer
 ---@return boolean whether the window keeps its desktop at the check right before a removal
 function ProfileController:does_window_keep_desktop(window_id)
     return self:find_window_that_keeps_desktop({ window_id }) ~= nil
-end
-
----@param desktop ScreenDesktop
----@return integer|nil the space of the desktop, or of the last desktop of a screen with fewer
-local function find_space_id_of(desktop)
-    local screen = read_desktops.find_screen_desktops(desktop.screen_uuid)
-    return screen and screen.space_ids[math.min(desktop.desktop_number, #screen.space_ids)]
-end
-
----Shows each desktop through Mission Control, in one opening per desktop, because a press on a
----thumbnail closes Mission Control.
----@param desktops ScreenDesktop[]
----@param on_done fun(failures: string[])
-function ProfileController:show_desktops(desktops, on_done)
-    local failures, index = {}, 0
-    local function show_next()
-        index = index + 1
-        local desktop = desktops[index]
-        if not desktop then
-            on_done(failures)
-            return
-        end
-        local space_id = find_space_id_of(desktop)
-        if not space_id then
-            table.insert(failures, string.format("%s has no desktops", desktop.slot_key))
-            show_next()
-            return
-        end
-        if not read_desktops.is_space_active(space_id) then
-            self:show_busy_message(describe_showing(desktop.desktop_number, desktop.slot_key))
-        end
-        mission_control_desktops.show_space(
-            space_id,
-            self.settings.timing,
-            self.watchdog:continue(function(error_message)
-                if error_message then
-                    table.insert(failures, error_message)
-                end
-                show_next()
-            end)
-        )
-    end
-    show_next()
-end
-
----@param screen_uuid string
----@param count_by_slot table<string, integer>
----@return boolean whether the screen shows a desktop beyond the number of its slot
-function ProfileController:shows_extra_desktop(screen_uuid, count_by_slot)
-    local screen = read_desktops.find_screen_desktops(screen_uuid)
-    local slot =
-        monitor_configuration.find_slot_of_screen(self:read_monitor_configuration(), screen_uuid)
-    local count = slot and count_by_slot[slot.slot_key]
-    if not screen or not count then
-        return false
-    end
-    local shown_desktop_number = locate_desktops.find_shown_desktop_number(screen)
-    return shown_desktop_number ~= nil and shown_desktop_number > count
-end
-
----@param edits DesktopEdit[]
----@param removed_count integer
----@param desktop_of_focus ScreenDesktop|nil
----@return string|nil the message of the last opening of Mission Control, nil when it does nothing
-local function describe_last_opening(edits, removed_count, desktop_of_focus)
-    if #edits == 1 then
-        return string.format(
-            "Removing %d empty desktops from %s… please wait",
-            removed_count,
-            edits[1].slot_key
-        )
-    elseif #edits > 1 then
-        return string.format("Removing %d empty desktops… please wait", removed_count)
-    end
-    if not desktop_of_focus then
-        return nil
-    end
-    local space_id = find_space_id_of(desktop_of_focus)
-    if space_id and not read_desktops.is_space_active(space_id) then
-        return describe_showing(desktop_of_focus.desktop_number, desktop_of_focus.slot_key)
-    end
-    return nil
-end
-
----Removes the desktops beyond the number of each slot that do not show and hold no window that
----keeps them, from the end of each screen.
----The removals of every screen and the press on the desktop of the screen of the focus go in one
----opening of Mission Control, because the press closes it.
----A desktop beyond the number that shows on the screen of the focus would stay in view until that
----press, so the desktop of the focus then shows first, in an opening of its own.
----@param count_by_slot table<string, integer> the number of desktops of each slot
----@param desktop_of_focus ScreenDesktop|nil the recorded desktop of the screen of the focus
----@param on_done fun(failures: string[])
-function ProfileController:remove_extra_desktops(count_by_slot, desktop_of_focus, on_done)
-    local timing = self.settings.timing
-    local function find_keeping_window(window_ids)
-        return self:find_window_that_keeps_desktop(window_ids)
-    end
-    local function remove_and_show(failures)
-        window_inventory.refresh_from_now(
-            self.window_inventory,
-            function()
-                return self:list_filter_window_ids()
-            end,
-            self.watchdog:continue(function()
-                local removals = desktop_counts.plan_removals(
-                    count_by_slot,
-                    self:read_monitor_configuration(),
-                    read_desktops.read_desktop_layout(),
-                    self:find_occupied_space_ids()
-                )
-                local edits, removed_count = {}, 0
-                for _, removal in ipairs(removals) do
-                    if removal.staying_count > 0 then
-                        self.log.f(
-                            "%s keeps %d desktops beyond its %d, because they show or hold a"
-                                .. " window, or lie below one that does, as the empty desktops %s",
-                            removal.slot_key,
-                            removal.staying_count,
-                            removal.count,
-                            table.concat(removal.empty_staying_space_ids, ", ")
-                        )
-                    end
-                    if #removal.space_ids > 0 and read_screens.find_screen(removal.screen_uuid) then
-                        self.log.f(
-                            "removing the empty desktops %s beyond desktop %d of %s",
-                            table.concat(removal.space_ids, ", "),
-                            removal.count,
-                            removal.slot_key
-                        )
-                        table.insert(edits, {
-                            screen_uuid = removal.screen_uuid,
-                            slot_key = removal.slot_key,
-                            desktops_to_add = 0,
-                            space_ids_to_remove = removal.space_ids,
-                        })
-                        removed_count = removed_count + #removal.space_ids
-                    end
-                end
-                local message = describe_last_opening(edits, removed_count, desktop_of_focus)
-                if message then
-                    self:show_busy_message(message)
-                end
-                local finish = self.watchdog:continue(function(edit_failures)
-                    on_done(concatenate_lists.concatenate(failures, edit_failures))
-                end)
-                local space_id = desktop_of_focus and find_space_id_of(desktop_of_focus)
-                if space_id then
-                    mission_control_desktops.edit_and_show_space(
-                        edits,
-                        space_id,
-                        find_keeping_window,
-                        timing,
-                        finish
-                    )
-                    return
-                end
-                mission_control_desktops.edit(edits, find_keeping_window, timing, finish)
-            end)
-        )
-    end
-    if
-        desktop_of_focus and self:shows_extra_desktop(desktop_of_focus.screen_uuid, count_by_slot)
-    then
-        self:show_desktops({ desktop_of_focus }, remove_and_show)
-        return
-    end
-    remove_and_show({})
-end
-
----Gives the focus to the front window of the screen of the slot, when the focus is on another
----screen, because the last press in Mission Control may have been on another screen.
----@param slot_key string|nil
-function ProfileController:focus_screen_of_slot(slot_key)
-    local slot = slot_key
-        and monitor_configuration.find_slot(self:read_monitor_configuration(), slot_key)
-    local screen = slot and read_desktops.find_screen_desktops(slot.screen_uuid)
-    if
-        not screen
-        or read_desktops.read_desktop_layout().focused_space_id == screen.active_space_id
-    then
-        return
-    end
-    for _, window in ipairs(hs.window.orderedWindows()) do
-        local window_id = window:id()
-        if
-            window_id
-            and window:isStandard()
-            and read_desktops.find_window_space_id(window_id) == screen.active_space_id
-        then
-            window:focus()
-            return
-        end
-    end
-    self.log.f("%s shows no window to take the focus", slot_key)
-end
-
----Shows the recorded desktop of each screen, removes the desktops beyond the numbers of the
----arrangement, and shows the desktop of the screen of the focus in the last opening of Mission
----Control, which then has the focus.
----@param arrangement Arrangement
----@param desktops ScreenDesktop[] the desktops to show, the desktop of the screen of the focus last
----@param on_done fun(failures: string[])
-function ProfileController:show_desktops_and_remove_extra_ones(arrangement, desktops, on_done)
-    local desktop_of_focus = desktops[#desktops]
-    local other_desktops = { table.unpack(desktops, 1, math.max(#desktops - 1, 0)) }
-    self:show_desktops(other_desktops, function(show_failures)
-        self:remove_extra_desktops(
-            desktop_counts.count_by_slot(arrangement),
-            desktop_of_focus,
-            function(removal_failures)
-                self:focus_screen_of_slot(arrangement.focused_slot_key)
-                on_done(concatenate_lists.concatenate(show_failures, removal_failures))
-            end
-        )
-    end)
 end
 
 ---Waits for macOS to settle the screens, and restarts the wait while a switch, a restore or a press
@@ -2107,7 +1859,12 @@ function ProfileController:restore_after_screens_changed()
                 configuration.key
             )
         )
-        self:remove_extra_desktops(self.state.desktop_counts.kept, nil, finish)
+        extra_desktops.remove_extra_desktops(
+            self.state.desktop_counts.kept,
+            nil,
+            self:extra_desktops_context(),
+            finish
+        )
         return
     end
     local busy_text = string.format("Arranging %s for %s… please wait", name, configuration.key)
@@ -2139,9 +1896,10 @@ function ProfileController:restore_after_screens_changed()
                     saved_arrangement,
                     busy_text,
                     function(restore_failures, desktops_to_show)
-                        self:show_desktops_and_remove_extra_ones(
+                        extra_desktops.show_desktops_and_remove_extra_ones(
                             arrangement,
                             desktops_to_show,
+                            self:extra_desktops_context(),
                             function(desktop_failures)
                                 finish(
                                     concatenate_lists.concatenate(
