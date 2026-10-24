@@ -185,7 +185,7 @@ return {
         )
     end,
 
-    the_windows_of_the_ids_keep_their_order_and_show_once = function()
+    the_windows_of_the_ids_keep_their_order_and_appear_once = function()
         local first = { window_id = 1 }
         local second = { window_id = 2 }
         local third = { window_id = 3 }
