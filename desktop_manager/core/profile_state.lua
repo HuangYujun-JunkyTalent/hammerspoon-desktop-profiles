@@ -22,11 +22,10 @@ local profile_state = {}
 ---@field monitor_matching string
 ---@field active_profile_number integer|nil
 ---@field is_active_profile_paused boolean whether the updates leave the records and the application
----numbers of the active profile as they are, after a start of Hammerspoon soon after the start of
----macOS
+---numbers of the active profile as they are, after a start of Hammerspoon soon after a login
 ---@field last_seen_macos_start_time integer|nil the start of macOS, in seconds since 1970, that the
----last start of the desktop manager saw, so that only the first start after a start of macOS pauses
----the active profile
+---last start of the desktop manager saw, so that a start that reads no login pauses the active
+---profile only when it is the first after a start of macOS
 ---@field last_seen_login_time integer|nil the minute of the login of the user, in seconds since
 ---1970, that the last start of the desktop manager saw, so that only the first start after a login
 ---pauses the active profile

@@ -110,6 +110,8 @@ end
 ---@class WorldStart
 ---@field seconds_since_macos_start number|nil
 ---@field macos_start_time integer|false|nil
+---@field login_time integer|false|nil
+---@field seconds_since_login number|nil
 
 ---@param setting_changes table|nil settings that replace the defaults, such as concealment_method
 ---@param saved_state table|nil the state file that the desktop manager finds at its start
@@ -122,6 +124,8 @@ function controller_world.start_world(setting_changes, saved_state, start)
     local world = fake_hammerspoon.install({
         seconds_since_macos_start = world_start.seconds_since_macos_start,
         macos_start_time = world_start.macos_start_time,
+        login_time = world_start.login_time,
+        seconds_since_login = world_start.seconds_since_login,
         screens = { fake_worlds.build_builtin_screen() },
         displays = { { uuid = "BUILTIN-UUID", space_ids = { 3, 14, 64 }, active_space_id = 3 } },
         applications = {

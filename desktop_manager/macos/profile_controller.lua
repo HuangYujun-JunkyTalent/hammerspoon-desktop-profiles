@@ -47,6 +47,7 @@ local profile_controller = {}
 
 local NANOSECONDS_PER_SECOND = 1e9
 local MACOS_START_TIME_COMMAND = "/usr/sbin/sysctl -n kern.boottime"
+local LOGIN_COMMAND = "/usr/bin/id -un; /bin/date +%s; LC_ALL=C /usr/bin/who"
 
 local NOTIFICATION_TITLE = "Desktop Manager"
 local FAILURE_ALERT_SECONDS = 8
@@ -1833,44 +1834,46 @@ function ProfileController:start_watchers()
     )
 end
 
----Pauses the active profile at the first start of Hammerspoon soon after the start of macOS, and
----names the pause in the console, also when the state file kept it from an earlier start.
----The state keeps the start of macOS that this start saw, so that a later start under the same
----start of macOS pauses nothing.
----A start that cannot read the start of macOS keeps the one of the state, so that a later start
----that reads it again pauses nothing either.
----The state file takes it with the pause, or else with the next write, because a later start
----before that write reads the same state file at a later time since the start of macOS, and so
----pauses nothing that this start left unpaused, unless the setting changed in between.
----@param macos_start_time integer|nil the start of macOS in seconds since 1970, or nil when unknown
----@param seconds_since_macos_start number
-function ProfileController:pause_at_start(macos_start_time, seconds_since_macos_start)
+---Pauses the active profile at the first start of Hammerspoon soon after a login, or after the
+---start of macOS when the login cannot be read, and names the pause in the console, also when the
+---state file kept it from an earlier start.
+---The state keeps the login and the start of macOS that this start saw, so that a later start
+---under the same login pauses nothing.
+---A start that cannot read one of them keeps the one of the state, so that a later start that
+---reads it again pauses nothing either.
+---The state file takes them with the pause, or else with the next write, because a later start
+---before that write reads the same state file at a later time since the login, and so pauses
+---nothing that this start left unpaused, unless the setting changed in between.
+---@param reading StartReading
+function ProfileController:pause_at_start(reading)
     local number = self.state.active_profile_number
     local pause_seconds = self.settings.pause_after_macos_start_seconds
-    local is_due = profile_pause.is_due_at_start(
-        self.state,
-        macos_start_time,
-        seconds_since_macos_start,
-        pause_seconds
-    )
-    if macos_start_time then
-        self.state = profile_state.with_last_seen_macos_start_time(self.state, macos_start_time)
+    local is_due = profile_pause.is_due_at_start(self.state, reading, pause_seconds)
+    if reading.macos_start_time then
+        self.state =
+            profile_state.with_last_seen_macos_start_time(self.state, reading.macos_start_time)
+    end
+    if reading.login then
+        self.state = profile_state.with_last_seen_login_time(self.state, reading.login.time)
     end
     if is_due then
         self.state = profile_state.with_active_profile_paused(self.state)
         self:write_state()
-        self.log.i(
-            profile_pause.describe_start_pause(number, seconds_since_macos_start, pause_seconds)
-        )
+        self.log.i(profile_pause.describe_start_pause(number, reading, pause_seconds))
     elseif self.state.is_active_profile_paused then
         self.log.i(profile_pause.describe_kept_pause(number))
     end
 end
 
----@return integer|nil the start of macOS in seconds since 1970, or nil when sysctl gives none
-local function read_macos_start_time()
-    local boot_time_output = hs.execute(MACOS_START_TIME_COMMAND)
-    return profile_pause.parse_macos_start_time(boot_time_output)
+---@return StartReading
+local function read_start()
+    return {
+        login = profile_pause.parse_login(hs.execute(LOGIN_COMMAND)),
+        macos_start_time = profile_pause.parse_macos_start_time(
+            hs.execute(MACOS_START_TIME_COMMAND)
+        ),
+        seconds_since_macos_start = hs.timer.absoluteTime() / NANOSECONDS_PER_SECOND,
+    }
 end
 
 ---@param unchecked_settings Settings
@@ -1908,10 +1911,7 @@ function profile_controller.start(unchecked_settings, shortcuts)
         controller.log.w(warning)
         notify(warning)
     end
-    controller:pause_at_start(
-        read_macos_start_time(),
-        hs.timer.absoluteTime() / NANOSECONDS_PER_SECOND
-    )
+    controller:pause_at_start(read_start())
     controller.screen_signature = read_screens.read_signature()
     controller.window_filter = track_windows.new_filter()
     controller.known_windows = list_known_windows.new(

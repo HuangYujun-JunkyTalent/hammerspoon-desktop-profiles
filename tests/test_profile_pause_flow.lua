@@ -48,17 +48,66 @@ local function expect_profile_1_as_saved(controller, saved)
 end
 
 return {
-    a_start_soon_after_macos_pauses_the_active_profile_and_says_so = function()
+    a_start_soon_after_a_login_pauses_the_active_profile_and_says_so = function()
         local world, controller = start_after_login()
         expect.equal(controller.state.active_profile_number, 1)
         expect.equal(controller.state.is_active_profile_paused, true)
         expect.equal(world.saved_json.is_active_profile_paused, true)
         expect.equal(
             world.log_lines[1],
+            "profile 1 is paused, because Hammerspoon started 60 seconds after the login, less"
+                .. " than pause_after_macos_start_seconds of 300, and activating profile 1"
+                .. " restores its layout"
+        )
+        expect.equal(world.saved_json.last_seen_login_time, MACOS_START_TIME_AFTER_RESTART)
+    end,
+
+    a_login_under_the_same_start_of_macos_pauses_the_active_profile = function()
+        local first_world = start_after_login()
+        first_world.hotkeys["1"]()
+        first_world.advance(controller_world.SETTLE_SECONDS)
+        local _, controller = controller_world.start_world(nil, first_world.saved_json, {
+            seconds_since_macos_start = 7260,
+            macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+            login_time = MACOS_START_TIME_AFTER_RESTART + 7200,
+            seconds_since_login = SECONDS_AFTER_LOGIN,
+        })
+        expect.equal(controller.state.is_active_profile_paused, true)
+    end,
+
+    a_start_soon_after_a_late_login_pauses_also_long_after_the_start_of_macos = function()
+        local saved = record_profile_1()
+        local _, controller = controller_world.start_world(nil, saved, {
+            seconds_since_macos_start = 3600,
+            macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+            login_time = MACOS_START_TIME_AFTER_RESTART + 3540,
+            seconds_since_login = SECONDS_AFTER_LOGIN,
+        })
+        expect.equal(controller.state.is_active_profile_paused, true)
+    end,
+
+    a_start_without_a_login_counts_from_the_start_of_macos = function()
+        local saved = record_profile_1()
+        local world, controller = controller_world.start_world(nil, saved, {
+            seconds_since_macos_start = SECONDS_AFTER_LOGIN,
+            macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+            login_time = false,
+        })
+        expect.equal(controller.state.is_active_profile_paused, true)
+        expect.equal(
+            world.log_lines[1],
             "profile 1 is paused, because Hammerspoon started 60 seconds after macOS, less than"
                 .. " pause_after_macos_start_seconds of 300, and activating profile 1 restores"
                 .. " its layout"
         )
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local _, second = controller_world.start_world(nil, world.saved_json, {
+            seconds_since_macos_start = 200,
+            macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+            login_time = false,
+        })
+        expect.equal(second.state.is_active_profile_paused, false)
     end,
 
     a_start_at_the_setting_or_with_the_setting_0_pauses_nothing = function()
@@ -135,22 +184,36 @@ return {
         expect.equal(controller.state.is_active_profile_paused, true)
     end,
 
-    a_start_that_cannot_read_the_start_of_macos_keeps_the_one_of_the_state = function()
+    a_start_that_reads_no_login_and_no_start_of_macos_keeps_those_of_the_state = function()
         local first_world = start_after_login()
         first_world.hotkeys["1"]()
         first_world.advance(controller_world.SETTLE_SECONDS)
-        local unread_world = controller_world.start_world(
-            nil,
-            first_world.saved_json,
-            { seconds_since_macos_start = 120, macos_start_time = false }
-        )
+        local unread_world = controller_world.start_world(nil, first_world.saved_json, {
+            seconds_since_macos_start = 120,
+            macos_start_time = false,
+            login_time = false,
+        })
         unread_world.hotkeys["1"]()
         unread_world.advance(controller_world.SETTLE_SECONDS)
-        local _, controller = controller_world.start_world(
-            nil,
-            unread_world.saved_json,
-            { seconds_since_macos_start = 200, macos_start_time = MACOS_START_TIME_AFTER_RESTART }
-        )
+        for _, login_time in ipairs({ MACOS_START_TIME_AFTER_RESTART, false }) do
+            local _, controller = controller_world.start_world(nil, unread_world.saved_json, {
+                seconds_since_macos_start = 200,
+                macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+                login_time = login_time,
+            })
+            expect.equal(controller.state.is_active_profile_paused, false)
+        end
+    end,
+
+    a_second_start_that_reads_no_login_after_the_restore_pauses_nothing = function()
+        local first_world = start_after_login()
+        first_world.hotkeys["1"]()
+        first_world.advance(controller_world.SETTLE_SECONDS)
+        local _, controller = controller_world.start_world(nil, first_world.saved_json, {
+            seconds_since_macos_start = 200,
+            macos_start_time = MACOS_START_TIME_AFTER_RESTART,
+            login_time = false,
+        })
         expect.equal(controller.state.is_active_profile_paused, false)
     end,
 

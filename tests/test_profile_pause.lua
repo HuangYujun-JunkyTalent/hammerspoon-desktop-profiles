@@ -5,59 +5,102 @@ local profile_state = require("desktop_manager.core.profile_state")
 
 local MACOS_START_TIME = 1729500000
 local EARLIER_MACOS_START_TIME = 1729400000
+local LOGIN_TIME = 1729500060
+local EARLIER_LOGIN_TIME = 1729400060
 
----@return State a state in which profile 1 is active, saved under an earlier start of macOS
+---@return State a state in which profile 1 is active, saved under an earlier login and an earlier
+---start of macOS
 local function build_active_state()
-    return profile_state.with_last_seen_macos_start_time(
-        profile_state.with_active_profile_number(
-            profile_state.new_state(monitor_matching.BY_COUNT),
-            1
+    return profile_state.with_last_seen_login_time(
+        profile_state.with_last_seen_macos_start_time(
+            profile_state.with_active_profile_number(
+                profile_state.new_state(monitor_matching.BY_COUNT),
+                1
+            ),
+            EARLIER_MACOS_START_TIME
         ),
-        EARLIER_MACOS_START_TIME
+        EARLIER_LOGIN_TIME
     )
+end
+
+---@param seconds_since_login number
+---@return StartReading a start under the login `LOGIN_TIME`, an hour after the start of macOS
+local function read_after_login(seconds_since_login)
+    return {
+        login = { time = LOGIN_TIME, seconds_since = seconds_since_login },
+        macos_start_time = MACOS_START_TIME,
+        seconds_since_macos_start = 3600,
+    }
+end
+
+---@param macos_start_time integer|nil
+---@param seconds_since_macos_start number
+---@return StartReading a start that read no login
+local function read_without_login(macos_start_time, seconds_since_macos_start)
+    return {
+        login = nil,
+        macos_start_time = macos_start_time,
+        seconds_since_macos_start = seconds_since_macos_start,
+    }
 end
 
 return {
     a_start_before_the_setting_pauses_the_active_profile = function()
         local state = build_active_state()
-        expect.equal(profile_pause.is_due_at_start(state, MACOS_START_TIME, 60, 300), true)
-        expect.equal(profile_pause.is_due_at_start(state, MACOS_START_TIME, 299.9, 300), true)
+        expect.equal(profile_pause.is_due_at_start(state, read_after_login(60), 300), true)
+        expect.equal(profile_pause.is_due_at_start(state, read_after_login(299), 300), true)
     end,
 
     a_start_at_or_after_the_setting_pauses_nothing = function()
         local state = build_active_state()
-        expect.equal(profile_pause.is_due_at_start(state, MACOS_START_TIME, 300, 300), false)
-        expect.equal(profile_pause.is_due_at_start(state, MACOS_START_TIME, 3600, 300), false)
+        expect.equal(profile_pause.is_due_at_start(state, read_after_login(300), 300), false)
+        expect.equal(profile_pause.is_due_at_start(state, read_after_login(3600), 300), false)
     end,
 
     the_setting_0_pauses_nothing = function()
         local state = build_active_state()
-        expect.equal(profile_pause.is_due_at_start(state, MACOS_START_TIME, 0, 0), false)
+        expect.equal(profile_pause.is_due_at_start(state, read_after_login(0), 0), false)
     end,
 
     a_start_without_an_active_profile_pauses_nothing = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
-        expect.equal(profile_pause.is_due_at_start(state, MACOS_START_TIME, 60, 300), false)
+        expect.equal(profile_pause.is_due_at_start(state, read_after_login(60), 300), false)
     end,
 
     a_start_that_finds_a_pause_enters_no_new_one = function()
         local paused = profile_state.with_active_profile_paused(build_active_state())
-        expect.equal(profile_pause.is_due_at_start(paused, MACOS_START_TIME, 60, 300), false)
+        expect.equal(profile_pause.is_due_at_start(paused, read_after_login(60), 300), false)
     end,
 
-    only_the_first_start_after_a_start_of_macos_pauses = function()
-        local seen =
+    only_the_first_start_after_a_login_pauses = function()
+        local seen = profile_state.with_last_seen_login_time(build_active_state(), LOGIN_TIME)
+        expect.equal(profile_pause.is_due_at_start(seen, read_after_login(60), 300), false)
+        local never_seen = profile_state.with_last_seen_login_time(build_active_state(), nil)
+        expect.equal(profile_pause.is_due_at_start(never_seen, read_after_login(60), 300), true)
+    end,
+
+    a_new_login_under_a_start_of_macos_that_the_state_saw_pauses = function()
+        local state =
             profile_state.with_last_seen_macos_start_time(build_active_state(), MACOS_START_TIME)
-        expect.equal(profile_pause.is_due_at_start(seen, MACOS_START_TIME, 60, 300), false)
-        local never_seen = profile_state.with_last_seen_macos_start_time(build_active_state(), nil)
-        expect.equal(profile_pause.is_due_at_start(never_seen, MACOS_START_TIME, 60, 300), true)
+        expect.equal(profile_pause.is_due_at_start(state, read_after_login(60), 300), true)
+    end,
+
+    a_start_without_a_login_counts_from_the_start_of_macos = function()
+        local state =
+            profile_state.with_last_seen_macos_start_time(build_active_state(), MACOS_START_TIME)
+        local seen = read_without_login(MACOS_START_TIME, 60)
+        expect.equal(profile_pause.is_due_at_start(state, seen, 300), false)
+        local new = read_without_login(MACOS_START_TIME + 86400, 60)
+        expect.equal(profile_pause.is_due_at_start(state, new, 300), true)
+        local late = read_without_login(MACOS_START_TIME + 86400, 300)
+        expect.equal(profile_pause.is_due_at_start(state, late, 300), false)
     end,
 
     a_start_of_macos_that_could_not_be_read_counts_as_a_new_one = function()
         local state = build_active_state()
-        expect.equal(profile_pause.is_due_at_start(state, nil, 60, 300), true)
+        expect.equal(profile_pause.is_due_at_start(state, read_without_login(nil, 60), 300), true)
         local unread = profile_state.with_last_seen_macos_start_time(state, nil)
-        expect.equal(profile_pause.is_due_at_start(unread, nil, 60, 300), true)
+        expect.equal(profile_pause.is_due_at_start(unread, read_without_login(nil, 60), 300), true)
     end,
 
     the_start_of_macos_is_read_from_the_output_of_sysctl = function()
@@ -118,7 +161,13 @@ return {
 
     the_lines_name_the_profile_and_the_seconds = function()
         expect.equal(
-            profile_pause.describe_start_pause(2, 42.4, 300),
+            profile_pause.describe_start_pause(2, read_after_login(42), 300),
+            "profile 2 is paused, because Hammerspoon started 42 seconds after the login, less"
+                .. " than pause_after_macos_start_seconds of 300, and activating profile 2"
+                .. " restores its layout"
+        )
+        expect.equal(
+            profile_pause.describe_start_pause(2, read_without_login(nil, 42.4), 300),
             "profile 2 is paused, because Hammerspoon started 42 seconds after macOS, less than"
                 .. " pause_after_macos_start_seconds of 300, and activating profile 2 restores"
                 .. " its layout"

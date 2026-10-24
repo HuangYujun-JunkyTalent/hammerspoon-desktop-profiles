@@ -1,5 +1,5 @@
----The pause of the active profile at the first start of Hammerspoon soon after the start of macOS,
----when macOS reopens the windows with new ids and at places of its own.
+---The pause of the active profile at the first start of Hammerspoon soon after a login, when macOS
+---reopens the windows with new ids and at places of its own.
 local profile_pause = {}
 
 ---@param boot_time_output string|nil the output of `sysctl -n kern.boottime`, such as
@@ -89,45 +89,63 @@ function profile_pause.parse_login(login_output)
     return { time = latest_time, seconds_since = reading_time - latest_time }
 end
 
----A start under a start of macOS that the state file already saw pauses nothing, so a Reload
----Config after the user ended the pause keeps the updates going.
----A start of macOS that could not be read counts as a new one, because a pause that was not needed
----costs one press, and an update after a restart replaces the record of the profile.
----@param state State
----@param macos_start_time integer|nil the start of macOS in seconds since 1970, or nil when unknown
----@param seconds_since_macos_start number the time since the start of macOS, without the time
+---What a start of the desktop manager reads of the login of the user and of the start of macOS.
+---@class StartReading
+---@field login Login|nil the login, or nil when `who` gives none
+---@field macos_start_time integer|nil the start of macOS in seconds since 1970, or nil when
+---`sysctl` gives none
+---@field seconds_since_macos_start number the time since the start of macOS, without the time
 ---asleep
+
+---A start under a login that the state file already saw pauses nothing, so a Reload Config after
+---the user ended the pause keeps the updates going.
+---A start that reads no login falls back to the start of macOS, and a start of macOS that could
+---not be read counts as a new one, because a pause that was not needed costs one press, and an
+---update after a restart replaces the record of the profile.
+---@param state State
+---@param reading StartReading
+---@return boolean whether no earlier start saw the login, or the start of macOS when no login was
+---read
+local function is_first_start(state, reading)
+    if reading.login then
+        return reading.login.time ~= state.last_seen_login_time
+    end
+    return reading.macos_start_time == nil
+        or reading.macos_start_time ~= state.last_seen_macos_start_time
+end
+
+---@param reading StartReading
+---@return number the seconds since the login, or since the start of macOS when no login was read
+local function count_seconds_since_login_or_macos_start(reading)
+    if reading.login then
+        return reading.login.seconds_since
+    end
+    return reading.seconds_since_macos_start
+end
+
+---@param state State
+---@param reading StartReading
 ---@param pause_after_macos_start_seconds number the setting, 0 when a start never pauses
 ---@return boolean whether the start pauses the active profile
-function profile_pause.is_due_at_start(
-    state,
-    macos_start_time,
-    seconds_since_macos_start,
-    pause_after_macos_start_seconds
-)
-    local is_first_start_after_macos_start = macos_start_time == nil
-        or macos_start_time ~= state.last_seen_macos_start_time
+function profile_pause.is_due_at_start(state, reading, pause_after_macos_start_seconds)
     return state.active_profile_number ~= nil
         and not state.is_active_profile_paused
-        and is_first_start_after_macos_start
-        and seconds_since_macos_start < pause_after_macos_start_seconds
+        and is_first_start(state, reading)
+        and count_seconds_since_login_or_macos_start(reading) < pause_after_macos_start_seconds
 end
 
 ---@param number integer the paused profile
----@param seconds_since_macos_start number
+---@param reading StartReading
 ---@param pause_after_macos_start_seconds number
 ---@return string the line of the console at the start that pauses the profile
-function profile_pause.describe_start_pause(
-    number,
-    seconds_since_macos_start,
-    pause_after_macos_start_seconds
-)
+function profile_pause.describe_start_pause(number, reading, pause_after_macos_start_seconds)
     return string.format(
-        "profile %d is paused, because Hammerspoon started %.0f seconds after macOS, less than"
+        "profile %d is paused, because Hammerspoon started %.0f seconds after %s, less than"
             .. " pause_after_macos_start_seconds of %g, and activating profile %d restores its"
             .. " layout",
         number,
-        seconds_since_macos_start,
+        count_seconds_since_login_or_macos_start(reading),
+        reading.login and "the login" or "macOS",
         pause_after_macos_start_seconds,
         number
     )

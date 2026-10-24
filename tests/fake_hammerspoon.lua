@@ -77,6 +77,12 @@ local fake_hammerspoon = {}
 ---fake gives as `sysctl -n kern.boottime` does, the same in every world by default, so that a
 ---world started from the state file of another runs under the same start of macOS, and false
 ---makes `sysctl` give no output
+---@field login_time integer|false|nil the login of the user in seconds since 1970, which the fake
+---gives to the minute as `who` does, and false makes `who` give no console line of the user, while
+---nil gives the start of macOS of the world, or the default one when `sysctl` gives none, so that a
+---world under a new start of macOS runs under a new login
+---@field seconds_since_login number|nil the time from the login to the start of the world, the
+---time since the start of macOS when nil
 
 local USER_SPACE_TYPE = 0
 local FULL_SCREEN_SPACE_TYPE = 4
@@ -117,6 +123,8 @@ local WINDOW_MANAGER_BUNDLE_ID = "com.apple.WindowManager"
 local SYMBOLIC_HOTKEYS_EXPORT = "defaults export com.apple.symbolichotkeys -"
 local MACOS_START_TIME_COMMAND = "/usr/sbin/sysctl -n kern.boottime"
 local DEFAULT_MACOS_START_TIME = 1729500000
+local LOGIN_COMMAND = "/usr/bin/id -un; /bin/date +%s; LC_ALL=C /usr/bin/who"
+local USER_NAME = "tester"
 
 ---The answer of the fake of `hs.execute` to each command that it runs, as the output and whether
 ---the command succeeded.
@@ -129,6 +137,24 @@ local COMMAND_ANSWERS = {
         return string.format(
             "{ sec = %d, usec = 0 } Mon Oct 21 10:40:00 2024\n",
             world.macos_start_time
+        ),
+            true
+    end,
+    [LOGIN_COMMAND] = function(world)
+        local reading_time = math.floor(world.login_time + world.login_offset_seconds + world.clock)
+        local console_line = world.has_console_login
+                and string.format(
+                    "%s       console      %s \n",
+                    USER_NAME,
+                    os.date("%b %e %H:%M", world.login_time)
+                )
+            or ""
+        return string.format(
+            "%s\n%d\n%s%s       ttys001      Oct 21 10:40 \n",
+            USER_NAME,
+            reading_time,
+            console_line,
+            USER_NAME
         ),
             true
     end,
@@ -236,6 +262,9 @@ function fake_hammerspoon.install(spec)
         macos_start_offset_seconds = spec.seconds_since_macos_start or 3600,
         macos_start_time = spec.macos_start_time == nil and DEFAULT_MACOS_START_TIME
             or spec.macos_start_time,
+        has_console_login = spec.login_time ~= false,
+        login_time = spec.login_time or spec.macos_start_time or DEFAULT_MACOS_START_TIME,
+        login_offset_seconds = spec.seconds_since_login or spec.seconds_since_macos_start or 3600,
         timers = {},
         screens = spec.screens,
         displays = spec.displays,

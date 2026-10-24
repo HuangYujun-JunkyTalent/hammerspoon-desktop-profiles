@@ -81,9 +81,10 @@ local default_settings = {}
 ---@field title_overflow TitleOverflow
 ---@field title_line_count integer the most lines of a title under title_overflow wrap
 ---@field builtin_screen_name_patterns string[]
----@field pause_after_macos_start_seconds number the first start of Hammerspoon after a start of
----macOS pauses the updates of the active profile when it comes less than this many seconds after
----the start of macOS, without the time asleep, and 0 never pauses them
+---@field pause_after_macos_start_seconds number the first start of Hammerspoon after a login
+---pauses the updates of the active profile when it comes less than this many seconds after the
+---minute of the login, or after the start of macOS when the login cannot be read, and 0 never
+---pauses them
 ---@field timing Timing
 
 ---@param state_file_path string
