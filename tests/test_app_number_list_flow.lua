@@ -711,7 +711,7 @@ return {
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
         local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
-        world.advance(2 * controller_world.SETTLE_SECONDS + 1)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["2"]()
         expect.equal(world.read_overlay(), {
@@ -754,7 +754,7 @@ return {
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
         local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
-        world.advance(2 * controller_world.SETTLE_SECONDS + 1)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.reach_delay_seconds = 1.5
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["2"]()
@@ -785,7 +785,7 @@ return {
         world.advance(controller_world.SETTLE_SECONDS)
         local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
         world.unreachable_window_ids[reading.id] = true
-        world.advance(2 * controller_world.SETTLE_SECONDS + 1)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["2"]()
         world.app_hotkeys["2"]()
