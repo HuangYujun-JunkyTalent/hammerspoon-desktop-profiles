@@ -3,6 +3,24 @@ local monitor_configuration = require("desktop_manager.core.monitor_configuratio
 
 local missing_windows = {}
 
+---The kinds of a record that no open window matched at a switch.
+---`OUT_OF_SIGHT` is a record out of sight, which gets no new window.
+---`ON_UNSEEN_DESKTOP` is a record whose window macOS lists on a desktop where Hammerspoon has not
+---seen it, so the record keeps that window.
+---`MISSING` is a record in sight whose window no longer exists.
+missing_windows.UNMATCHED_KIND = {
+    OUT_OF_SIGHT = "out_of_sight",
+    ON_UNSEEN_DESKTOP = "on_unseen_desktop",
+    MISSING = "missing",
+}
+
+---@alias UnmatchedKind "out_of_sight"|"on_unseen_desktop"|"missing"
+
+---@class UnmatchedRecord
+---@field record WindowRecord
+---@field kind UnmatchedKind
+---@field space_id integer|nil the desktop where macOS lists the window of an `ON_UNSEEN_DESKTOP`
+
 ---A recorded window in sight whose window no longer exists, with the place of its new window.
 ---@class MissingWindow
 ---@field record WindowRecord
@@ -12,6 +30,36 @@ local missing_windows = {}
 ---@field missing_windows MissingWindow[] ordered by the screens of the configuration, then by
 ---desktop
 ---@field unplaced_records WindowRecord[] records whose screen or desktop the configuration lacks
+
+---Gives each record that no open window matched its kind, in the order of the records.
+---@param records WindowRecord[]
+---@param find_space_id fun(window_id: integer): integer|nil the desktop where macOS lists a window,
+---which is read for every record with a window id
+---@return UnmatchedRecord[]
+function missing_windows.classify_unmatched(records, find_space_id)
+    local classified = {}
+    for _, record in ipairs(records) do
+        local space_id = record.window_id and find_space_id(record.window_id)
+        if record.is_out_of_sight then
+            table.insert(
+                classified,
+                { record = record, kind = missing_windows.UNMATCHED_KIND.OUT_OF_SIGHT }
+            )
+        elseif space_id then
+            table.insert(classified, {
+                record = record,
+                kind = missing_windows.UNMATCHED_KIND.ON_UNSEEN_DESKTOP,
+                space_id = space_id,
+            })
+        else
+            table.insert(
+                classified,
+                { record = record, kind = missing_windows.UNMATCHED_KIND.MISSING }
+            )
+        end
+    end
+    return classified
+end
 
 ---Orders the missing windows by the place of their new windows.
 ---A new window opens on the desktop that shows, and the restore moves it to its desktop by its

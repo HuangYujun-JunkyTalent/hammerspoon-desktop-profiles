@@ -596,20 +596,22 @@ end
 ---@param on_done fun(failures: string[], new_matches: WindowMatch[])
 function ProfileController:open_missing_windows(number, unmatched_records, on_done)
     local missing_records = {}
-    for _, record in ipairs(unmatched_records) do
-        local space_id = record.window_id and read_desktops.find_window_space_id(record.window_id)
-        if record.is_out_of_sight then
+    local classified =
+        missing_windows.classify_unmatched(unmatched_records, read_desktops.find_window_space_id)
+    for _, unmatched in ipairs(classified) do
+        local record = unmatched.record
+        if unmatched.kind == missing_windows.UNMATCHED_KIND.OUT_OF_SIGHT then
             self.log.f(
                 "%s window %q is recorded out of sight and gone",
                 record.app_name,
                 record.title
             )
-        elseif space_id then
+        elseif unmatched.kind == missing_windows.UNMATCHED_KIND.ON_UNSEEN_DESKTOP then
             self.log.f(
                 "%s window %q stays on desktop %d, where Hammerspoon has not seen it",
                 record.app_name,
                 record.title,
-                space_id
+                unmatched.space_id
             )
         else
             table.insert(missing_records, record)

@@ -85,6 +85,31 @@ return {
         expect.equal(#plan.unplaced_records, 2)
     end,
 
+    each_unmatched_record_gets_its_kind_in_the_order_of_the_records = function()
+        local out_of_sight = record_on(41, "built-in", 1)
+        out_of_sight.is_out_of_sight = true
+        local on_unseen_desktop = record_on(42, "built-in", 2)
+        local missing = record_on(43, "built-in", 1)
+        local without_id = record_on(44, "built-in", 1)
+        without_id.window_id = nil
+        local read_ids = {}
+        local classified = missing_windows.classify_unmatched(
+            { missing, out_of_sight, without_id, on_unseen_desktop },
+            function(window_id)
+                table.insert(read_ids, window_id)
+                return ({ [41] = 3, [42] = 14 })[window_id]
+            end
+        )
+        local kind = missing_windows.UNMATCHED_KIND
+        expect.equal(classified, {
+            { record = missing, kind = kind.MISSING },
+            { record = out_of_sight, kind = kind.OUT_OF_SIGHT },
+            { record = without_id, kind = kind.MISSING },
+            { record = on_unseen_desktop, kind = kind.ON_UNSEEN_DESKTOP, space_id = 14 },
+        })
+        expect.equal(read_ids, { 43, 41, 42 })
+    end,
+
     the_policy_names_two_values = function()
         expect.equal(missing_window_policy.is_valid(missing_window_policy.OPEN_NEW_WINDOW), true)
         expect.equal(
