@@ -1383,9 +1383,7 @@ function ProfileController:open_window_search()
             highlight_colors = self:current_highlight_colors(),
         },
         switcher = self:switcher_context(),
-        load_previews = function(window_ids, request)
-            self.preview_loader:load(window_ids, request)
-        end,
+        preview_loader = self.preview_loader,
         on_closed = function()
             self.search_panel = nil
         end,
@@ -1757,6 +1755,8 @@ function ProfileController:start_watchers()
                 )
                 if event == hs.application.watcher.unhidden then
                     self:handle_application_unhidden(application)
+                elseif event == hs.application.watcher.terminated and application then
+                    self.preview_loader:forget_app_icon(track_windows.bundle_id_of(application))
                 end
             end)
             :start()

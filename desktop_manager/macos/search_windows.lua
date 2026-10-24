@@ -3,7 +3,6 @@ local retained_timers = require("desktop_manager.macos.retained_timers")
 local search_opening_log = require("desktop_manager.core.search_opening_log")
 local search_overlay = require("desktop_manager.macos.search_overlay")
 local track_windows = require("desktop_manager.macos.track_windows")
-local window_previews = require("desktop_manager.macos.window_previews")
 local window_search = require("desktop_manager.core.window_search")
 
 ---The panel of the search of the windows: every window, the windows that accessibility does not
@@ -24,7 +23,7 @@ local search_windows = {}
 ---@field app_numbers AppNumber[] the numbers of the numbering profile, which the panel shows
 ---@field overlay_settings SearchOverlaySettings
 ---@field switcher SwitcherContext what brings the selected window to the front
----@field load_previews fun(window_ids: integer[], request: PreviewRequest)
+---@field preview_loader PreviewLoader the icons and the previews of the list and the search
 ---@field on_closed fun()
 ---@field report_failures fun(messages: string[])
 ---@field opened_at number when the shortcut asked for the panel, in seconds since the epoch
@@ -306,7 +305,8 @@ local function load_icons_and_previews(panel, entries)
     local window_ids = {}
     for _, entry in ipairs(entries) do
         if not panel.images.app_icons[entry.bundle_id] then
-            panel.images.app_icons[entry.bundle_id] = window_previews.read_app_icon(entry.bundle_id)
+            panel.images.app_icons[entry.bundle_id] =
+                panel.context.preview_loader:read_app_icon(entry.bundle_id)
         end
         if not panel.requested_preview_ids[entry.window_id] then
             panel.requested_preview_ids[entry.window_id] = true
@@ -315,7 +315,7 @@ local function load_icons_and_previews(panel, entries)
     end
     local times = panel.times
     times.requested_preview_count = times.requested_preview_count + #window_ids
-    panel.context.load_previews(window_ids, {
+    panel.context.preview_loader:load(window_ids, {
         preview_size = search_overlay.read_preview_size(panel.overlay),
         is_wanted = function()
             return panel.is_open
@@ -385,7 +385,7 @@ function search_windows.open(context)
     }
     for _, entry in ipairs(entries) do
         panel.images.app_icons[entry.bundle_id] = panel.images.app_icons[entry.bundle_id]
-            or window_previews.read_app_icon(entry.bundle_id)
+            or context.preview_loader:read_app_icon(entry.bundle_id)
     end
     panel.overlay = search_overlay.show(
         window_search.describe_view(panel.search),

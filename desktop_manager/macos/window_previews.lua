@@ -28,12 +28,6 @@ local window_previews = {}
 ---A Retina display shows a point with two pixels in each direction.
 local PIXELS_PER_POINT = 2
 
----@param bundle_id string
----@return table|nil an hs.image
-function window_previews.read_app_icon(bundle_id)
-    return hs.image.imageFromAppBundle(bundle_id)
-end
-
 ---The size that fits the snapshot, with its proportions, into the pixels of the preview divided by
 ---the blur.
 ---@param snapshot_size table the w and h of the snapshot
@@ -102,11 +96,15 @@ end
 ---Loads the previews of the list and the search under the setting for snapshots, and stops the
 ---snapshots until the next reload once a snapshot is slower than the time limit, because the
 ---function behind it once blocked Hammerspoon for two minutes on macOS 27.0.1.
+---Keeps the icon of each application that the list and the search showed, until the application
+---quits, so that an opening reads only the icons of the applications new to it.
 ---Each controller holds one loader, so that a stop holds until the next start of the controller.
 ---@class PreviewLoader
 ---@field settings Settings
 ---@field log table an hs.logger
 ---@field are_snapshots_stopped boolean whether a slow snapshot stopped the snapshots until a reload
+---@field app_icons table<string, table|false> the hs.image of the icon of each bundle id read, or
+---false for a bundle id without an icon
 local PreviewLoader = {}
 PreviewLoader.__index = PreviewLoader
 
@@ -115,9 +113,25 @@ PreviewLoader.__index = PreviewLoader
 ---@return PreviewLoader
 function window_previews.new_loader(settings, log)
     return setmetatable(
-        { settings = settings, log = log, are_snapshots_stopped = false },
+        { settings = settings, log = log, are_snapshots_stopped = false, app_icons = {} },
         PreviewLoader
     )
+end
+
+---@param bundle_id string
+---@return table|nil the hs.image of the icon of the application, read once until it quits
+function PreviewLoader:read_app_icon(bundle_id)
+    if self.app_icons[bundle_id] == nil then
+        self.app_icons[bundle_id] = hs.image.imageFromAppBundle(bundle_id) or false
+    end
+    return self.app_icons[bundle_id] or nil
+end
+
+---Forgets the icon of an application that quit, so that an update of the application shows its
+---new icon once it runs again.
+---@param bundle_id string
+function PreviewLoader:forget_app_icon(bundle_id)
+    self.app_icons[bundle_id] = nil
 end
 
 ---Takes the snapshots of the windows of a list one at a time, after the list shows, and gives each

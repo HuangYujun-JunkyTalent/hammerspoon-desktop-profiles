@@ -191,6 +191,25 @@ return {
         })
     end,
 
+    the_list_and_the_search_read_each_icon_once_until_its_application_quits = function()
+        local world = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        world.press_escape()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.press_escape()
+        world.release_modifiers()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(world.icon_reads, { ["com.apple.Safari"] = 1, ["com.microsoft.Word"] = 1 })
+        world.terminate_application("com.apple.Safari")
+        world.applications["com.apple.Safari"].is_running = true
+        world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        expect.equal(world.icon_reads, { ["com.apple.Safari"] = 2, ["com.microsoft.Word"] = 1 })
+    end,
+
     a_window_found_after_the_panel_opened_joins_it = function()
         local world = controller_world.start_world()
         world.advance(controller_world.SETTLE_SECONDS)

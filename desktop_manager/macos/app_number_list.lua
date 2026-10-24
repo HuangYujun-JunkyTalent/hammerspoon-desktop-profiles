@@ -9,7 +9,6 @@ local read_screens = require("desktop_manager.macos.read_screens")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local track_windows = require("desktop_manager.macos.track_windows")
 local window_inventory = require("desktop_manager.macos.window_inventory")
-local window_previews = require("desktop_manager.macos.window_previews")
 
 ---The list of numbered applications that a press of Control-Option with a number shows while the
 ---user holds the modifiers, and the press that brings the selected window to the front once they
@@ -173,11 +172,12 @@ local function index_unreached_by_id(unreached_windows)
 end
 
 ---@param entries AppNumber[]
+---@param preview_loader PreviewLoader
 ---@return table<string, table> the hs.image of the icon of each application, by its bundle id
-local function read_app_icons(entries)
+local function read_app_icons(entries, preview_loader)
     local app_icons = {}
     for _, entry in ipairs(entries) do
-        app_icons[entry.bundle_id] = window_previews.read_app_icon(entry.bundle_id)
+        app_icons[entry.bundle_id] = preview_loader:read_app_icon(entry.bundle_id)
     end
     return app_icons
 end
@@ -228,7 +228,10 @@ function AppNumberList:open(entries, app_number, modifiers)
         window_by_id = window_by_id,
         unreached_by_id = index_unreached_by_id(shown.unreached_windows),
         selection = app_number_list_view.press(applications, nil, app_number),
-        images = { app_icons = read_app_icons(entries), previews = {} },
+        images = {
+            app_icons = read_app_icons(entries, self.context.preview_loader),
+            previews = {},
+        },
         displays = list_displays_from_left(self.context.settings),
         modifiers = modifiers,
     }
