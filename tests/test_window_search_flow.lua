@@ -187,7 +187,7 @@ return {
         expect.equal(lines, {
             "search of 2 windows: shown after 0.000 seconds, first preview after 0.260 seconds,"
                 .. " 2 of 2 previews by 0.310 seconds, blocking Hammerspoon for 0.020 seconds in"
-                .. " total and 0.010 seconds at most, list of the window server after 0.250"
+                .. " total and 0.010 seconds at most, list of the window server after 0.260"
                 .. " seconds, blocking Hammerspoon for 0.000 seconds, 2 keys, waiting 0.030"
                 .. " seconds at most",
         })

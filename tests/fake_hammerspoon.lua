@@ -1311,6 +1311,10 @@ function fake_hammerspoon.install(spec)
         new_timer(seconds, callback, false)
     end
 
+    ---Runs the timers that fall due within the seconds, in the order of their due times.
+    ---A callback may move the clock on, such as a decode of a preview, and a timer whose due time
+    ---the clock has passed then runs at the time of the clock, so the clock never moves back.
+    ---@param seconds number
     function world.advance(seconds)
         local target = world.clock + seconds
         while true do
@@ -1327,7 +1331,7 @@ function fake_hammerspoon.install(spec)
             if not next_timer then
                 break
             end
-            world.clock = next_timer.due
+            world.clock = math.max(world.clock, next_timer.due)
             if next_timer.is_repeating then
                 next_timer.due = world.clock + math.max(next_timer.interval, 0.001)
             else
@@ -1342,7 +1346,7 @@ function fake_hammerspoon.install(spec)
                 next_timer.callback()
             end
         end
-        world.clock = target
+        world.clock = math.max(world.clock, target)
     end
 
     local function managed_displays()
