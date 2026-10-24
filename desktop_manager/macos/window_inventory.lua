@@ -71,10 +71,8 @@ local function map_applications(pids)
     for _, pid in ipairs(pids) do
         local application = hs.application.applicationForPID(pid)
         if application and application:kind() == track_windows.REGULAR_APPLICATION_KIND then
-            application_by_pid[pid] = {
-                bundle_id = track_windows.bundle_id_of(application),
-                app_name = application:name() or "unknown",
-            }
+            local bundle_id, app_name = track_windows.identify_application(application)
+            application_by_pid[pid] = { bundle_id = bundle_id, app_name = app_name }
         end
     end
     return application_by_pid

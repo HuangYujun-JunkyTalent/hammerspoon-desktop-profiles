@@ -30,6 +30,13 @@ function track_windows.bundle_id_of(application)
     return application:bundleID() or application:name() or "unknown"
 end
 
+---@param application table|nil an hs.application
+---@return string bundle_id the bundle id of the application, as `bundle_id_of` gives it
+---@return string app_name the name of the application, or "unknown"
+function track_windows.identify_application(application)
+    return track_windows.bundle_id_of(application), application and application:name() or "unknown"
+end
+
 ---The running application of the bundle id, found without the search of `hs.application.get`
 ---through every window of every application when no application of the bundle id runs.
 ---@param bundle_id string
@@ -95,10 +102,11 @@ function track_windows.observe(window)
     local window_id = window:id()
     local is_minimized = window:isMinimized()
     local is_app_hidden = application ~= nil and application:isHidden()
+    local bundle_id, app_name = track_windows.identify_application(application)
     return {
         window_id = window_id,
-        bundle_id = track_windows.bundle_id_of(application),
-        app_name = application and application:name() or "unknown",
+        bundle_id = bundle_id,
+        app_name = app_name,
         title = window:title() or "",
         space_id = not is_minimized and read_desktops.find_window_space_id(window_id) or nil,
         frame = not is_minimized and read_screens.to_rect(window:frame()) or nil,

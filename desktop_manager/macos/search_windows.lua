@@ -52,12 +52,12 @@ function search_windows.list_entries(filter_windows, unreached_windows)
         local window_id = window:id()
         if window_id and window_id > 0 and not window_by_id[window_id] then
             window_by_id[window_id] = window
-            local application = window:application()
+            local bundle_id, app_name = track_windows.identify_application(window:application())
             table.insert(entries, {
                 window_id = window_id,
                 title = window:title() or "",
-                bundle_id = track_windows.bundle_id_of(application),
-                app_name = application and application:name() or "unknown",
+                bundle_id = bundle_id,
+                app_name = app_name,
             })
         end
     end
