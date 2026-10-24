@@ -145,4 +145,53 @@ return {
             { 50 }
         )
     end,
+
+    an_unseen_window_moves_into_view_on_the_desktop_that_its_screen_shows = function()
+        expect.equal(reach_plan.plan_moves_into_view({ UNSEEN_WINDOW }, LAYOUT), {
+            moves = { { window_id = 50, space_id = 3 } },
+            desktop_numbers = { [50] = 2 },
+            windows_without_shown_desktop = {},
+        })
+    end,
+
+    an_unseen_window_whose_screen_shows_no_desktop_gets_no_move = function()
+        local window_in_full_screen = {
+            window_id = 51,
+            bundle_id = "com.apple.Safari",
+            app_name = "Safari",
+            title = "Downloads",
+            space_id = 8,
+            frame = EXTERNAL_FRAME,
+        }
+        local layout = {
+            screens = {
+                LAYOUT.screens[1],
+                {
+                    screen_uuid = "EXTERNAL-UUID",
+                    screen_frame = EXTERNAL_FRAME,
+                    space_ids = { 7, 8 },
+                    active_space_id = 99,
+                },
+            },
+            focused_space_id = 3,
+        }
+        expect.equal(
+            reach_plan.plan_moves_into_view({ window_in_full_screen, UNSEEN_WINDOW }, layout),
+            {
+                moves = { { window_id = 50, space_id = 3 } },
+                desktop_numbers = { [50] = 2 },
+                windows_without_shown_desktop = { window_in_full_screen },
+            }
+        )
+    end,
+
+    the_windows_of_the_ids_keep_their_order_and_show_once = function()
+        local first = { window_id = 1 }
+        local second = { window_id = 2 }
+        local third = { window_id = 3 }
+        expect.equal(
+            reach_plan.keep_windows_of_ids({ first, second, third }, { 3, 1, 3 }),
+            { first, third }
+        )
+    end,
 }

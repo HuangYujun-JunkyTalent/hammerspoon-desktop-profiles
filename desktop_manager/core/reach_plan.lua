@@ -97,4 +97,49 @@ function reach_plan.select_concealed(method, unreached, candidates)
     return window_ids
 end
 
+---The moves that bring unseen windows into view, on the desktop that their screens show.
+---@class MovesIntoView
+---@field moves WindowMove[] in the order of the windows
+---@field desktop_numbers table<integer, integer> the desktop of each moved window before its move
+---@field windows_without_shown_desktop ServerWindow[] the windows whose screen shows no desktop,
+---in their order
+
+---@param windows ServerWindow[]
+---@param desktop_layout DesktopLayout
+---@return MovesIntoView
+function reach_plan.plan_moves_into_view(windows, desktop_layout)
+    local plan = { moves = {}, desktop_numbers = {}, windows_without_shown_desktop = {} }
+    for _, window in ipairs(windows) do
+        local location = locate_desktops.locate_space(desktop_layout, window.space_id)
+        local shown_desktop_number = location
+            and locate_desktops.find_shown_desktop_number(location.screen)
+        local view_space_id = location
+            and shown_desktop_number
+            and location.screen.space_ids[shown_desktop_number]
+        if location and view_space_id then
+            plan.desktop_numbers[window.window_id] = location.desktop_number
+            table.insert(plan.moves, { window_id = window.window_id, space_id = view_space_id })
+        else
+            table.insert(plan.windows_without_shown_desktop, window)
+        end
+    end
+    return plan
+end
+
+---@param windows ServerWindow[]
+---@param window_ids integer[]
+---@return ServerWindow[] the windows of the ids, each once, in the order of the windows
+function reach_plan.keep_windows_of_ids(windows, window_ids)
+    local is_chosen, kept = {}, {}
+    for _, window_id in ipairs(window_ids) do
+        is_chosen[window_id] = true
+    end
+    for _, window in ipairs(windows) do
+        if is_chosen[window.window_id] then
+            table.insert(kept, window)
+        end
+    end
+    return kept
+end
+
 return reach_plan

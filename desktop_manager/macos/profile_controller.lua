@@ -743,29 +743,21 @@ function ProfileController:reach_windows(windows, on_done)
     self.log.f("moving %d windows into view to reach them", #windows)
     self:show_busy_message("Finding the windows on other desktops… please wait")
     local timing = self.settings.timing
-    local desktop_layout = read_desktops.read_desktop_layout()
-    local failures, moves, window_by_id, desktop_numbers = {}, {}, {}, {}
+    local plan = reach_plan.plan_moves_into_view(windows, read_desktops.read_desktop_layout())
+    local moves, desktop_numbers = plan.moves, plan.desktop_numbers
+    local failures, window_by_id = {}, {}
     for _, window in ipairs(windows) do
         window_by_id[window.window_id] = window
-        local location = locate_desktops.locate_space(desktop_layout, window.space_id)
-        local shown_desktop_number = location
-            and locate_desktops.find_shown_desktop_number(location.screen)
-        local view_space_id = location
-            and shown_desktop_number
-            and location.screen.space_ids[shown_desktop_number]
-        if view_space_id then
-            desktop_numbers[window.window_id] = location.desktop_number
-            table.insert(moves, { window_id = window.window_id, space_id = view_space_id })
-        else
-            table.insert(
-                failures,
-                string.format(
-                    "%s window %q stays out of reach, because its screen shows no desktop",
-                    window.app_name,
-                    window.title
-                )
+    end
+    for _, window in ipairs(plan.windows_without_shown_desktop) do
+        table.insert(
+            failures,
+            string.format(
+                "%s window %q stays out of reach, because its screen shows no desktop",
+                window.app_name,
+                window.title
             )
-        end
+        )
     end
     move_windows.move_all(
         moves,
@@ -818,22 +810,6 @@ function ProfileController:reach_windows(windows, on_done)
             )
         end)
     )
-end
-
----@param windows ServerWindow[]
----@param window_ids integer[]
----@return ServerWindow[] the windows of the ids, each once, in the order of the windows
-local function keep_windows_of_ids(windows, window_ids)
-    local is_chosen, kept = {}, {}
-    for _, window_id in ipairs(window_ids) do
-        is_chosen[window_id] = true
-    end
-    for _, window in ipairs(windows) do
-        if is_chosen[window.window_id] then
-            table.insert(kept, window)
-        end
-    end
-    return kept
 end
 
 ---Shows the recorded desktop, or desktop 1, of each screen that shows a space in full screen,
@@ -1022,7 +998,7 @@ function ProfileController:switch_to_profile(number, started_at, work_number)
             window_ids_to_reach
         )
     end
-    local windows_to_reach = keep_windows_of_ids(unreached, window_ids_to_reach)
+    local windows_to_reach = reach_plan.keep_windows_of_ids(unreached, window_ids_to_reach)
     if not has_layout and #windows_to_reach == 0 then
         conceal_and_restore({})
         return
@@ -2241,7 +2217,7 @@ function ProfileController:restore_after_screens_changed()
                 self.known_windows:list_managed(profile_state.list_recorded_window_ids(arrangement))
             local unreached = self.known_windows:list_unreached_managed(windows)
             local match_result = self:match_with_unseen(arrangement, windows, unreached)
-            local windows_to_reach = keep_windows_of_ids(
+            local windows_to_reach = reach_plan.keep_windows_of_ids(
                 unreached,
                 reach_plan.select_misplaced(
                     unreached,
