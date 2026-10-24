@@ -67,8 +67,6 @@ end
 ---@field rest string the start of a line whose end has not come yet
 ---@field silence_timer table|nil the hs.timer that gives the helper up when no output comes
 ---@field has_exited boolean
----@field is_dropped boolean whether the queue stopped the helper, so that its later output and its
----exit count for nothing
 
 ---The windows of a list whose previews the helper takes, in batches.
 ---The queue starts one helper with the windows that wait once the list has drawn, and the windows
@@ -79,7 +77,8 @@ end
 ---@field waiting_window_ids integer[] the windows that wait for the next helper
 ---@field start_timer table|nil the hs.timer that starts the next helper once the list has drawn
 ---@field helper PreviewHelper|nil the helper that runs
----@field is_stopped boolean whether the list closed or a helper failed, which ends the loading
+---@field is_stopped boolean whether the list closed or a helper failed, which ends the loading, so
+---that the later output and the exit of the helper count for nothing
 local PreviewQueue = {}
 PreviewQueue.__index = PreviewQueue
 
@@ -113,7 +112,6 @@ function PreviewQueue:stop()
     local helper = self.helper
     self.helper = nil
     if helper then
-        helper.is_dropped = true
         retained_timers.stop(helper.silence_timer)
         helper.silence_timer = nil
         if helper.task and helper.task:isRunning() then
@@ -177,7 +175,7 @@ end
 ---@param helper PreviewHelper
 ---@param output string|nil
 function PreviewQueue:read_helper_output(helper, output)
-    if helper.is_dropped or self.is_stopped or not output or output == "" then
+    if self.is_stopped or not output or output == "" then
         return
     end
     if not helper.has_exited then
@@ -202,7 +200,7 @@ function PreviewQueue:end_helper(helper, exit_code, output)
     retained_timers.stop(helper.silence_timer)
     helper.silence_timer = nil
     self:read_helper_output(helper, output)
-    if helper.is_dropped or self.is_stopped then
+    if self.is_stopped then
         return
     end
     if exit_code ~= 0 then
@@ -217,7 +215,7 @@ end
 function PreviewQueue:start_helper()
     local window_ids = self.waiting_window_ids
     self.waiting_window_ids = {}
-    local helper = { rest = "", has_exited = false, is_dropped = false }
+    local helper = { rest = "", has_exited = false }
     self.helper = helper
     helper.task = javascript_tasks.new(
         HELPER_SCRIPT_NAME,
