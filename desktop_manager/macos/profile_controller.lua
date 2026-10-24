@@ -1847,7 +1847,7 @@ end
 ---@param reading StartReading
 function ProfileController:pause_at_start(reading)
     local number = self.state.active_profile_number
-    local pause_seconds = self.settings.pause_after_macos_start_seconds
+    local pause_seconds = self.settings.pause_after_login_seconds
     local is_due = profile_pause.is_due_at_start(self.state, reading, pause_seconds)
     if reading.macos_start_time then
         self.state =

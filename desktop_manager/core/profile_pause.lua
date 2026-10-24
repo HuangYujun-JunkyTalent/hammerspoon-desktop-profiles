@@ -125,28 +125,28 @@ end
 
 ---@param state State
 ---@param reading StartReading
----@param pause_after_macos_start_seconds number the setting, 0 when a start never pauses
+---@param pause_after_login_seconds number the setting, 0 when a start never pauses
 ---@return boolean whether the start pauses the active profile
-function profile_pause.is_due_at_start(state, reading, pause_after_macos_start_seconds)
+function profile_pause.is_due_at_start(state, reading, pause_after_login_seconds)
     return state.active_profile_number ~= nil
         and not state.is_active_profile_paused
         and is_first_start(state, reading)
-        and count_seconds_since_login_or_macos_start(reading) < pause_after_macos_start_seconds
+        and count_seconds_since_login_or_macos_start(reading) < pause_after_login_seconds
 end
 
 ---@param number integer the paused profile
 ---@param reading StartReading
----@param pause_after_macos_start_seconds number
+---@param pause_after_login_seconds number
 ---@return string the line of the console at the start that pauses the profile
-function profile_pause.describe_start_pause(number, reading, pause_after_macos_start_seconds)
+function profile_pause.describe_start_pause(number, reading, pause_after_login_seconds)
     return string.format(
         "profile %d is paused, because Hammerspoon started %.0f seconds after %s, less than"
-            .. " pause_after_macos_start_seconds of %g, and activating profile %d restores its"
+            .. " pause_after_login_seconds of %g, and activating profile %d restores its"
             .. " layout",
         number,
         count_seconds_since_login_or_macos_start(reading),
         reading.login and "the login" or "macOS",
-        pause_after_macos_start_seconds,
+        pause_after_login_seconds,
         number
     )
 end

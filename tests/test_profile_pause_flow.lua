@@ -56,7 +56,7 @@ return {
         expect.equal(
             world.log_lines[1],
             "profile 1 is paused, because Hammerspoon started 60 seconds after the login, less"
-                .. " than pause_after_macos_start_seconds of 300, and activating profile 1"
+                .. " than pause_after_login_seconds of 300, and activating profile 1"
                 .. " restores its layout"
         )
         expect.equal(world.saved_json.last_seen_login_time, MACOS_START_TIME_AFTER_RESTART)
@@ -97,7 +97,7 @@ return {
         expect.equal(
             world.log_lines[1],
             "profile 1 is paused, because Hammerspoon started 60 seconds after macOS, less than"
-                .. " pause_after_macos_start_seconds of 300, and activating profile 1 restores"
+                .. " pause_after_login_seconds of 300, and activating profile 1 restores"
                 .. " its layout"
         )
         world.hotkeys["1"]()
@@ -119,7 +119,7 @@ return {
         )
         expect.equal(at_setting.state.is_active_profile_paused, false)
         local _, turned_off = controller_world.start_world(
-            { pause_after_macos_start_seconds = 0 },
+            { pause_after_login_seconds = 0 },
             saved,
             {
                 seconds_since_macos_start = SECONDS_AFTER_LOGIN,
@@ -132,7 +132,7 @@ return {
     a_reload_during_the_pause_keeps_it_also_after_the_setting = function()
         local first_world = start_after_login()
         local world, controller = controller_world.start_world(
-            { pause_after_macos_start_seconds = 0 },
+            { pause_after_login_seconds = 0 },
             first_world.saved_json,
             { macos_start_time = MACOS_START_TIME_AFTER_RESTART }
         )

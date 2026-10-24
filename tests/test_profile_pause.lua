@@ -163,13 +163,13 @@ return {
         expect.equal(
             profile_pause.describe_start_pause(2, read_after_login(42), 300),
             "profile 2 is paused, because Hammerspoon started 42 seconds after the login, less"
-                .. " than pause_after_macos_start_seconds of 300, and activating profile 2"
+                .. " than pause_after_login_seconds of 300, and activating profile 2"
                 .. " restores its layout"
         )
         expect.equal(
             profile_pause.describe_start_pause(2, read_without_login(nil, 42.4), 300),
             "profile 2 is paused, because Hammerspoon started 42 seconds after macOS, less than"
-                .. " pause_after_macos_start_seconds of 300, and activating profile 2 restores"
+                .. " pause_after_login_seconds of 300, and activating profile 2 restores"
                 .. " its layout"
         )
         expect.equal(
