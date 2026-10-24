@@ -1,6 +1,6 @@
+local app_number_list = require("desktop_manager.macos.app_number_list")
 local app_numbers = require("desktop_manager.core.app_numbers")
 local app_pool = require("desktop_manager.core.app_pool")
-local app_number_list = require("desktop_manager.macos.app_number_list")
 local app_pool_window = require("desktop_manager.macos.app_pool_window")
 local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
