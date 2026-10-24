@@ -16,6 +16,7 @@ local poll_until = require("desktop_manager.macos.poll_until")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
 local retained_timers = require("desktop_manager.macos.retained_timers")
+local thumbnail_press_log = require("desktop_manager.core.thumbnail_press_log")
 local track_windows = require("desktop_manager.macos.track_windows")
 
 local mission_control_desktops = {}
@@ -485,58 +486,12 @@ local function find_thumbnail_for_second_press(space_id, screen_uuid)
     return thumbnail, nil, is_group_shown
 end
 
----The focus of a window of the application of the chosen window before a press, so that the
----application is the frontmost application when the press ends.
----@class PressFocus
----@field window_description string such as 'Code window "future-work.tex"'
----@field waited_seconds number the seconds from the focus to the end of the wait
----@field frontmost_after number|nil the seconds from the focus until the application was the
----frontmost application, or nil when it was not at the end of the wait
-
----What happened after the first press on a thumbnail, in seconds since that press.
----@class ThumbnailPress
----@field focus PressFocus|nil the focus before the press, or nil when the press needed none
----@field active_after number|nil when macOS first reported the desktop
----@field closed_after number|nil when the group of the display had gone with the desktop active
----@field is_closed_by_toggle boolean|nil whether the group still showed at the end of the wait
----@field second_press_after number|nil when the desktop manager checked for a second press
----@field is_second_press_made boolean whether a second press on the thumbnail was made
----@field is_closed_at_second_check boolean|nil whether the group of the display had closed at the
----second check
----@field is_opened_again boolean whether Mission Control opened a second time, because the group of
----the display had closed at the second check and the desktop was still not active
----@field second_opening_press_after number|nil when the press of the second opening was made
----@field second_press_error string|nil the error of the second press, the error of the read of the
----desktops at the second check, why the second check found no thumbnail while the group of the
----screen showed, or why the second opening failed
-
 ---A failed read counts as a desktop not yet active, so that the press goes on polling.
 ---@param space_id integer
 ---@return boolean whether macOS reported the desktop as active
 local function is_space_active_safely(space_id)
     local is_read, is_active = pcall(read_desktops.is_space_active, space_id)
     return is_read and is_active == true
-end
-
----@param focus PressFocus|nil
----@return string such as 'Code window "future-work.tex" focused before the press, frontmost after
----0.10 seconds'
-local function describe_focus(focus)
-    if not focus then
-        return "no focus before the press"
-    end
-    if focus.frontmost_after then
-        return string.format(
-            "%s focused before the press, frontmost after %.2f seconds",
-            focus.window_description,
-            focus.frontmost_after
-        )
-    end
-    return string.format(
-        "%s focused before the press, not frontmost after %.2f seconds",
-        focus.window_description,
-        focus.waited_seconds
-    )
 end
 
 ---Writes the focus before the press and the failure of a press that ends before its first press on
@@ -547,96 +502,8 @@ end
 ---@param failure string
 local function log_failure_after_focus(description, focus, failure)
     if focus then
-        get_log().f("%s: %s. %s", description, describe_focus(focus), failure)
+        get_log().f("%s: %s. %s", description, thumbnail_press_log.describe_focus(focus), failure)
     end
-end
-
----@param press ThumbnailPress
----@return string such as "a second press after 2.00 seconds"
-local function describe_second_check(press)
-    local failure = press.second_press_error and (", which failed: " .. press.second_press_error)
-        or ""
-    if not press.second_press_after then
-        return "one press"
-    end
-    if press.is_opened_again then
-        local pressed = press.second_opening_press_after
-                and string.format(
-                    " and a second press after %.2f seconds",
-                    press.second_opening_press_after
-                )
-            or ""
-        return string.format("a second opening after %.2f seconds", press.second_press_after)
-            .. pressed
-            .. failure
-    end
-    if press.is_second_press_made then
-        return string.format("a second press after %.2f seconds", press.second_press_after)
-            .. failure
-    end
-    return string.format(
-        "no second press after %.2f seconds, because %s",
-        press.second_press_after,
-        press.second_press_error or "Mission Control had closed"
-    )
-end
-
----@param press ThumbnailPress
----@param waited_seconds number
----@return string such as "no focus before the press, active after 0.84 seconds, Mission Control
----closed after 0.90 seconds, one press"
-local function describe_press(press, waited_seconds)
-    local parts = { describe_focus(press.focus) }
-    if press.active_after then
-        table.insert(parts, string.format("active after %.2f seconds", press.active_after))
-    else
-        table.insert(parts, string.format("not active after %.2f seconds", waited_seconds))
-    end
-    if press.closed_after then
-        table.insert(
-            parts,
-            string.format("Mission Control closed after %.2f seconds", press.closed_after)
-        )
-    elseif press.is_closed_by_toggle then
-        table.insert(
-            parts,
-            string.format(
-                "Mission Control still showed after %.2f seconds and closed by a toggle",
-                waited_seconds
-            )
-        )
-    else
-        table.insert(
-            parts,
-            string.format("Mission Control had closed by %.2f seconds", waited_seconds)
-        )
-    end
-    table.insert(parts, describe_second_check(press))
-    return table.concat(parts, ", ")
-end
-
----@param press ThumbnailPress
----@return string the error of each press, such as "The second press failed: ..."
-local function describe_press_errors(press)
-    if not press.second_press_error then
-        return "No press failed."
-    end
-    if press.is_second_press_made then
-        return string.format("The second press failed: %s.", press.second_press_error)
-    end
-    return string.format("At the second check, %s.", press.second_press_error)
-end
-
----@param press ThumbnailPress
----@return string such as "one opening and two presses"
-local function count_openings_and_presses(press)
-    if press.is_opened_again then
-        return "two openings and two presses"
-    end
-    if press.is_second_press_made then
-        return "one opening and two presses"
-    end
-    return "one opening and one press"
 end
 
 ---Presses the thumbnail of the desktop, which shows it and closes Mission Control, and waits up
@@ -714,7 +581,7 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
         get_log().f(
             "%s: %s",
             description,
-            describe_press(press, hs.timer.secondsSinceEpoch() - pressed_at)
+            thumbnail_press_log.describe_press(press, hs.timer.secondsSinceEpoch() - pressed_at)
         )
         on_done(
             string.format(
@@ -770,7 +637,7 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
                     description,
                     shown_space_id and describe_desktop(shown_space_id) or "no desktop",
                     press.is_closed_by_toggle and "still showed" or "had closed",
-                    describe_press_errors(press)
+                    thumbnail_press_log.describe_press_errors(press)
                 )
             )
             on_done(
@@ -778,11 +645,15 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
                     "Mission Control did not show %s within %g seconds, after %s",
                     description,
                     timing.desktop_show_timeout_seconds,
-                    count_openings_and_presses(press)
+                    thumbnail_press_log.count_openings_and_presses(press)
                 )
             )
         end)
-        get_log().f("%s: %s", description, describe_press(press, waited_seconds))
+        get_log().f(
+            "%s: %s",
+            description,
+            thumbnail_press_log.describe_press(press, waited_seconds)
+        )
     end
 
     poll = function()
@@ -793,7 +664,11 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
         end
         if press.active_after and find_display_group(screen_id) == nil then
             press.closed_after = waited_seconds
-            get_log().f("%s: %s", description, describe_press(press, waited_seconds))
+            get_log().f(
+                "%s: %s",
+                description,
+                thumbnail_press_log.describe_press(press, waited_seconds)
+            )
             retained_timers.after(
                 timing.desktop_settle_seconds,
                 continue_opening(function()
