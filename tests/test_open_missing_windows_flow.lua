@@ -101,7 +101,7 @@ return {
         expect.equal(controller_world.recorded_sight(controller, 1, reopened.id), "in sight")
     end,
 
-    the_policy_that_opens_new_windows_opens_one_despite_a_window_with_the_title = function()
+    match_id_alone_opens_a_new_window_despite_a_window_with_the_title = function()
         local world, controller = controller_world.start_world({
             match_windows_by = match_windows_by.ID,
             missing_window_policy = missing_window_policy.MATCH_ID_ALONE,
