@@ -2792,6 +2792,41 @@ return {
         expect.equal(controller.state.active_profile_number, nil)
     end,
 
+    a_url_activates_a_profile_and_deactivates_it_while_it_is_active = function()
+        local world, controller = start_world()
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "toggle", profile = "2" }
+        )
+        world.advance(SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 2)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "toggle", profile = "2" }
+        )
+        expect.equal(controller.state.active_profile_number, nil)
+        expect.equal(world.alerts[#world.alerts], "No desktop profile")
+    end,
+
+    a_url_changes_when_monitor_configurations_are_the_same = function()
+        local world, controller = start_world()
+        expect.equal(controller.state.monitor_matching, "by_count")
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "cycle-monitor-matching" }
+        )
+        expect.equal(controller.state.monitor_matching, "by_identity")
+        expect.equal(
+            world.alerts[#world.alerts],
+            "Same monitor configuration by name of each external monitor"
+        )
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "cycle-monitor-matching" }
+        )
+        expect.equal(controller.state.monitor_matching, "by_count")
+    end,
+
     a_bad_url_is_reported = function()
         local world = start_world()
         world.url_handlers["desktop-manager"](

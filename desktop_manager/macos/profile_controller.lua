@@ -1407,6 +1407,50 @@ function ProfileController:toggle_window_search()
     self:open_window_search()
 end
 
+---The method that each action of a URL runs.
+---@type table<string, fun(controller: ProfileController, command: Command)>
+local URL_ACTION_HANDLERS = {
+    [url_command.ACTIVATE] = function(controller, command)
+        controller:activate_profile(command.profile_number)
+    end,
+    [url_command.TOGGLE] = function(controller, command)
+        controller:toggle_profile(command.profile_number)
+    end,
+    [url_command.DEACTIVATE] = function(controller, command)
+        if command.profile_number then
+            controller:deactivate_profile_if_active(command.profile_number)
+        else
+            controller:deactivate_profile()
+        end
+    end,
+    [url_command.RENAME] = function(controller, command)
+        controller:rename_profile(command.profile_number, command.name)
+    end,
+    [url_command.CYCLE_MONITOR_MATCHING] = function(controller)
+        controller:set_monitor_matching(
+            monitor_matching.next_after(controller.state.monitor_matching)
+        )
+    end,
+    [url_command.NUMBER_APP] = function(controller, command)
+        controller:number_running_application(command.app_number, command.app)
+    end,
+    [url_command.RELEASE_APP_NUMBER] = function(controller, command)
+        controller:release_app_number(command.app_number)
+    end,
+    [url_command.RESET_APP_NUMBERS] = function(controller)
+        controller:reset_app_numbers()
+    end,
+    [url_command.SAVE] = function(controller)
+        controller:capture_active_arrangement()
+    end,
+    [url_command.CLEAR] = function(controller, command)
+        controller:clear_profile(command.profile_number)
+    end,
+    [url_command.SEARCH_WINDOWS] = function(controller)
+        controller:open_window_search()
+    end,
+}
+
 ---@param params table<string, string>
 function ProfileController:run_url_command(params)
     local command, error_message = url_command.parse(params, {
@@ -1417,30 +1461,9 @@ function ProfileController:run_url_command(params)
         notify(error_message)
         return
     end
-    if command.action == url_command.ACTIVATE then
-        self:activate_profile(command.profile_number)
-    elseif command.action == url_command.TOGGLE then
-        self:toggle_profile(command.profile_number)
-    elseif command.action == url_command.DEACTIVATE and command.profile_number then
-        self:deactivate_profile_if_active(command.profile_number)
-    elseif command.action == url_command.DEACTIVATE then
-        self:deactivate_profile()
-    elseif command.action == url_command.RENAME then
-        self:rename_profile(command.profile_number, command.name)
-    elseif command.action == url_command.CYCLE_MONITOR_MATCHING then
-        self:set_monitor_matching(monitor_matching.next_after(self.state.monitor_matching))
-    elseif command.action == url_command.NUMBER_APP then
-        self:number_running_application(command.app_number, command.app)
-    elseif command.action == url_command.RELEASE_APP_NUMBER then
-        self:release_app_number(command.app_number)
-    elseif command.action == url_command.RESET_APP_NUMBERS then
-        self:reset_app_numbers()
-    elseif command.action == url_command.SAVE then
-        self:capture_active_arrangement()
-    elseif command.action == url_command.CLEAR then
-        self:clear_profile(command.profile_number)
-    elseif command.action == url_command.SEARCH_WINDOWS then
-        self:open_window_search()
+    local handle = URL_ACTION_HANDLERS[command.action]
+    if handle then
+        handle(self, command)
     end
 end
 
