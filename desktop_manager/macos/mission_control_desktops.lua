@@ -16,6 +16,7 @@ local poll_until = require("desktop_manager.macos.poll_until")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
 local retained_timers = require("desktop_manager.macos.retained_timers")
+local track_windows = require("desktop_manager.macos.track_windows")
 
 local mission_control_desktops = {}
 
@@ -123,7 +124,7 @@ end
 ---@param screen_id integer the `hs.screen:id()` of the display
 ---@return table|nil display_group the `mc.display` element, present while Mission Control shows
 local function find_display_group(screen_id)
-    local application = hs.application.applicationsForBundleID(MISSION_CONTROL_OWNER_BUNDLE_ID)[1]
+    local application = track_windows.find_running_application(MISSION_CONTROL_OWNER_BUNDLE_ID)
     if not application then
         return nil
     end

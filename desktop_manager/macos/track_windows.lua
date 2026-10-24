@@ -10,6 +10,9 @@ local track_windows = {}
 ---which takes a while with many windows.
 local REACH_POLL_SECONDS = 0.2
 
+---The kind of an hs.application with a Dock icon.
+track_windows.REGULAR_APPLICATION_KIND = 1
+
 ---A window filter that sees the standard windows of every desktop.
 ---Minimized windows and the windows of hidden applications count as well.
 ---@return table filter an hs.window.filter
@@ -25,6 +28,14 @@ function track_windows.bundle_id_of(application)
         return "unknown"
     end
     return application:bundleID() or application:name() or "unknown"
+end
+
+---The running application of the bundle id, found without the search of `hs.application.get`
+---through every window of every application when no application of the bundle id runs.
+---@param bundle_id string
+---@return table|nil an hs.application
+function track_windows.find_running_application(bundle_id)
+    return hs.application.applicationsForBundleID(bundle_id)[1]
 end
 
 ---@param windows table[] hs.window objects

@@ -29,7 +29,7 @@ end
 ---@param space_id integer the desktop that the press shows
 ---@return table|nil window an hs.window
 function focus_before_press.find_window_to_focus(chosen, space_id)
-    local application = hs.application.applicationsForBundleID(chosen.bundle_id)[1]
+    local application = track_windows.find_running_application(chosen.bundle_id)
     if not application then
         return nil
     end

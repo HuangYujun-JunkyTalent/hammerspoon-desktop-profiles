@@ -26,9 +26,6 @@ local app_switcher = {}
 ---@field refuse_while_busy fun(): boolean shows "Desktop Manager is still switching" and returns
 ---true while a switch, a restore or a press runs
 
----The kind of an hs.application with a Dock icon.
-local REGULAR_APPLICATION_KIND = 1
-
 ---The accessibility role of a window, which a sheet, a drawer or another element lacks.
 local WINDOW_ROLE = "AXWindow"
 
@@ -43,14 +40,6 @@ local WINDOW_ROLE = "AXWindow"
 ---@field setting string a value of hidden_application_windows
 ---@field is_hidden fun(bundle_id: string, application: table|nil): boolean whether the application
 ---is hidden
-
----The running application of the bundle id, found without the search of `hs.application.get`
----through every window of every application when no application of the bundle id runs.
----@param bundle_id string
----@return table|nil an hs.application
-local function find_running_application(bundle_id)
-    return hs.application.applicationsForBundleID(bundle_id)[1]
-end
 
 ---Updates the hidden states on an event of `hs.application.watcher`.
 ---A quit forgets every state, so that an application that starts again is asked once more.
@@ -79,7 +68,7 @@ function app_switcher.read_hidden_applications(setting, hidden_states)
         setting = setting,
         is_hidden = function(bundle_id, application)
             if hidden_states[bundle_id] == nil then
-                local running = application or find_running_application(bundle_id)
+                local running = application or track_windows.find_running_application(bundle_id)
                 if not running then
                     return false
                 end
@@ -143,7 +132,7 @@ local function list_windows_of_hidden_applications(hidden)
     for _, application in ipairs(hs.application.runningApplications()) do
         local bundle_id = track_windows.bundle_id_of(application)
         if
-            application:kind() == REGULAR_APPLICATION_KIND
+            application:kind() == track_windows.REGULAR_APPLICATION_KIND
             and hidden.is_hidden(bundle_id, application)
         then
             for _, window in ipairs(application:allWindows()) do
@@ -276,7 +265,7 @@ function app_switcher.list_windows(bundle_id, filter_windows, hidden)
     for _, window in ipairs(filter_windows) do
         add(window)
     end
-    local application = find_running_application(bundle_id)
+    local application = track_windows.find_running_application(bundle_id)
     local joins = application
         and HIDDEN_WINDOWS_RULES[hidden.setting].select_joining_test(hidden, bundle_id, application)
     if joins then
@@ -509,7 +498,7 @@ end
 ---@param context SwitcherContext
 ---@param on_done fun(error_message: string|nil)
 function app_switcher.unhide_application(entry, recorded_window_ids, context, on_done)
-    local application = find_running_application(entry.bundle_id)
+    local application = track_windows.find_running_application(entry.bundle_id)
     local windows = application and application:allWindows() or {}
     if #windows == 0 then
         app_switcher.switch_to_selection(entry, nil, recorded_window_ids, context, on_done)

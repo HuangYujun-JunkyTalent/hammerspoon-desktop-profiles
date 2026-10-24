@@ -14,9 +14,6 @@ local SCRIPT_PATH = (
     or "./desktop_manager/macos"
 ) .. "/list_server_windows.js"
 
----The kind of an hs.application with a Dock icon.
-local REGULAR_APPLICATION_KIND = 1
-
 ---@class WindowInventory
 ---@field windows ServerWindow[] the windows out of reach at the last refresh
 ---@field occupying_windows table<integer, integer> the desktop out of view of each window of an
@@ -73,7 +70,7 @@ local function map_applications(pids)
     local application_by_pid = {}
     for _, pid in ipairs(pids) do
         local application = hs.application.applicationForPID(pid)
-        if application and application:kind() == REGULAR_APPLICATION_KIND then
+        if application and application:kind() == track_windows.REGULAR_APPLICATION_KIND then
             application_by_pid[pid] = {
                 bundle_id = track_windows.bundle_id_of(application),
                 app_name = application:name() or "unknown",
