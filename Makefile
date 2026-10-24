@@ -4,13 +4,13 @@ LUA_FILES := $(shell find . -name '*.lua' -not -path './.git/*')
 JAVASCRIPT_FOR_AUTOMATION_FILES := $(wildcard desktop_manager/macos/*.js)
 HAMMERSPOON_LOADER := $(HOME)/.hammerspoon/init.lua
 
-.PHONY: check syntax lint format format-check test launcher-scripts check-launcher-scripts install-loader
+.PHONY: check syntax lint type-check format format-check test launcher-scripts check-launcher-scripts install-loader
 .PHONY: asyar-extension-settings check-asyar-extension-settings check-asyar-extension link-asyar-extension
 .PHONY: asyar-window-tiling-settings check-asyar-window-tiling-settings
 .PHONY: check-asyar-window-tiling link-asyar-window-tiling
 .PHONY: check-asyar-trash link-asyar-trash
 
-check: syntax lint format-check test check-launcher-scripts check-asyar-extension-settings \
+check: syntax lint type-check format-check test check-launcher-scripts check-asyar-extension-settings \
 	check-asyar-window-tiling-settings
 
 syntax:
@@ -19,6 +19,9 @@ syntax:
 
 lint:
 	luacheck --quiet --formatter plain .
+
+type-check:
+	lua-language-server --check . --checklevel=Warning --check_format=pretty
 
 format:
 	stylua .
