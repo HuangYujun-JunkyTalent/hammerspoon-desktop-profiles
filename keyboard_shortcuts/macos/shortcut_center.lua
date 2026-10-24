@@ -136,14 +136,17 @@ function ShortcutCenter:find_shortcut(id)
     return binding and binding.shortcut
 end
 
----Saves the overrides, and binds the shortcuts again and reports their problems once the file is
----written.
+---Saves the overrides, and once the file is written makes them the overrides of the center, binds
+---the shortcuts again and reports their problems.
+---When the write fails, the center keeps the overrides that it had.
 ---@param center ShortcutCenter
+---@param overrides table<string, Shortcut|false>
 ---@return string[] problems
-local function save_and_rebind(center)
-    if center.file_path and not hs.json.write(center.overrides, center.file_path, true, true) then
+local function save_and_rebind(center, overrides)
+    if center.file_path and not hs.json.write(overrides, center.file_path, true, true) then
         return { string.format("the shortcuts could not be written to %s", center.file_path) }
     end
+    center.overrides = overrides
     local problems = center:rebind()
     center:report(problems)
     return problems
@@ -157,8 +160,12 @@ function ShortcutCenter:set_override(id, value)
     if not self.registry.action_by_id[id] then
         return { string.format("no shortcut action is named %q", id) }
     end
-    self.overrides[id] = value
-    return save_and_rebind(self)
+    local overrides = {}
+    for other_id, other_value in pairs(self.overrides) do
+        overrides[other_id] = other_value
+    end
+    overrides[id] = value
+    return save_and_rebind(self, overrides)
 end
 
 ---@param shortcut Shortcut
@@ -181,8 +188,7 @@ end
 ---Gives every action its default shortcut again, and saves the empty overrides.
 ---@return string[] problems
 function ShortcutCenter:reset_all()
-    self.overrides = {}
-    return save_and_rebind(self)
+    return save_and_rebind(self, {})
 end
 
 ---Reports the overrides that name no action, once every tool has registered.

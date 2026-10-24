@@ -271,6 +271,37 @@ return {
         expect.equal(world.json_files[world.shortcuts_file_path], nil)
     end,
 
+    a_removal_that_cannot_be_written_is_undone_and_stays_undone_at_the_next_change = function()
+        local world = start_world()
+        local path = world.shortcuts_file_path
+        world.unwritable_paths[path] = true
+        local session = open_shortcut_window(path)
+        world.post_to_webview("shortcuts", { kind = "remove", id = "window_search.toggle" })
+        expect.equal(find_shortcut_row(session.window, "window_search.toggle").is_default, true)
+        world.unwritable_paths[path] = nil
+        world.post_to_webview("shortcuts", { kind = "remove", id = "profiles.deactivate" })
+        expect.equal(world.json_files[path], { ["profiles.deactivate"] = false })
+        expect.present(world.hotkey_by_shortcut[SEARCH_SHORTCUT], "the hotkey of the search")
+        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"], nil)
+    end,
+
+    a_reset_that_cannot_be_written_keeps_the_overrides_and_their_hotkeys = function()
+        local world = start_world()
+        local path = world.shortcuts_file_path
+        local session = open_shortcut_window(path)
+        world.post_to_webview("shortcuts", { kind = "remove", id = "profiles.deactivate" })
+        world.unwritable_paths[path] = true
+        world.post_to_webview("shortcuts", { kind = "reset_all" })
+        expect.equal(find_shortcut_row(session.window, "profiles.deactivate").is_default, false)
+        world.unwritable_paths[path] = nil
+        world.post_to_webview("shortcuts", { kind = "remove", id = "window_search.toggle" })
+        expect.equal(
+            world.json_files[path],
+            { ["profiles.deactivate"] = false, ["window_search.toggle"] = false }
+        )
+        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"], nil)
+    end,
+
     the_window_of_the_shortcuts_runs_its_closing_action_once = function()
         local world = start_world()
         local session = open_shortcut_window()
