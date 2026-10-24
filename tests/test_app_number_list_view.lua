@@ -1,5 +1,5 @@
-local expect = require("tests.expect")
 local app_number_list_view = require("desktop_manager.core.app_number_list_view")
+local expect = require("tests.expect")
 
 local APPLICATIONS = {
     {
