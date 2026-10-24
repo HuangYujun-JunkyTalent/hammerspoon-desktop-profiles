@@ -1,6 +1,7 @@
 LUA ?= lua
 LUAC ?= luac
 LUA_FILES := $(shell find . -name '*.lua' -not -path './.git/*')
+JAVASCRIPT_FOR_AUTOMATION_FILES := $(wildcard desktop_manager/macos/*.js)
 HAMMERSPOON_LOADER := $(HOME)/.hammerspoon/init.lua
 
 .PHONY: check syntax lint format format-check test launcher-scripts check-launcher-scripts install-loader
@@ -12,6 +13,7 @@ check: syntax lint format-check test check-launcher-scripts check-asyar-extensio
 
 syntax:
 	@for file in $(LUA_FILES); do $(LUAC) -p "$$file" || exit 1; done
+	@for file in $(JAVASCRIPT_FOR_AUTOMATION_FILES); do node --check "$$file" || exit 1; done
 
 lint:
 	luacheck --quiet --formatter plain .
