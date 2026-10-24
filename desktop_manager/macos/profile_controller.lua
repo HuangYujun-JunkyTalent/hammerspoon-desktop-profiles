@@ -19,6 +19,7 @@ local mission_control_desktops = require("desktop_manager.macos.mission_control_
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 local open_missing_windows = require("desktop_manager.macos.open_missing_windows")
+local profile_pause = require("desktop_manager.core.profile_pause")
 local profile_state = require("desktop_manager.core.profile_state")
 local profile_switch = require("desktop_manager.core.profile_switch")
 local reach_plan = require("desktop_manager.core.reach_plan")
@@ -43,6 +44,9 @@ local window_previews = require("desktop_manager.macos.window_previews")
 local work_watchdog = require("desktop_manager.macos.work_watchdog")
 
 local profile_controller = {}
+
+local NANOSECONDS_PER_SECOND = 1e9
+local MACOS_START_TIME_COMMAND = "/usr/sbin/sysctl -n kern.boottime"
 
 local NOTIFICATION_TITLE = "Desktop Manager"
 local FAILURE_ALERT_SECONDS = 8
@@ -260,8 +264,9 @@ end
 ---its previous record with its current desktop.
 ---While a switch or a restore runs, or while the monitors settle, nothing is recorded, because the
 ---windows and the desktops are on their way, and the end of that work schedules a save.
+---Nothing is recorded while the active profile is paused either.
 function ProfileController:capture_active_arrangement()
-    local number = self.state.active_profile_number
+    local number = profile_state.find_profile_number_to_update(self.state)
     if not number or self.is_switch_or_restore_running or self.are_saves_suspended then
         return
     end
@@ -397,7 +402,7 @@ end
 ---Closes the message at the end of a switch, a restore or a press, or shows the message of a change
 ---of monitors in its place while the restore after that change waits.
 function ProfileController:end_busy_message()
-    if self.screen_timer and self.state.active_profile_number then
+    if self.screen_timer and profile_state.find_profile_number_to_update(self.state) then
         self:show_busy_message(MONITORS_CHANGED_MESSAGE)
         return
     end
@@ -1239,7 +1244,7 @@ end
 ---@param slot_key string
 ---@param desktop_number integer
 function ProfileController:record_shown_desktop(configuration_key, slot_key, desktop_number)
-    local number = self.state.active_profile_number
+    local number = profile_state.find_profile_number_to_update(self.state)
     local state = number
         and profile_state.with_shown_desktop(
             self.state,
@@ -1559,7 +1564,7 @@ function ProfileController:handle_screens_changed()
     end
     self.are_saves_suspended = true
     retained_timers.stop(self.save_timer)
-    if self.state.active_profile_number and not self:is_work_running() then
+    if profile_state.find_profile_number_to_update(self.state) and not self:is_work_running() then
         self:show_busy_message(MONITORS_CHANGED_MESSAGE)
     end
     self:start_screen_timer()
@@ -1571,7 +1576,7 @@ end
 ---The restore conceals no window and opens no new window, because the layout predates the windows
 ---that the user opened under the old configuration.
 function ProfileController:restore_after_screens_changed()
-    local number = self.state.active_profile_number
+    local number = profile_state.find_profile_number_to_update(self.state)
     if not number then
         self.are_saves_suspended = false
         self:close_busy_message()
@@ -1780,6 +1785,45 @@ function ProfileController:start_watchers()
     )
 end
 
+---Pauses the active profile at the first start of Hammerspoon soon after the start of macOS, and
+---names the pause in the console, also when the state file kept it from an earlier start.
+---The state file keeps the start of macOS that this start saw, so that a later start under the same
+---start of macOS pauses nothing.
+---@param macos_start_time integer|nil the start of macOS in seconds since 1970, or nil when unknown
+---@param seconds_since_macos_start number
+function ProfileController:pause_at_start(macos_start_time, seconds_since_macos_start)
+    local number = self.state.active_profile_number
+    local pause_seconds = self.settings.pause_after_macos_start_seconds
+    local is_due = profile_pause.is_due_at_start(
+        self.state,
+        macos_start_time,
+        seconds_since_macos_start,
+        pause_seconds
+    )
+    local is_new_macos_start = macos_start_time ~= nil
+        and macos_start_time ~= self.state.last_seen_macos_start_time
+    if is_new_macos_start then
+        self.state = profile_state.with_last_seen_macos_start_time(self.state, macos_start_time)
+    end
+    if is_due then
+        self.state = profile_state.with_active_profile_paused(self.state)
+        self.log.i(
+            profile_pause.describe_start_pause(number, seconds_since_macos_start, pause_seconds)
+        )
+    elseif self.state.is_active_profile_paused then
+        self.log.i(profile_pause.describe_kept_pause(number))
+    end
+    if is_due or is_new_macos_start then
+        self:write_state()
+    end
+end
+
+---@return integer|nil the start of macOS in seconds since 1970, or nil when sysctl gives none
+local function read_macos_start_time()
+    local boot_time_output = hs.execute(MACOS_START_TIME_COMMAND)
+    return profile_pause.parse_macos_start_time(boot_time_output)
+end
+
 ---@param unchecked_settings Settings
 ---@param shortcuts ShortcutCenter|nil the center of the shortcuts of every tool, or nil for a
 ---center of this tool alone
@@ -1815,6 +1859,10 @@ function profile_controller.start(unchecked_settings, shortcuts)
         controller.log.w(warning)
         notify(warning)
     end
+    controller:pause_at_start(
+        read_macos_start_time(),
+        hs.timer.absoluteTime() / NANOSECONDS_PER_SECOND
+    )
     controller.screen_signature = read_screens.read_signature()
     controller.window_filter = track_windows.new_filter()
     controller.known_windows = list_known_windows.new(

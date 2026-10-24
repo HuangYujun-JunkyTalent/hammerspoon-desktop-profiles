@@ -108,10 +108,21 @@ end
 
 ---@param setting_changes table|nil settings that replace the defaults, such as concealment_method
 ---@param saved_state table|nil the state file that the desktop manager finds at its start
+---@param seconds_since_macos_start number|nil the time from the start of macOS to the start of the
+---desktop manager, an hour when nil
+---@param macos_start_time integer|nil the start of macOS in seconds since 1970, the same in every
+---world when nil
 ---@return table world
 ---@return ProfileController controller
-function controller_world.start_world(setting_changes, saved_state)
+function controller_world.start_world(
+    setting_changes,
+    saved_state,
+    seconds_since_macos_start,
+    macos_start_time
+)
     local world = fake_hammerspoon.install({
+        seconds_since_macos_start = seconds_since_macos_start,
+        macos_start_time = macos_start_time,
         screens = { fake_worlds.build_builtin_screen() },
         displays = { { uuid = "BUILTIN-UUID", space_ids = { 3, 14, 64 }, active_space_id = 3 } },
         applications = {

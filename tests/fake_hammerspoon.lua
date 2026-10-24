@@ -70,6 +70,12 @@ local fake_hammerspoon = {}
 ---@field displays FakeDisplaySpec[]
 ---@field applications FakeApplicationSpec[]
 ---@field windows FakeWindowSpec[]
+---@field seconds_since_macos_start number|nil the time from the start of macOS to the start of the
+---world on the clock of `hs.timer.absoluteTime()`, an hour by default, so that a world starts long
+---after the start of macOS
+---@field macos_start_time integer|nil the start of macOS in seconds since 1970, which the fake
+---gives as `sysctl -n kern.boottime` does, the same in every world by default, so that a world
+---started from the state file of another runs under the same start of macOS
 
 local USER_SPACE_TYPE = 0
 local FULL_SCREEN_SPACE_TYPE = 4
@@ -108,6 +114,8 @@ local FIRST_PID = 500
 local WINDOW_MANAGER_BUNDLE_ID = "com.apple.WindowManager"
 
 local SYMBOLIC_HOTKEYS_EXPORT = "defaults export com.apple.symbolichotkeys -"
+local MACOS_START_TIME_COMMAND = "/usr/sbin/sysctl -n kern.boottime"
+local DEFAULT_MACOS_START_TIME = 1729500000
 
 ---The world of the last install, where the loggers write, because a module keeps the logger that
 ---it made under an earlier install.
@@ -197,13 +205,15 @@ local current_world = nil
 ---The fake records each bounce in `bounces`, with the desktop shown, the desktop shown again and
 ---the time.
 ---`on_window_manager_read` is called at each read of the accessibility tree of WindowManager.
----`execute_calls` counts the calls of `hs.execute`, each of which exports the shortcuts of macOS.
+---`execute_calls` counts the calls of `hs.execute` that export the shortcuts of macOS.
 ---`unwritable_paths[path]` makes `hs.json.write` fail for that path and leave the file as it was.
 ---@param spec FakeWorldSpec
 ---@return table world
 function fake_hammerspoon.install(spec)
     local world = {
         clock = 0,
+        macos_start_offset_seconds = spec.seconds_since_macos_start or 3600,
+        macos_start_time = spec.macos_start_time or DEFAULT_MACOS_START_TIME,
         timers = {},
         screens = spec.screens,
         displays = spec.displays,
@@ -986,7 +996,8 @@ function fake_hammerspoon.install(spec)
         if world.key_wait_seconds == nil then
             return 0
         end
-        return (world.clock - world.key_wait_seconds) * NANOSECONDS_PER_SECOND
+        return (world.macos_start_offset_seconds + world.clock - world.key_wait_seconds)
+            * NANOSECONDS_PER_SECOND
     end
 
     ---Releases every modifier key, as the user lifts the fingers.
@@ -1541,7 +1552,7 @@ function fake_hammerspoon.install(spec)
                 return world.clock
             end,
             absoluteTime = function()
-                return world.clock * NANOSECONDS_PER_SECOND
+                return (world.macos_start_offset_seconds + world.clock) * NANOSECONDS_PER_SECOND
             end,
             doAfter = function(seconds, callback)
                 return new_timer(seconds, callback, false)
@@ -1649,8 +1660,19 @@ function fake_hammerspoon.install(spec)
             watcher = watcher_factory(),
         },
         execute = function(command)
+            if command == MACOS_START_TIME_COMMAND then
+                return string.format(
+                    "{ sec = %d, usec = 0 } Mon Oct 21 10:40:00 2024\n",
+                    world.macos_start_time
+                ),
+                    true
+            end
             if command ~= SYMBOLIC_HOTKEYS_EXPORT then
-                error("the fake runs no command but the export of the shortcuts: " .. command)
+                error(
+                    "the fake runs no command but the export of the shortcuts and the start of"
+                        .. " macOS: "
+                        .. command
+                )
             end
             world.execute_calls = world.execute_calls + 1
             return SYMBOLIC_HOTKEYS_EXPORT, true

@@ -1,0 +1,201 @@
+local controller_world = require("tests.controller_world")
+local expect = require("tests.expect")
+local profile_state = require("desktop_manager.core.profile_state")
+
+---A start of the desktop manager one minute after the start of macOS, as at a login.
+local SECONDS_AFTER_LOGIN = 60
+
+---The start of macOS after a restart, a day after the start under which the worlds run by default.
+local MACOS_START_TIME_AFTER_RESTART = 1729586400
+
+---@return table the state file of a world in which profile 1 is active and recorded both windows
+local function record_profile_1()
+    local world = controller_world.start_world()
+    world.hotkeys["1"]()
+    world.advance(controller_world.SETTLE_SECONDS)
+    world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+    return world.saved_json
+end
+
+---@param setting_changes table|nil
+---@return table world
+---@return ProfileController controller
+---@return table saved the state file that the start found
+local function start_after_login(setting_changes)
+    local saved = record_profile_1()
+    local world, controller = controller_world.start_world(
+        setting_changes,
+        saved,
+        SECONDS_AFTER_LOGIN,
+        MACOS_START_TIME_AFTER_RESTART
+    )
+    return world, controller, saved
+end
+
+---@param world table
+---@return boolean whether a line of the console names a pause
+local function has_pause_line(world)
+    for _, line in ipairs(world.log_lines) do
+        if line:find("paused", 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+---@param controller ProfileController
+---@param saved table
+local function expect_profile_1_as_saved(controller, saved)
+    expect.equal(controller.state.profiles["1"], saved.profiles["1"])
+end
+
+return {
+    a_start_soon_after_macos_pauses_the_active_profile_and_says_so = function()
+        local world, controller = start_after_login()
+        expect.equal(controller.state.active_profile_number, 1)
+        expect.equal(controller.state.is_active_profile_paused, true)
+        expect.equal(world.saved_json.is_active_profile_paused, true)
+        expect.equal(
+            world.log_lines[1],
+            "profile 1 is paused, because Hammerspoon started 60 seconds after macOS, less than"
+                .. " pause_after_macos_start_seconds of 300, and activating profile 1 restores"
+                .. " its layout"
+        )
+    end,
+
+    a_start_at_the_setting_or_with_the_setting_0_pauses_nothing = function()
+        local saved = record_profile_1()
+        local _, at_setting =
+            controller_world.start_world(nil, saved, 300, MACOS_START_TIME_AFTER_RESTART)
+        expect.equal(at_setting.state.is_active_profile_paused, false)
+        local _, turned_off = controller_world.start_world(
+            { pause_after_macos_start_seconds = 0 },
+            saved,
+            SECONDS_AFTER_LOGIN,
+            MACOS_START_TIME_AFTER_RESTART
+        )
+        expect.equal(turned_off.state.is_active_profile_paused, false)
+    end,
+
+    a_reload_during_the_pause_keeps_it_also_after_the_setting = function()
+        local first_world = start_after_login()
+        local world, controller = controller_world.start_world(
+            { pause_after_macos_start_seconds = 0 },
+            first_world.saved_json,
+            nil,
+            MACOS_START_TIME_AFTER_RESTART
+        )
+        expect.equal(controller.state.is_active_profile_paused, true)
+        expect.equal(
+            world.log_lines[1],
+            "profile 1 stays paused, as the state file says, and activating profile 1 restores"
+                .. " its layout"
+        )
+    end,
+
+    a_second_start_within_the_setting_after_the_end_of_the_pause_pauses_nothing = function()
+        local routes = {
+            function(world)
+                world.hotkeys["2"]()
+            end,
+            function(world)
+                world.hotkeys["0"]()
+                world.advance(controller_world.SETTLE_SECONDS)
+                world.hotkeys["1"]()
+            end,
+        }
+        for _, route in ipairs(routes) do
+            local first_world = start_after_login()
+            route(first_world)
+            first_world.advance(controller_world.SETTLE_SECONDS)
+            local world, controller = controller_world.start_world(
+                nil,
+                first_world.saved_json,
+                200,
+                MACOS_START_TIME_AFTER_RESTART
+            )
+            expect.present(controller.state.active_profile_number, "an active profile")
+            expect.equal(controller.state.is_active_profile_paused, false)
+            expect.equal(has_pause_line(world), false)
+        end
+    end,
+
+    a_start_after_a_new_start_of_macos_pauses_again = function()
+        local first_world = start_after_login()
+        first_world.hotkeys["2"]()
+        first_world.advance(controller_world.SETTLE_SECONDS)
+        local _, controller = controller_world.start_world(
+            nil,
+            first_world.saved_json,
+            SECONDS_AFTER_LOGIN,
+            MACOS_START_TIME_AFTER_RESTART + 3600
+        )
+        expect.equal(controller.state.active_profile_number, 2)
+        expect.equal(controller.state.is_active_profile_paused, true)
+    end,
+
+    the_updates_change_no_record_and_no_number_of_the_paused_profile = function()
+        local world, controller, saved = start_after_login()
+        world.minimize_window(42)
+        world.create_window("com.apple.Notes", "Shopping")
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        expect_profile_1_as_saved(controller, saved)
+    end,
+
+    a_press_of_the_list_during_the_pause_records_no_shown_desktop = function()
+        local world, controller, saved = start_after_login()
+        local entries = profile_state.profile_or_default(controller.state, 1).app_numbers
+        expect.equal(entries[2].bundle_id, "com.apple.Safari")
+        world.app_hotkeys["2"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(world.displays[1].active_space_id, 14)
+        expect_profile_1_as_saved(controller, saved)
+    end,
+
+    a_change_of_the_monitors_during_the_pause_restores_nothing = function()
+        local world, controller, saved = start_after_login()
+        world.connect_screen(controller_world.DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.windows[42].frame = { x = 0, y = 25, w = 400, h = 400 }
+        world.disconnect_screen(controller_world.DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(world.windows[42].frame, { x = 0, y = 25, w = 400, h = 400 })
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.alerts, {})
+        expect.equal(controller_world.read_busy_messages(world), {})
+        expect_profile_1_as_saved(controller, saved)
+    end,
+
+    a_change_of_the_monitors_during_a_press_in_the_pause_shows_no_message_after_it = function()
+        local world = start_after_login()
+        world.app_hotkeys["2"]()
+        world.connect_screen(controller_world.DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local shown, visible_count = controller_world.read_busy_messages(world)
+        expect.equal(shown, { "Showing desktop 2 of built-in… please wait" })
+        expect.equal(visible_count, 0)
+    end,
+
+    another_profile_during_the_pause_switches_without_the_update_and_ends_the_pause = function()
+        local world, controller, saved = start_after_login()
+        world.minimize_window(42)
+        world.hotkeys["2"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, 2)
+        expect.equal(controller.state.is_active_profile_paused, false)
+        expect_profile_1_as_saved(controller, saved)
+    end,
+
+    the_deactivation_during_the_pause_updates_nothing_and_ends_the_pause = function()
+        local world, controller, saved = start_after_login()
+        world.minimize_window(42)
+        world.hotkeys["0"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, nil)
+        expect.equal(controller.state.is_active_profile_paused, false)
+        expect_profile_1_as_saved(controller, saved)
+    end,
+}

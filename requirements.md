@@ -15,6 +15,11 @@ The tool lets the user activate or deactivate workspace profiles.
 When no workspace profile is active, everything is managed by the default macOS window manager.
 
 When a workspace profile is active, the tool remembers the desktop and window configuration and restores it when the profile is activated again.
+After a restart of the Mac, macOS reopens the windows with new window ids and at places of its own, and an update would replace the saved layout of the active profile.
+The first start of the tool after a start of macOS therefore pauses the active profile when it comes within a set time, and a setting gives the time, with 0 turning the pause off.
+While the profile is paused, no update changes its records or its application numbers, and a change of monitors restores nothing.
+The pause lasts across a reload of the tool until the user switches to another profile or deactivates the profile.
+Another profile switches without the update of the paused profile, and the deactivation updates nothing.
 
 Workspaces have numbers, and the user can rename them.
 
