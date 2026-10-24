@@ -231,7 +231,11 @@ local function handle_message(window, body)
             local color = body.colors[name]
             if
                 type(color) == "table"
-                and highlight_colors.check({ hex = color.hex, alpha = color.alpha }) == nil
+                and highlight_colors.describe_color_fault({
+                        hex = color.hex,
+                        alpha = color.alpha,
+                    })
+                    == nil
             then
                 chosen[name] = { hex = color.hex, alpha = color.alpha }
             end

@@ -145,7 +145,7 @@ end
 ---@param number integer
 ---@param name string
 ---@return State
-function profile_state.rename_profile(state, number, name)
+function profile_state.with_profile_name(state, number, name)
     local trimmed = type(name) == "string" and utf8_text.trim(name) or ""
     if trimmed == "" then
         error(

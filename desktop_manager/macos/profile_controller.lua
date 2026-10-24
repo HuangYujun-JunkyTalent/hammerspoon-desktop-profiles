@@ -926,7 +926,7 @@ end
 ---@param number integer
 ---@param name string
 function ProfileController:rename_profile(number, name)
-    self.state = profile_state.rename_profile(self.state, number, name)
+    self.state = profile_state.with_profile_name(self.state, number, name)
     self:write_state()
     self:refresh_menu()
 end

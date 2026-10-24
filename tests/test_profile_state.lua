@@ -30,7 +30,7 @@ return {
 
     rename_trims_and_keeps_the_original_state = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
-        local renamed = profile_state.rename_profile(state, 2, "  Writing  ")
+        local renamed = profile_state.with_profile_name(state, 2, "  Writing  ")
         expect.equal(profile_state.profile_or_default(renamed, 2).name, "Writing")
         expect.equal(state.profiles["2"], nil)
     end,
@@ -56,7 +56,7 @@ return {
     rename_rejects_a_blank_name = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
         expect.raises(function()
-            profile_state.rename_profile(state, 2, "   ")
+            profile_state.with_profile_name(state, 2, "   ")
         end, "needs a visible character")
     end,
 
@@ -298,7 +298,7 @@ return {
 
     clearing_a_profile_keeps_its_name_and_numbers = function()
         local state = profile_state.with_arrangement(
-            profile_state.rename_profile(
+            profile_state.with_profile_name(
                 profile_state.new_state(monitor_matching.BY_COUNT),
                 1,
                 "Writing"

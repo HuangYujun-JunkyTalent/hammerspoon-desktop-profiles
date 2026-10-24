@@ -26,7 +26,7 @@ end
 
 ---@param color any
 ---@return string|nil message why the value is no color
-function highlight_colors.check(color)
+function highlight_colors.describe_color_fault(color)
     if type(color) ~= "table" then
         return "is no table"
     end
@@ -89,7 +89,7 @@ function highlight_colors.complete(colors)
     local completed = highlight_colors.defaults()
     for _, name in ipairs(NAMES) do
         if colors[name] ~= nil then
-            local message = highlight_colors.check(colors[name])
+            local message = highlight_colors.describe_color_fault(colors[name])
             if message then
                 return nil,
                     string.format("the color %s of search_highlight_colors %s", name, message)
@@ -143,7 +143,7 @@ local function to_byte(value)
     return string.format("%02X", math.floor(value * 255 + 0.5))
 end
 
----@param color table a color that `highlight_colors.check` accepts
+---@param color table a color that `highlight_colors.describe_color_fault` accepts
 ---@return string hex such as "#3373F2"
 ---@return number alpha from 0 to 1
 function highlight_colors.to_hex_and_alpha(color)
@@ -178,7 +178,7 @@ function highlight_colors.decode(raw)
         return chosen
     end
     for _, name in ipairs(NAMES) do
-        if raw[name] ~= nil and highlight_colors.check(raw[name]) == nil then
+        if raw[name] ~= nil and highlight_colors.describe_color_fault(raw[name]) == nil then
             chosen[name] = raw[name]
         end
     end

@@ -61,7 +61,7 @@ end
 ---@param list ListedApplication[]
 ---@param bundle_id string
 ---@return boolean
-local function names(list, bundle_id)
+local function lists_application(list, bundle_id)
     for _, application in ipairs(list) do
         if application.bundle_id == bundle_id then
             return true
@@ -100,7 +100,7 @@ end
 ---@param bundle_id string
 ---@return boolean
 function app_pool.is_managed(pool, bundle_id)
-    local is_listed = names(pool[pool.mode], bundle_id)
+    local is_listed = lists_application(pool[pool.mode], bundle_id)
     if pool.mode == app_pool.MANAGE_LISTED then
         return is_listed
     end
@@ -195,7 +195,7 @@ function app_pool.list_choices(pool, running)
             table.insert(choices, {
                 bundle_id = application.bundle_id,
                 app_name = application.app_name,
-                is_listed = names(pool[pool.mode], application.bundle_id),
+                is_listed = lists_application(pool[pool.mode], application.bundle_id),
             })
         end
     end

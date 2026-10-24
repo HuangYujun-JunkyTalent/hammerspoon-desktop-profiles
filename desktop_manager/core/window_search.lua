@@ -170,8 +170,8 @@ end
 ---when some show.
 ---@param search WindowSearch
 ---@param preferred_window_id integer|nil
----@return WindowSearch the same table, completed
-local function complete(search, preferred_window_id)
+---@return WindowSearch the same table, updated
+local function update_view(search, preferred_window_id)
     local levels, matches = rank_matches(search)
     search.levels = levels
     local focused = find_application(search, search.chosen_bundle_id or search.hovered_bundle_id)
@@ -201,7 +201,7 @@ end
 ---@param initial_window_id integer|nil
 ---@return WindowSearch
 function window_search.start(entries, number_by_bundle_id, initial_window_id)
-    return complete({
+    return update_view({
         entries = entries,
         number_by_bundle_id = number_by_bundle_id,
         applications = group_applications(entries, number_by_bundle_id),
@@ -219,7 +219,7 @@ function window_search.with_entries(search, entries)
     local updated = copy(search)
     updated.entries = entries
     updated.applications = group_applications(entries, search.number_by_bundle_id)
-    return complete(updated, search.selected_window_id)
+    return update_view(updated, search.selected_window_id)
 end
 
 ---Typing drops the applications of the mouse, so the matches show with the best one selected.
@@ -231,7 +231,7 @@ function window_search.with_text(search, text)
     updated.text = text
     updated.hovered_bundle_id = nil
     updated.chosen_bundle_id = nil
-    return complete(updated, nil)
+    return update_view(updated, nil)
 end
 
 ---@param search WindowSearch
@@ -264,7 +264,7 @@ function window_search.hover_application(search, bundle_id)
     end
     local updated = copy(search)
     updated.hovered_bundle_id = bundle_id
-    return complete(updated, search.selected_window_id)
+    return update_view(updated, search.selected_window_id)
 end
 
 ---Chooses the application, so its windows stay in view, or releases it when it is chosen already.
@@ -274,7 +274,7 @@ end
 function window_search.choose_application(search, bundle_id)
     local updated = copy(search)
     updated.chosen_bundle_id = search.chosen_bundle_id ~= bundle_id and bundle_id or nil
-    return complete(updated, search.selected_window_id)
+    return update_view(updated, search.selected_window_id)
 end
 
 ---Selects a window in view, as the mouse does when it hovers over the window.
@@ -364,7 +364,7 @@ end
 
 ---@param count integer
 ---@return string
-local function count_windows(count)
+local function describe_window_count(count)
     return string.format("%d %s", count, count == 1 and "window" or "windows")
 end
 
@@ -376,7 +376,7 @@ function window_search.describe_search_line(search)
     if focused then
         summary = string.format(
             "%s of %s%s",
-            count_windows(#focused.window_ids),
+            describe_window_count(#focused.window_ids),
             focused.app_name,
             search.chosen_bundle_id and ", chosen" or ""
         )
@@ -385,9 +385,10 @@ function window_search.describe_search_line(search)
     elseif has_words(search) and #search.shown == 0 then
         summary = "no window matches"
     elseif has_words(search) then
-        summary = string.format("%d of %s match", #search.shown, count_windows(#search.entries))
+        summary =
+            string.format("%d of %s match", #search.shown, describe_window_count(#search.entries))
     else
-        summary = count_windows(#search.entries)
+        summary = describe_window_count(#search.entries)
     end
     return { text = search.text, placeholder = PLACEHOLDER, summary = summary }
 end
