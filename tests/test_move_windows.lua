@@ -30,16 +30,18 @@ end
 
 ---@param world table
 ---@param moves WindowMove[]
----@return MoveFailure[]|nil failures nil while the moves wait
+---@return MoveFailure[] failures
 ---@return number seconds until `on_done`
 local function move_and_settle(world, moves)
+    ---@type MoveFailure[]|nil, number|nil
     local failures, finished_at = nil, nil
     local started_at = world.clock
     move_windows.move_all(moves, fake_worlds.create_default_timing(), function(result)
         failures, finished_at = result, world.clock
     end)
     world.advance(5)
-    return failures, finished_at and finished_at - started_at
+    return expect.present(failures, "the end of the moves within 5 seconds"),
+        expect.present(finished_at, "the time of the end of the moves") - started_at
 end
 
 return {

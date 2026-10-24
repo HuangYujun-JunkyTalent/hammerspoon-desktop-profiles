@@ -93,7 +93,7 @@ return {
             modifiers = { "cmd", "alt", "shift" },
             key = "2",
         })
-        local pending = session.window.model.pending
+        local pending = expect.present(session.window.model.pending, "the pending shortcut")
         expect.equal(pending.holder.id, "profiles.toggle.2")
         expect.equal(pending.text, "Option-Shift-Command-2")
         expect.present(world.hotkey_by_shortcut["cmd+alt+shift 0"], "the hotkey cmd+alt+shift 0")
@@ -147,7 +147,7 @@ return {
             modifiers = { "ctrl", "alt", "shift", "cmd" },
             key = "3",
         })
-        local pending = session.window.model.pending
+        local pending = expect.present(session.window.model.pending, "the pending shortcut")
         expect.equal(pending.text, "Control-Option-Shift-Command-3")
         expect.equal(pending.macos.name, "Switch to Desktop 3")
         world.post_to_webview("shortcuts", { kind = "resolve" })

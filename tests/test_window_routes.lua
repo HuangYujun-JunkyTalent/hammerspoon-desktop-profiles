@@ -68,10 +68,13 @@ return {
     end,
 
     a_window_out_of_view_at_another_frame_goes_into_view_first = function()
-        local route = window_routes.plan(
-            placement_on_builtin(2, LEFT_HALF),
-            location_of({ 14 }, ELSEWHERE),
-            build_layout()
+        local route = expect.present(
+            window_routes.plan(
+                placement_on_builtin(2, LEFT_HALF),
+                location_of({ 14 }, ELSEWHERE),
+                build_layout()
+            ),
+            "a route of the window"
         )
         expect.equal(route.view_space_id, 3)
         expect.equal(route.target_frame, LEFT_HALF_OF_BUILTIN)
@@ -79,10 +82,13 @@ return {
     end,
 
     a_window_out_of_view_at_its_frame_moves_by_its_id_alone = function()
-        local route = window_routes.plan(
-            placement_on_builtin(2, LEFT_HALF),
-            location_of({ 64 }, LEFT_HALF_OF_BUILTIN),
-            build_layout()
+        local route = expect.present(
+            window_routes.plan(
+                placement_on_builtin(2, LEFT_HALF),
+                location_of({ 64 }, LEFT_HALF_OF_BUILTIN),
+                build_layout()
+            ),
+            "a route of the window"
         )
         expect.equal(route.view_space_id, nil)
         expect.equal(route.target_frame, nil)
@@ -91,10 +97,13 @@ return {
     end,
 
     a_window_on_another_screen_goes_by_its_frame_and_then_by_its_id = function()
-        local route = window_routes.plan(
-            placement_on_builtin(2, LEFT_HALF),
-            location_of({ 7 }, { x = 1440, y = 0, w = 720, h = 875 }),
-            build_layout()
+        local route = expect.present(
+            window_routes.plan(
+                placement_on_builtin(2, LEFT_HALF),
+                location_of({ 7 }, { x = 1440, y = 0, w = 720, h = 875 }),
+                build_layout()
+            ),
+            "a route of the window"
         )
         expect.equal(route.view_space_id, nil)
         expect.equal(route.target_frame, LEFT_HALF_OF_BUILTIN)
@@ -103,20 +112,26 @@ return {
     end,
 
     a_window_out_of_view_on_another_screen_goes_into_view_first = function()
-        local route = window_routes.plan(
-            placement_on_builtin(2, LEFT_HALF),
-            location_of({ 8 }, ELSEWHERE),
-            build_layout()
+        local route = expect.present(
+            window_routes.plan(
+                placement_on_builtin(2, LEFT_HALF),
+                location_of({ 8 }, ELSEWHERE),
+                build_layout()
+            ),
+            "a route of the window"
         )
         expect.equal(route.view_space_id, 7)
         expect.equal(route.is_across_screens, true)
     end,
 
     a_window_whose_frame_is_unknown_gets_its_frame = function()
-        local route = window_routes.plan(
-            placement_on_builtin(1, LEFT_HALF),
-            location_of({ 3 }, nil),
-            build_layout()
+        local route = expect.present(
+            window_routes.plan(
+                placement_on_builtin(1, LEFT_HALF),
+                location_of({ 3 }, nil),
+                build_layout()
+            ),
+            "a route of the window"
         )
         expect.equal(route.target_frame, LEFT_HALF_OF_BUILTIN)
     end,
@@ -156,13 +171,16 @@ return {
         )
         expect.equal(route, nil)
         expect.equal(reason, "has no recorded frame for built-in, and stays")
-        route = window_routes.plan(
-            placement_on_builtin(2, nil),
-            location_of({ 64 }, ELSEWHERE),
-            build_layout()
+        local same_screen_route = expect.present(
+            window_routes.plan(
+                placement_on_builtin(2, nil),
+                location_of({ 64 }, ELSEWHERE),
+                build_layout()
+            ),
+            "a route of the window"
         )
-        expect.equal(route.target_frame, nil)
-        expect.equal(route.target_space_id, 14)
+        expect.equal(same_screen_route.target_frame, nil)
+        expect.equal(same_screen_route.target_space_id, 14)
     end,
 
     a_missing_desktop_is_reported = function()

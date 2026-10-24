@@ -78,7 +78,11 @@ return {
         expect.equal(world.notifications, { WATCHDOG_MESSAGE })
         world.windows[42].frame = { x = 100, y = 125, w = 600, h = 500 }
         world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
-        local unit_frame = controller_world.find_record(controller, 1, 42).unit_frame
+        local record = expect.present(
+            controller_world.find_record(controller, 1, 42),
+            "the record of window 42"
+        )
+        local unit_frame = expect.present(record.unit_frame, "the frame of window 42 in the record")
         expect.equal(math.abs(unit_frame.x - 100 / 1512) < 0.001, true)
     end,
 

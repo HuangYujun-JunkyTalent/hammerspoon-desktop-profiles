@@ -60,19 +60,21 @@ end
 ---@param world table
 ---@param window_ids integer[]
 ---@param timeout_seconds number
----@return table<integer, table>|nil reached nil while the wait goes on
----@return number|nil seconds until the wait ended
+---@return table<integer, table> reached
+---@return number seconds until the wait ended
 local function wait_and_settle(world, window_ids, timeout_seconds)
     local windows = {}
     for _, window_id in ipairs(window_ids) do
         table.insert(windows, server_window_of(world, window_id))
     end
+    ---@type table<integer, table>|nil, number|nil
     local reached, finished_at = nil, nil
     track_windows.wait_until_reached(windows, timeout_seconds, function(found)
         reached, finished_at = found, world.clock
     end)
     world.advance(5)
-    return reached, finished_at
+    return expect.present(reached, "the end of the wait within 5 seconds"),
+        expect.present(finished_at, "the time of the end of the wait")
 end
 
 return {

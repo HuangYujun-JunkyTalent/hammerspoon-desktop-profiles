@@ -186,10 +186,13 @@ return {
         local reading = world.create_unseen_window("com.apple.Safari", "Reading list", 64)
         world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
         expect.equal(controller_world.recorded_sight(controller, 1, reading.id), "in sight")
-        local arrangement = profile_state.find_arrangement(
-            controller.state,
-            1,
-            controller_world.MONITOR_CONFIGURATION_KEY
+        local arrangement = expect.present(
+            profile_state.find_arrangement(
+                controller.state,
+                1,
+                controller_world.MONITOR_CONFIGURATION_KEY
+            ),
+            "the arrangement of profile 1"
         )
         local record = arrangement.windows[#arrangement.windows]
         expect.equal(record.title, "Reading list")
@@ -243,10 +246,13 @@ return {
         expect.equal(world.windows[42].is_minimized, true)
         expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
         expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
-        local arrangement = profile_state.find_arrangement(
-            controller.state,
-            1,
-            controller_world.MONITOR_CONFIGURATION_KEY
+        local arrangement = expect.present(
+            profile_state.find_arrangement(
+                controller.state,
+                1,
+                controller_world.MONITOR_CONFIGURATION_KEY
+            ),
+            "the arrangement of profile 1"
         )
         expect.equal(arrangement.windows[1].desktop_number, 2)
         expect.equal(arrangement.windows[2].desktop_number, 1)
@@ -283,10 +289,13 @@ return {
         world.advance(controller_world.SETTLE_SECONDS)
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        local arrangement = profile_state.find_arrangement(
-            controller.state,
-            1,
-            controller_world.MONITOR_CONFIGURATION_KEY
+        local arrangement = expect.present(
+            profile_state.find_arrangement(
+                controller.state,
+                1,
+                controller_world.MONITOR_CONFIGURATION_KEY
+            ),
+            "the arrangement of profile 1"
         )
         expect.equal(arrangement.monitors[1].desktop_count, 4)
         expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99 })

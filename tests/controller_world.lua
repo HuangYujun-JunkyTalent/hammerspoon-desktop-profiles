@@ -55,6 +55,27 @@ function controller_world.find_menu_item(world, title)
     error("the menu has no item " .. title)
 end
 
+---Chooses "Print diagnostics to the console" in the menu bar item.
+---@param world table
+---@return string[] the lines that the diagnostics printed
+function controller_world.print_diagnostics(world)
+    local printed, original_print = {}, print
+    _G.print = function(text)
+        table.insert(printed, text)
+    end
+    local is_printed, error_message =
+        pcall(controller_world.find_menu_item(world, "Print diagnostics to the console").fn)
+    _G.print = original_print
+    if not is_printed then
+        error(error_message, 0)
+    end
+    local lines = {}
+    for line in table.concat(printed, "\n"):gmatch("[^\n]+") do
+        table.insert(lines, line)
+    end
+    return lines
+end
+
 ---@param world table
 function controller_world.open_app_pool_window(world)
     controller_world.find_menu_item(world, "Managed applications…").fn()

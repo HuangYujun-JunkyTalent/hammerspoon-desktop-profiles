@@ -319,10 +319,13 @@ return {
         world.screen_watchers[1]()
         world.advance(controller_world.SETTLE_SECONDS)
         world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
-        local arrangement = profile_state.find_arrangement(
-            controller.state,
-            1,
-            controller_world.MONITOR_CONFIGURATION_KEY
+        local arrangement = expect.present(
+            profile_state.find_arrangement(
+                controller.state,
+                1,
+                controller_world.MONITOR_CONFIGURATION_KEY
+            ),
+            "the arrangement of profile 1"
         )
         expect.equal(arrangement.monitors[1].desktop_count, 5)
         world.connect_screen(controller_world.DELL_SCREEN, { 20 })

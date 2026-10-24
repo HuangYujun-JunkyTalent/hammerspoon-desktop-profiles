@@ -34,7 +34,10 @@ return {
         world.close_window(41)
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        local opened = controller_world.find_window_titled(world, "Start Page")
+        local opened = expect.present(
+            controller_world.find_window_titled(world, "Start Page"),
+            "the window titled Start Page"
+        )
         expect.equal(opened.space_id, 8)
         controller_world.expect_frame_near(opened.frame, { x = 1440, y = 25, w = 1280, h = 1390 })
         expect.equal(world.window_moves, { opened.id .. " to 8" })
@@ -51,8 +54,10 @@ return {
         world.close_window(41)
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        local opened = controller_world.find_window_titled(world, "Start Page")
-        expect.present(opened, "the window titled Start Page")
+        local opened = expect.present(
+            controller_world.find_window_titled(world, "Start Page"),
+            "the window titled Start Page"
+        )
         expect.equal(opened.space_id, 14)
         expect.equal(opened.is_minimized, false)
         controller_world.expect_frame_near(opened.frame, { x = 0, y = 25, w = 720, h = 875 })
@@ -116,8 +121,10 @@ return {
         expect.equal(controller_world.recorded_sight(controller, 1, reopened.id), nil)
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        local opened = controller_world.find_window_titled(world, "Document1")
-        expect.present(opened, "the window titled Document1")
+        local opened = expect.present(
+            controller_world.find_window_titled(world, "Document1"),
+            "the window titled Document1"
+        )
         expect.equal(opened.is_minimized, false)
         expect.equal(world.windows[reopened.id].is_minimized, true)
         expect.equal(world.notifications, {})
@@ -134,8 +141,10 @@ return {
         world.close_window(42)
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        local opened = controller_world.find_window_titled(world, "Main Window")
-        expect.present(opened, "the window titled Main Window")
+        local opened = expect.present(
+            controller_world.find_window_titled(world, "Main Window"),
+            "the window titled Main Window"
+        )
         expect.equal(opened.space_id, 3)
         expect.equal(world.notifications, {})
     end,
@@ -175,13 +184,10 @@ return {
         record_shopping_and_quit_notes(world)
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        local relaunched = nil
-        for _, window in pairs(world.windows) do
-            if window.title == "Shopping" then
-                relaunched = window
-            end
-        end
-        expect.present(relaunched, "the window titled Shopping")
+        local relaunched = expect.present(
+            controller_world.find_window_titled(world, "Shopping"),
+            "the window titled Shopping"
+        )
         expect.equal(controller_world.recorded_sight(controller, 1, relaunched.id), "in sight")
         expect.equal(relaunched.is_minimized, false)
     end,

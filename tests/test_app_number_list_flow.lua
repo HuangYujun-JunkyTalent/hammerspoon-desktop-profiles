@@ -480,7 +480,7 @@ return {
                     return element
                 end
             end
-            return nil
+            error("the list on the screen has no text that starts with " .. prefix)
         end
         expect.equal(world.read_overlay()[3]:sub(1, 1), ">")
         local scrolling = find_text("A very")
@@ -604,8 +604,10 @@ return {
         )
         world.app_hotkeys["4"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        local opened = controller_world.find_window_titled(world, "Document1")
-        expect.present(opened, "the window titled Document1")
+        local opened = expect.present(
+            controller_world.find_window_titled(world, "Document1"),
+            "the window titled Document1"
+        )
         expect.equal(world.focused_window_id, opened.id)
     end,
 

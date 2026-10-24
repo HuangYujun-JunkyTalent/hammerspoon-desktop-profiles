@@ -118,10 +118,13 @@ return {
         expect.equal(world.mission_control_actions, { "show 64" })
         expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
         expect.equal(world.displays[1].active_space_id, 64)
-        local arrangement = profile_state.find_arrangement(
-            controller.state,
-            1,
-            controller_world.MONITOR_CONFIGURATION_KEY
+        local arrangement = expect.present(
+            profile_state.find_arrangement(
+                controller.state,
+                1,
+                controller_world.MONITOR_CONFIGURATION_KEY
+            ),
+            "the arrangement of profile 1"
         )
         expect.equal(arrangement.monitors, {
             { slot_key = "built-in", desktop_count = 3, shown_desktop_number = 3 },

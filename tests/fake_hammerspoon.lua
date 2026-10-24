@@ -365,6 +365,8 @@ function fake_hammerspoon.install(spec)
         return world.screens[1]
     end
 
+    ---@param uuid string
+    ---@return FakeDisplaySpec|nil
     local function find_display(uuid)
         for _, display in ipairs(world.displays) do
             if display.uuid == uuid then
@@ -372,6 +374,12 @@ function fake_hammerspoon.install(spec)
             end
         end
         return nil
+    end
+
+    ---@param uuid string
+    ---@return FakeDisplaySpec the display of a screen of the world, which every screen has
+    local function find_screen_display(uuid)
+        return find_display(uuid) or error("the world has no display " .. uuid)
     end
 
     ---@param space_id integer
@@ -665,7 +673,7 @@ function fake_hammerspoon.install(spec)
     mission_control_element = function()
         local groups = {}
         for _, screen in ipairs(world.screens) do
-            local display = find_display(screen.uuid)
+            local display = find_screen_display(screen.uuid)
             local add_button = accessibility_element({ AXIdentifier = "mc.spaces.add" }, {
                 AXPress = function()
                     local space_id = world.next_space_id
@@ -1167,11 +1175,16 @@ function fake_hammerspoon.install(spec)
         return panel
     end
 
+    ---@return table the canvas of the panel on the screen
+    local function find_overlay()
+        return world.overlay or error("no panel has been on the screen")
+    end
+
     ---@param id string
     ---@param attribute string
     ---@return table the element of the panel on the screen with the id, which tracks the mouse
     local function find_tracking_element(id, attribute)
-        for _, element in ipairs(world.overlay.elements) do
+        for _, element in ipairs(find_overlay().elements) do
             if element.id == id then
                 if not element[attribute] or not element.trackMouseByBounds then
                     error(
@@ -1193,7 +1206,7 @@ function fake_hammerspoon.install(spec)
     ---@param id string
     function world.move_mouse_to(id)
         find_tracking_element(id, "trackMouseEnterExit")
-        local canvas = world.overlay
+        local canvas = find_overlay()
         if world.mouse_element_id and world.mouse_element_id ~= id then
             canvas.mouse_callback(canvas, "mouseExit", world.mouse_element_id, 0, 0)
         end
@@ -1206,11 +1219,12 @@ function fake_hammerspoon.install(spec)
     function world.click(id)
         world.move_mouse_to(id)
         find_tracking_element(id, "trackMouseUp")
-        world.overlay.mouse_callback(world.overlay, "mouseUp", id, 0, 0)
+        local canvas = find_overlay()
+        canvas.mouse_callback(canvas, "mouseUp", id, 0, 0)
     end
 
     function world.move_mouse_out_of_panel()
-        local canvas = world.overlay
+        local canvas = find_overlay()
         if not (canvas.canvas_mouse_events and canvas.canvas_mouse_events.enter_exit) then
             error("the panel on the screen reports no exit of the mouse")
         end
@@ -1311,18 +1325,24 @@ function fake_hammerspoon.install(spec)
     ---and the other desktops of the screen move to the end of that screen with their windows.
     ---@param uuid string
     function world.disconnect_screen(uuid)
-        local display = find_display(uuid)
+        local display = find_screen_display(uuid)
         local remaining = nil
         for _, candidate in ipairs(world.displays) do
             if candidate ~= display and remaining == nil then
                 remaining = candidate
             end
         end
+        if not remaining then
+            error("the world has no display besides " .. uuid)
+        end
         local remaining_screen = nil
         for _, screen in ipairs(world.screens) do
             if screen.uuid == remaining.uuid then
                 remaining_screen = screen
             end
+        end
+        if not remaining_screen then
+            error("the world has no screen of the display " .. remaining.uuid)
         end
         for position, space_id in ipairs(display.space_ids) do
             if position > 1 then

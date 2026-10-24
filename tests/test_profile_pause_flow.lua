@@ -352,7 +352,11 @@ return {
         expect.equal(controller.state.is_active_profile_paused, true)
         expect.equal(
             profile_state.find_arrangement(controller.state, 1, "built-in"),
-            profile_state.find_arrangement(profile_state.decode(saved), 1, "built-in")
+            profile_state.find_arrangement(
+                expect.present(profile_state.decode(saved), "the decoded state"),
+                1,
+                "built-in"
+            )
         )
     end,
 
@@ -476,16 +480,11 @@ return {
         )
         expect.equal(controller_world.find_menu_item(world, "1  Profile 1").state, "mixed")
         expect.equal(controller_world.find_menu_item(world, "2  Profile 2").state, "off")
-        local printed, original_print = {}, print
-        _G.print = function(text)
-            table.insert(printed, text)
+        local lines = {}
+        for _, line in ipairs(controller_world.print_diagnostics(world)) do
+            lines[line] = true
         end
-        controller_world.find_menu_item(world, "Print diagnostics to the console").fn()
-        _G.print = original_print
-        expect.present(
-            table.concat(printed, "\n"):find("\nactive profile: 1, paused\n", 1, true),
-            "the line of the paused profile"
-        )
+        expect.equal(lines["active profile: 1, paused"], true)
         world.url_handlers["desktop-manager"]("desktop-manager", { action = "save" })
         expect.equal(world.menubar_title, "◧ 1")
         expect.equal(world.menubar_tooltip, "Profile 1")

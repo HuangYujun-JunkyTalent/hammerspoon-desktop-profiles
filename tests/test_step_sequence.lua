@@ -9,6 +9,7 @@ end
 return {
     steps_run_in_order = function()
         local visited = {}
+        ---@type string|nil
         local finished_with = "not finished"
         step_sequence.run(
             {

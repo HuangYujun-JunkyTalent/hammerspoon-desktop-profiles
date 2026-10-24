@@ -36,7 +36,7 @@ return {
             profile_state.new_state("by_count"),
             { weak_match = { hex = "#FFCC00", alpha = 0.5 } }
         )
-        local decoded = profile_state.decode(state)
+        local decoded = expect.present(profile_state.decode(state), "the decoded state")
         expect.equal(decoded.highlight_colors, { weak_match = { hex = "#FFCC00", alpha = 0.5 } })
         expect.equal(#highlight_colors.PRESETS, 4)
     end,

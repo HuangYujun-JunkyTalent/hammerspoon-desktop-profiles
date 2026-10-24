@@ -1,27 +1,6 @@
 local controller_world = require("tests.controller_world")
 local expect = require("tests.expect")
 
----Chooses "Print diagnostics to the console" in the menu bar item.
----@param world table
----@return string[] the lines that the diagnostics printed
-local function print_diagnostics(world)
-    local printed, original_print = {}, print
-    _G.print = function(text)
-        table.insert(printed, text)
-    end
-    local is_printed, error_message =
-        pcall(controller_world.find_menu_item(world, "Print diagnostics to the console").fn)
-    _G.print = original_print
-    if not is_printed then
-        error(error_message, 0)
-    end
-    local lines = {}
-    for line in table.concat(printed, "\n"):gmatch("[^\n]+") do
-        table.insert(lines, line)
-    end
-    return lines
-end
-
 ---Has the screen connect or disconnect right after the controller reads the monitor
 ---configuration, as a monitor may between that read and the read of the screens.
 ---@param controller ProfileController
@@ -44,7 +23,7 @@ return {
         world.create_unseen_window("com.apple.Safari", "Reading list", 64)
         world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
         local lines = {}
-        for _, line in ipairs(print_diagnostics(world)) do
+        for _, line in ipairs(controller_world.print_diagnostics(world)) do
             lines[line] = true
         end
         expect.equal(lines["Hammerspoon 8cde946"], true)
@@ -60,7 +39,7 @@ return {
         world.advance(controller_world.SETTLE_SECONDS)
         world.create_unseen_window("com.apple.Safari", "Reading list", 64)
         world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
-        local lines = print_diagnostics(world)
+        local lines = controller_world.print_diagnostics(world)
         expect.present(lines[3]:match("^running timers: %d+$"), "the line of the running timers")
         lines[3] = "running timers"
         expect.equal(lines, {
@@ -99,7 +78,7 @@ return {
             world.connect_screen(controller_world.DELL_SCREEN, { 70, 71 })
         end)
         local lines = {}
-        for _, line in ipairs(print_diagnostics(world)) do
+        for _, line in ipairs(controller_world.print_diagnostics(world)) do
             lines[line] = true
         end
         local new_screen_line = '  screen DELL-UUID "DELL S2725DS" built-in=false'
@@ -114,7 +93,7 @@ return {
         change_screens_after_the_read_of_the_configuration(controller, function()
             world.disconnect_screen(controller_world.DELL_SCREEN.uuid)
         end)
-        local lines = print_diagnostics(world)
+        local lines = controller_world.print_diagnostics(world)
         expect.equal({ lines[6], lines[7], lines[8] }, {
             "monitor configuration: built-in + 1 external",
             '  screen BUILTIN-UUID "Built-in Retina Display" built-in=true slot=built-in',

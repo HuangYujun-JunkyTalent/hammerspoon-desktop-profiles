@@ -38,8 +38,14 @@ return {
     a_shown_desktop_is_recorded_with_the_focus_in_a_new_state = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
         state = profile_state.with_arrangement(state, 3, ARRANGEMENT)
-        local shown = profile_state.with_shown_desktop(state, 3, "built-in", "built-in", 2)
-        local arrangement = profile_state.find_arrangement(shown, 3, "built-in")
+        local shown = expect.present(
+            profile_state.with_shown_desktop(state, 3, "built-in", "built-in", 2),
+            "the state with the shown desktop"
+        )
+        local arrangement = expect.present(
+            profile_state.find_arrangement(shown, 3, "built-in"),
+            "the arrangement of profile 3"
+        )
         expect.equal(arrangement.monitors[1].shown_desktop_number, 2)
         expect.equal(arrangement.focused_slot_key, "built-in")
         expect.equal(arrangement.windows, ARRANGEMENT.windows)
@@ -238,7 +244,7 @@ return {
                 },
             },
         }
-        local state = profile_state.decode(raw)
+        local state = expect.present(profile_state.decode(raw), "the decoded state")
         expect.equal(state.active_profile_number, 3)
         expect.equal(math.type(state.active_profile_number), "integer")
         local record = profile_state.find_arrangement(state, 3, "built-in").windows[1]
@@ -270,6 +276,7 @@ return {
         local state =
             profile_state.with_app_pool(profile_state.new_state(monitor_matching.BY_COUNT), pool)
         expect.equal(profile_state.decode(state), state)
+        ---@type table a state of the format before the pool, with a list of managed applications
         local older = profile_state.new_state(monitor_matching.BY_COUNT)
         older.app_pool = nil
         older.managed_applications = { { bundle_id = "org.mozilla.firefox", app_name = "Firefox" } }
@@ -286,6 +293,7 @@ return {
                 },
             })
         expect.equal(profile_state.decode(state), state)
+        ---@type table a state without the desktop counts, and then with a wrong reading
         local older = profile_state.new_state(monitor_matching.BY_COUNT)
         older.desktop_counts = nil
         expect.equal(profile_state.decode(older).desktop_counts, { kept = {}, last_reading = nil })
@@ -336,7 +344,7 @@ return {
                 },
             })
         state.profiles["0"].arrangements["built-in"] = ARRANGEMENT
-        local decoded = profile_state.decode(state)
+        local decoded = expect.present(profile_state.decode(state), "the decoded state")
         expect.equal(decoded.profiles["0"].app_numbers, state.profiles["0"].app_numbers)
         expect.equal(decoded.profiles["0"].arrangements, {})
     end,
@@ -349,33 +357,38 @@ return {
     end,
 
     a_saved_focus_becomes_the_desktop_shown_of_its_screen = function()
-        local state = profile_state.decode({
-            format_version = 1,
-            monitor_matching = "by_count",
-            profiles = {
-                ["1"] = {
-                    number = 1,
-                    arrangements = {
-                        ["built-in + 1 external"] = {
-                            monitor_configuration_key = "built-in + 1 external",
-                            monitors = {
-                                { slot_key = "built-in", desktop_count = 3 },
-                                { slot_key = "external 1", desktop_count = 2 },
+        local state = expect.present(
+            profile_state.decode({
+                format_version = 1,
+                monitor_matching = "by_count",
+                profiles = {
+                    ["1"] = {
+                        number = 1,
+                        arrangements = {
+                            ["built-in + 1 external"] = {
+                                monitor_configuration_key = "built-in + 1 external",
+                                monitors = {
+                                    { slot_key = "built-in", desktop_count = 3 },
+                                    { slot_key = "external 1", desktop_count = 2 },
+                                },
+                                focus = { slot_key = "external 1", desktop_number = 2.0 },
+                                windows = {},
                             },
-                            focus = { slot_key = "external 1", desktop_number = 2.0 },
-                            windows = {},
                         },
                     },
                 },
+            }),
+            "the decoded state"
+        )
+        expect.equal(profile_state.find_arrangement(state, 1, "built-in + 1 external"), {
+            monitor_configuration_key = "built-in + 1 external",
+            monitors = {
+                { slot_key = "built-in", desktop_count = 3 },
+                { slot_key = "external 1", desktop_count = 2, shown_desktop_number = 2 },
             },
+            focused_slot_key = "external 1",
+            windows = {},
         })
-        local arrangement = profile_state.find_arrangement(state, 1, "built-in + 1 external")
-        expect.equal(arrangement.monitors, {
-            { slot_key = "built-in", desktop_count = 3 },
-            { slot_key = "external 1", desktop_count = 2, shown_desktop_number = 2 },
-        })
-        expect.equal(arrangement.focused_slot_key, "external 1")
-        expect.equal(arrangement.focus, nil)
         expect.equal(state.format_version, profile_state.FORMAT_VERSION)
     end,
 
@@ -383,14 +396,20 @@ return {
         local function decode_arrangement(format_version, raw_arrangement)
             raw_arrangement.monitor_configuration_key = "built-in"
             raw_arrangement.windows = {}
-            local state = profile_state.decode({
-                format_version = format_version,
-                monitor_matching = "by_count",
-                profiles = {
-                    ["1"] = { number = 1, arrangements = { ["built-in"] = raw_arrangement } },
-                },
-            })
-            return profile_state.find_arrangement(state, 1, "built-in")
+            local state = expect.present(
+                profile_state.decode({
+                    format_version = format_version,
+                    monitor_matching = "by_count",
+                    profiles = {
+                        ["1"] = { number = 1, arrangements = { ["built-in"] = raw_arrangement } },
+                    },
+                }),
+                "the decoded state"
+            )
+            return expect.present(
+                profile_state.find_arrangement(state, 1, "built-in"),
+                "the arrangement of profile 1"
+            )
         end
         local current = decode_arrangement(2, {
             monitors = { { slot_key = "built-in", desktop_count = 2, shown_desktop_number = 0 } },
@@ -416,36 +435,39 @@ return {
                 is_out_of_sight = false,
             }
         end
-        local state = profile_state.decode({
-            format_version = 1,
-            monitor_matching = "by_count",
-            desktop_counts = { kept = { ["built-in"] = 3, ["external 1"] = 4 } },
-            profiles = {
-                ["1"] = {
-                    number = 1,
-                    arrangements = {
-                        ["built-in + 1 external"] = {
-                            monitor_configuration_key = "built-in + 1 external",
-                            monitors = {
-                                { slot_key = "built-in", desktop_count = 7 },
-                                { slot_key = "external 1", desktop_count = 2 },
-                                { slot_key = "external 2", desktop_count = 5 },
+        local state = expect.present(
+            profile_state.decode({
+                format_version = 1,
+                monitor_matching = "by_count",
+                desktop_counts = { kept = { ["built-in"] = 3, ["external 1"] = 4 } },
+                profiles = {
+                    ["1"] = {
+                        number = 1,
+                        arrangements = {
+                            ["built-in + 1 external"] = {
+                                monitor_configuration_key = "built-in + 1 external",
+                                monitors = {
+                                    { slot_key = "built-in", desktop_count = 7 },
+                                    { slot_key = "external 1", desktop_count = 2 },
+                                    { slot_key = "external 2", desktop_count = 5 },
+                                },
+                                windows = {
+                                    record_on(41, "built-in", 5),
+                                    record_on(42, "built-in", 2),
+                                    record_on(43, "external 1", 2),
+                                },
                             },
-                            windows = {
-                                record_on(41, "built-in", 5),
-                                record_on(42, "built-in", 2),
-                                record_on(43, "external 1", 2),
+                            ["built-in"] = {
+                                monitor_configuration_key = "built-in",
+                                monitors = { { slot_key = "built-in", desktop_count = 6 } },
+                                windows = { record_on(44, "built-in", 1) },
                             },
-                        },
-                        ["built-in"] = {
-                            monitor_configuration_key = "built-in",
-                            monitors = { { slot_key = "built-in", desktop_count = 6 } },
-                            windows = { record_on(44, "built-in", 1) },
                         },
                     },
                 },
-            },
-        })
+            }),
+            "the decoded state"
+        )
         expect.equal(profile_state.find_arrangement(state, 1, "built-in + 1 external").monitors, {
             { slot_key = "built-in", desktop_count = 5 },
             { slot_key = "external 1", desktop_count = 2 },
