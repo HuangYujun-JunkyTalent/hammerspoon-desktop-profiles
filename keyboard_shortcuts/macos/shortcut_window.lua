@@ -279,7 +279,7 @@ end
 ---@param id string
 ---@param value Shortcut|false|nil
 local function change_shortcut(window, id, value)
-    window.center:resume()
+    window.center:turn_on()
     window.pending = nil
     window.problems = window.center:set_override(id, value)
     redraw_list(window)
@@ -290,7 +290,7 @@ end
 ---@param id string
 ---@param shortcut Shortcut
 local function record_shortcut(window, id, shortcut)
-    window.center:resume()
+    window.center:turn_on()
     local holder = window.center:find_holder(shortcut, id)
     local pending = {
         id = id,
@@ -356,7 +356,7 @@ end
 ---Resumes the shortcuts, which a recording paused, and reports that the window closed.
 ---@param window ShortcutWindow
 local function finish_closing(window)
-    window.center:resume()
+    window.center:turn_on()
     window.on_closed()
 end
 
@@ -365,14 +365,14 @@ end
 local MESSAGE_KIND_HANDLERS = {
     record_start = function(window)
         window.pending = nil
-        window.center:pause()
+        window.center:turn_off()
     end,
     record_cancel = function(window)
-        window.center:resume()
+        window.center:turn_on()
         redraw_list(window)
     end,
     record_unknown = function(window, body)
-        window.center:resume()
+        window.center:turn_on()
         window.problems = {
             string.format("The key %s has no name in Hammerspoon.", tostring(body.code)),
         }

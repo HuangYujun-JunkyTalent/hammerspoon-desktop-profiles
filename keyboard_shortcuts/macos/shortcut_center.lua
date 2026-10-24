@@ -29,7 +29,7 @@ local NOTIFICATION_TITLE = "Keyboard shortcuts"
 ---@field overrides table<string, Shortcut|false>
 ---@field file_path string|nil the JSON file of the overrides, or nil to keep them in memory
 ---@field binding_by_id table<string, ShortcutBinding>
----@field is_paused boolean
+---@field is_turned_off boolean
 ---@field log table an hs.logger
 local ShortcutCenter = {}
 ShortcutCenter.__index = ShortcutCenter
@@ -63,7 +63,7 @@ function shortcut_center.new(file_path)
         on_press_by_id = {},
         file_path = file_path,
         binding_by_id = {},
-        is_paused = false,
+        is_turned_off = false,
         log = hs.logger.new("shortcuts", "info"),
     }, ShortcutCenter)
     local overrides, warning = read_overrides(file_path)
@@ -105,7 +105,7 @@ function ShortcutCenter:rebind()
             binding.hotkey = hs.hotkey.bind(shortcut.modifiers, shortcut.key, function()
                 on_press(binding)
             end)
-            if self.is_paused then
+            if self.is_turned_off then
                 binding.hotkey:disable()
             end
             self.binding_by_id[action.id] = binding
@@ -206,15 +206,16 @@ end
 
 ---Turns every shortcut off, as while the window records a new shortcut, so that pressing a
 ---shortcut of the tools records it instead of running it.
-function ShortcutCenter:pause()
-    self.is_paused = true
+function ShortcutCenter:turn_off()
+    self.is_turned_off = true
     for _, binding in pairs(self.binding_by_id) do
         binding.hotkey:disable()
     end
 end
 
-function ShortcutCenter:resume()
-    self.is_paused = false
+---Turns every shortcut on again.
+function ShortcutCenter:turn_on()
+    self.is_turned_off = false
     for _, binding in pairs(self.binding_by_id) do
         binding.hotkey:enable()
     end
