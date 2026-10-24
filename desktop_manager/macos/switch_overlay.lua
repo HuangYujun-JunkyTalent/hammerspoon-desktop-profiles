@@ -1,3 +1,4 @@
+local canvas_elements = require("desktop_manager.macos.canvas_elements")
 local list_sizing = require("desktop_manager.core.list_sizing")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local switch_list = require("desktop_manager.core.switch_list")
@@ -160,28 +161,11 @@ local function lay_out_title(title, visible_count, is_selected, settings)
     )
 end
 
----An image element centered in its box, at the size of a preview or of an icon.
 ---@param sizes SwitchSizes
----@param image table|nil an hs.image
----@param is_preview boolean
----@param box table the x, y, w and h of the space for the image
----@return table|nil
-local function build_image(sizes, image, is_preview, box)
-    if not image then
-        return nil
-    end
-    local size = is_preview and sizes.preview_size or { w = sizes.icon_size, h = sizes.icon_size }
-    return {
-        type = "image",
-        image = image,
-        imageScaling = "scaleToFit",
-        frame = {
-            x = box.x + (box.w - size.w) / 2,
-            y = box.y + (box.h - size.h) / 2,
-            w = size.w,
-            h = size.h,
-        },
-    }
+---@param preview table|nil the hs.image of the preview of a window
+---@return table the w and h of the preview when there is one, and of an icon otherwise
+local function choose_image_size(sizes, preview)
+    return preview and sizes.preview_size or { w = sizes.icon_size, h = sizes.icon_size }
 end
 
 ---@class TextStyle
@@ -208,24 +192,22 @@ end
 ---@param frame table
 ---@return table a rectangle element behind a selected line or cell
 local function build_selection(frame)
-    return {
-        type = "rectangle",
-        action = "fill",
-        fillColor = SELECTION_COLOR,
-        roundedRectRadii = { xRadius = 6, yRadius = 6 },
-        frame = frame,
-        id = "selection",
-    }
+    return canvas_elements.build_rounded_rectangle(
+        frame,
+        SELECTION_COLOR,
+        canvas_elements.BACKDROP_RADIUS,
+        "selection"
+    )
 end
 
 ---@return table the rectangle element of the background
 local function build_background()
-    return {
-        type = "rectangle",
-        action = "fill",
-        fillColor = BACKGROUND_COLOR,
-        roundedRectRadii = { xRadius = 14, yRadius = 14 },
-    }
+    return canvas_elements.build_rounded_rectangle(
+        nil,
+        BACKGROUND_COLOR,
+        canvas_elements.BACKGROUND_RADIUS,
+        nil
+    )
 end
 
 ---Adds the text element of a title, and returns the scrolling title when it scrolls.
@@ -284,8 +266,12 @@ local function draw_rows(lines, context)
         if line.is_application then
             box = { x = PADDING, y = top, w = sizes.icon_size, h = height }
         end
-        local image =
-            build_image(sizes, preview or images.app_icons[line.bundle_id], preview ~= nil, box)
+        local image = canvas_elements.build_centered_image(
+            preview or images.app_icons[line.bundle_id],
+            box,
+            choose_image_size(sizes, preview),
+            nil
+        )
         if image then
             table.insert(elements, image)
         end
@@ -347,12 +333,12 @@ local function draw_column_header(elements, column, origin, context, metrics)
             })
         )
     end
-    local icon = build_image(sizes, context.images.app_icons[column.bundle_id], false, {
+    local icon = canvas_elements.build_centered_image(context.images.app_icons[column.bundle_id], {
         x = origin.x + CELL_PADDING,
         y = origin.y,
         w = sizes.icon_size,
         h = metrics.header_height,
-    })
+    }, choose_image_size(sizes, nil), nil)
     if icon then
         table.insert(elements, icon)
     end
@@ -414,12 +400,12 @@ local function draw_column_cells(elements, column, origin, context, metrics)
         end
         local preview = context.images.previews[cell.window_id]
         local icon = context.images.app_icons[column.bundle_id]
-        local image = build_image(sizes, preview or icon, preview ~= nil, {
+        local image = canvas_elements.build_centered_image(preview or icon, {
             x = origin.x + CELL_PADDING,
             y = top + CELL_PADDING / 2,
             w = metrics.title_width,
             h = sizes.preview_size.h,
-        })
+        }, choose_image_size(sizes, preview), nil)
         if image then
             table.insert(elements, image)
         end
@@ -629,18 +615,6 @@ local function fit_to_screen(view, images, settings, screen)
     return best_context
 end
 
----@param size table the w and h of the list
----@return table the frame that centers the list on the screen in front
-local function center_on_screen(size)
-    local screen = hs.screen.mainScreen():frame()
-    return {
-        x = screen.x + (screen.w - size.w) / 2,
-        y = screen.y + (screen.h - size.h) / 2,
-        w = size.w,
-        h = size.h,
-    }
-end
-
 ---@param overlay SwitchOverlay
 local function stop_scrolling(overlay)
     for _, timer in ipairs(overlay.scroll_timers) do
@@ -683,7 +657,7 @@ end
 function switch_overlay.show(view, images, settings)
     local context = fit_to_screen(view, images, settings, hs.screen.mainScreen():frame())
     local elements, size, scrolling = draw(view, context)
-    local canvas = hs.canvas.new(center_on_screen(size))
+    local canvas = hs.canvas.new(canvas_elements.center_on_screen(size))
     canvas:level(hs.canvas.windowLevels.overlay)
     canvas:replaceElements(elements)
     canvas:show()
@@ -708,7 +682,7 @@ function switch_overlay.update(overlay, view, images)
         line_count = overlay.line_count,
         settings = overlay.settings,
     })
-    overlay.canvas:frame(center_on_screen(size))
+    overlay.canvas:frame(canvas_elements.center_on_screen(size))
     overlay.canvas:replaceElements(elements)
     start_scrolling(overlay, scrolling)
 end

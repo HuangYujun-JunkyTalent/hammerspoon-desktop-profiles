@@ -1,3 +1,5 @@
+local canvas_elements = require("desktop_manager.macos.canvas_elements")
+
 ---Draws the panel of the search of the windows in the middle of the screen in front: the search
 ---line on top, the previews of the windows in view in a grid, and the applications in a row at the
 ---bottom.
@@ -162,14 +164,12 @@ end
 ---@param id string
 ---@return table a rectangle element behind an item
 local function build_backdrop(frame, color, id)
-    return {
-        type = "rectangle",
-        action = "fill",
-        fillColor = color,
-        roundedRectRadii = { xRadius = 6, yRadius = 6 },
-        frame = frame,
-        id = id,
-    }
+    return canvas_elements.build_rounded_rectangle(
+        frame,
+        color,
+        canvas_elements.BACKDROP_RADIUS,
+        id
+    )
 end
 
 ---@param frame table
@@ -194,21 +194,12 @@ end
 ---@param is_faded boolean
 ---@return table|nil an image element centered in the box
 local function build_image(image, box, size, is_faded)
-    if not image then
-        return nil
-    end
-    return {
-        type = "image",
-        image = image,
-        imageScaling = "scaleToFit",
-        imageAlpha = is_faded and FADED_IMAGE_ALPHA or 1,
-        frame = {
-            x = box.x + (box.w - size.w) / 2,
-            y = box.y + (box.h - size.h) / 2,
-            w = size.w,
-            h = size.h,
-        },
-    }
+    return canvas_elements.build_centered_image(
+        image,
+        box,
+        size,
+        is_faded and FADED_IMAGE_ALPHA or 1
+    )
 end
 
 ---@param elements table[]
@@ -399,29 +390,17 @@ end
 ---@return table[] elements
 local function draw(view, images, layout)
     local elements = {
-        {
-            type = "rectangle",
-            action = "fill",
-            fillColor = BACKGROUND_COLOR,
-            roundedRectRadii = { xRadius = 14, yRadius = 14 },
-        },
+        canvas_elements.build_rounded_rectangle(
+            nil,
+            BACKGROUND_COLOR,
+            canvas_elements.BACKGROUND_RADIUS,
+            nil
+        ),
     }
     draw_search_line(elements, view.line, layout)
     draw_previews(elements, view.windows, images, layout)
     draw_applications(elements, view.applications, images, layout)
     return elements
-end
-
----@param size table the w and h of the panel
----@return table the frame that centers the panel on the screen in front
-local function center_on_screen(size)
-    local screen = hs.screen.mainScreen():frame()
-    return {
-        x = screen.x + (screen.w - size.w) / 2,
-        y = screen.y + (screen.h - size.h) / 2,
-        w = size.w,
-        h = size.h,
-    }
 end
 
 ---@param view SearchView
@@ -433,7 +412,7 @@ end
 ---@return SearchOverlay
 function search_overlay.show(view, images, settings, on_mouse)
     local layout = lay_out(view, settings, hs.screen.mainScreen():frame())
-    local canvas = hs.canvas.new(center_on_screen(layout.size))
+    local canvas = hs.canvas.new(canvas_elements.center_on_screen(layout.size))
     canvas:level(hs.canvas.windowLevels.overlay)
     canvas:mouseCallback(function(_, message, id)
         on_mouse(message, tostring(id))
@@ -449,7 +428,7 @@ end
 ---@param images SwitchImages
 function search_overlay.update(overlay, view, images)
     local layout = lay_out(view, overlay.settings, hs.screen.mainScreen():frame())
-    overlay.canvas:frame(center_on_screen(layout.size))
+    overlay.canvas:frame(canvas_elements.center_on_screen(layout.size))
     overlay.canvas:replaceElements(draw(view, images, layout))
     overlay.column_count = layout.column_count
 end

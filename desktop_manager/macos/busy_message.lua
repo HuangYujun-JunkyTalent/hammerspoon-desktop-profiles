@@ -1,3 +1,5 @@
+local canvas_elements = require("desktop_manager.macos.canvas_elements")
+
 ---A message at the top of every screen during every operation of the desktop manager that takes
 ---time, so that the user waits before working with the windows.
 ---The operations are a switch, a restore, a change of monitors, an addition or a removal of
@@ -32,12 +34,7 @@ local function show_on_screen(text, screen_frame, text_size)
     canvas:level(hs.canvas.windowLevels.overlay)
     canvas:behaviorAsLabels({ "canJoinAllSpaces", "stationary" })
     canvas:replaceElements({
-        {
-            type = "rectangle",
-            action = "fill",
-            fillColor = BACKGROUND_COLOR,
-            roundedRectRadii = { xRadius = h / 2, yRadius = h / 2 },
-        },
+        canvas_elements.build_rounded_rectangle(nil, BACKGROUND_COLOR, h / 2, nil),
         {
             type = "text",
             text = text,
