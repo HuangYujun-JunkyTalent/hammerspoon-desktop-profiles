@@ -2,12 +2,17 @@ local concealment_method = require("desktop_manager.core.concealment_method")
 
 local profile_switch = {}
 
----An open window at the time of a switch.
----@class OpenWindow
----@field window_id integer
+---What a switch reads of a window to learn whether it is in sight.
+---A window is out of sight when it is minimized or its application is hidden.
+---@class WindowState
 ---@field bundle_id string
 ---@field is_minimized boolean
 ---@field is_app_hidden boolean
+
+---An open window at the time of a switch.
+---@class OpenWindow: WindowState
+---@field window_id integer
+---@field title string
 
 ---An open window and whether the profile entered keeps it in sight.
 ---@class SwitchCandidate

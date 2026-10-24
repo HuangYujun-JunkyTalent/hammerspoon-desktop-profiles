@@ -66,7 +66,7 @@ end
 ---Reads the application of the window, its bundle id, whether the window is minimized and whether
 ---the application is hidden, in that order.
 ---@param window table an hs.window
----@return LiveWindowState
+---@return WindowState
 function track_windows.read_window_state(window)
     local application = window:application()
     return {

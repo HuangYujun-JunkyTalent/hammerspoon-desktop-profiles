@@ -97,8 +97,8 @@ end
 
 ---@param is_minimized boolean
 ---@param is_app_hidden boolean
----@return LiveWindowState
-local function live_state(is_minimized, is_app_hidden)
+---@return WindowState
+local function window_state(is_minimized, is_app_hidden)
     return {
         bundle_id = "com.apple.Safari",
         is_minimized = is_minimized,
@@ -114,7 +114,7 @@ return {
             CONFIGURATION,
             layout_with({ 3, 14 }),
             { { record = first, window_id = 41 }, { record = second, window_id = 42 } },
-            { [41] = live_state(false, true), [42] = live_state(false, false) }
+            { [41] = window_state(false, true), [42] = window_state(false, false) }
         )
         expect.equal(plan.placements, {
             {
@@ -148,7 +148,7 @@ return {
             CONFIGURATION,
             layout_with({ 3, 14 }),
             { { record = record, window_id = 41 } },
-            { [41] = live_state(false, false) }
+            { [41] = window_state(false, false) }
         )
         expect.equal(
             plan.desktop_additions,
@@ -164,7 +164,7 @@ return {
             CONFIGURATION,
             layout_with({ 3, 14 }),
             { { record = record, window_id = 41 } },
-            { [41] = live_state(true, false) }
+            { [41] = window_state(true, false) }
         )
         expect.equal(#plan.unminimizations, 1)
         expect.equal(plan.unminimizations[1].window_id, 41)
@@ -201,7 +201,7 @@ return {
             CONFIGURATION,
             layout_with({ 3, 14 }),
             { { record = record, window_id = 41 } },
-            { [41] = live_state(false, true) }
+            { [41] = window_state(false, true) }
         )
         expect.equal(plan.bundle_ids_to_unhide, {})
         expect.equal(plan.placements, {})

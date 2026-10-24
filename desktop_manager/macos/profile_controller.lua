@@ -162,10 +162,9 @@ function ProfileController:read_monitor_configuration()
 end
 
 ---@param windows table[] hs.window objects
----@return OpenWindow[] open_windows
----@return LiveWindow[] live_windows the same windows with their titles, for the matching
+---@return OpenWindow[]
 local function describe_open_windows(windows)
-    local open_windows, live_windows = {}, {}
+    local open_windows = {}
     for _, window in ipairs(windows) do
         local window_id = window:id()
         if window_id then
@@ -175,14 +174,11 @@ local function describe_open_windows(windows)
                 bundle_id = state.bundle_id,
                 is_minimized = state.is_minimized,
                 is_app_hidden = state.is_app_hidden,
+                title = window:title() or "",
             })
-            table.insert(
-                live_windows,
-                { window_id = window_id, bundle_id = state.bundle_id, title = window:title() or "" }
-            )
         end
     end
-    return open_windows, live_windows
+    return open_windows
 end
 
 ---Gives the records of a window that its application reopened the id of the new window, in every
@@ -453,11 +449,11 @@ function ProfileController:restore_matched_windows(
     local function find_window(window_id)
         return window_by_id[window_id] or self.known_windows:find(window_id)
     end
-    local live_states = {}
+    local window_states = {}
     for _, match in ipairs(matches) do
         local window = find_window(match.window_id)
         if window then
-            live_states[match.window_id] = track_windows.read_window_state(window)
+            window_states[match.window_id] = track_windows.read_window_state(window)
         end
     end
     local plan = restore_plan.plan(
@@ -465,7 +461,7 @@ function ProfileController:restore_matched_windows(
         self:read_monitor_configuration(),
         read_desktops.read_desktop_layout(),
         matches,
-        live_states
+        window_states
     )
     self.log.f(
         "restoring profile %d: %d of %d saved windows open, plan %s",
@@ -506,24 +502,21 @@ end
 ---@return WindowMatchResult
 ---@return OpenWindow[] open_windows the known and the unreached windows, for the marks of a switch
 function ProfileController:match_with_unreached(arrangement, managed_windows, unreached)
-    local open_windows, live_windows = describe_open_windows(managed_windows)
+    local open_windows = describe_open_windows(managed_windows)
     for _, window in ipairs(unreached) do
         table.insert(open_windows, {
             window_id = window.window_id,
             bundle_id = window.bundle_id,
             is_minimized = false,
             is_app_hidden = false,
+            title = window.title,
         })
-        table.insert(
-            live_windows,
-            { window_id = window.window_id, bundle_id = window.bundle_id, title = window.title }
-        )
     end
     local match_result = window_matching.match_records_to_open_windows(
         self.settings.match_windows_by,
         self.settings.missing_window_policy,
         arrangement.windows,
-        live_windows
+        open_windows
     )
     return match_result, open_windows
 end

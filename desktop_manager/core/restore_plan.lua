@@ -5,11 +5,6 @@ local monitor_configuration = require("desktop_manager.core.monitor_configuratio
 
 local restore_plan = {}
 
----@class LiveWindowState
----@field bundle_id string
----@field is_minimized boolean
----@field is_app_hidden boolean
-
 ---@class DesktopAddition
 ---@field screen_uuid string
 ---@field slot_key string
@@ -172,9 +167,9 @@ end
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
 ---@param matches WindowMatch[]
----@param live_states table<integer, LiveWindowState>
+---@param window_states table<integer, WindowState> the state of each matched window
 ---@return RestorePlan
-function restore_plan.plan(arrangement, configuration, desktop_layout, matches, live_states)
+function restore_plan.plan(arrangement, configuration, desktop_layout, matches, window_states)
     local desktop_additions, target_counts =
         plan_desktop_additions(arrangement, configuration, desktop_layout)
     local plan = {
@@ -189,7 +184,7 @@ function restore_plan.plan(arrangement, configuration, desktop_layout, matches, 
         ),
     }
     for _, match in ipairs(matches) do
-        local record, state = match.record, live_states[match.window_id]
+        local record, state = match.record, window_states[match.window_id]
         local slot = record.slot_key
             and monitor_configuration.find_slot(configuration, record.slot_key)
         local target_count = slot and target_counts[slot.screen_uuid]

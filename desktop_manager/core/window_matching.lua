@@ -16,11 +16,6 @@ local window_matching = {}
 ---@field unit_frame Rect|nil
 ---@field is_out_of_sight boolean
 
----@class LiveWindow
----@field window_id integer
----@field bundle_id string
----@field title string
-
 ---@class WindowMatch
 ---@field record WindowRecord
 ---@field window_id integer
@@ -29,7 +24,7 @@ local window_matching = {}
 ---@field matches WindowMatch[]
 ---@field unmatched_records WindowRecord[]
 
----@alias MatchCriterion fun(record: WindowRecord, window: LiveWindow): boolean
+---@alias MatchCriterion fun(record: WindowRecord, window: OpenWindow): boolean
 
 ---@type MatchCriterion
 local function has_same_id(record, window)
@@ -53,19 +48,19 @@ local function has_same_id_and_title(record, window)
     return has_same_id(record, window) and record.title == window.title
 end
 
----Pairs each saved record with at most one live window, and each window with at most one record,
+---Pairs each saved record with at most one open window, and each window with at most one record,
 ---trying the criteria in order.
 ---@param criteria MatchCriterion[]
 ---@param records WindowRecord[]
----@param live_windows LiveWindow[]
+---@param open_windows OpenWindow[]
 ---@return WindowMatchResult
-local function match_by_criteria(criteria, records, live_windows)
+local function match_by_criteria(criteria, records, open_windows)
     local used_window_ids = {}
     local window_id_by_record_index = {}
     for _, criterion in ipairs(criteria) do
         for record_index, record in ipairs(records) do
             if not window_id_by_record_index[record_index] then
-                for _, window in ipairs(live_windows) do
+                for _, window in ipairs(open_windows) do
                     if not used_window_ids[window.window_id] and criterion(record, window) then
                         used_window_ids[window.window_id] = true
                         window_id_by_record_index[record_index] = window.window_id
@@ -107,9 +102,9 @@ local CRITERIA_BY_TITLE = { has_same_id_and_title, has_same_given_title, has_sam
 ---@param match_key string a value of match_windows_by
 ---@param policy string a value of missing_window_policy
 ---@param records WindowRecord[]
----@param live_windows LiveWindow[]
+---@param open_windows OpenWindow[]
 ---@return WindowMatchResult
-function window_matching.match_records_to_open_windows(match_key, policy, records, live_windows)
+function window_matching.match_records_to_open_windows(match_key, policy, records, open_windows)
     local criteria
     if match_key == match_windows_by.TITLE then
         criteria = CRITERIA_BY_TITLE
@@ -121,7 +116,7 @@ function window_matching.match_records_to_open_windows(match_key, policy, record
     else
         error(string.format("unknown way to match windows %q", tostring(match_key)), 2)
     end
-    return match_by_criteria(criteria, records, live_windows)
+    return match_by_criteria(criteria, records, open_windows)
 end
 
 ---The records of windows that no longer exist, each window once per application, in the order of
@@ -154,10 +149,10 @@ end
 ---macOS gives a window that its application reopens a new id, so the title decides.
 ---The place is left out, because macOS opens a new window at the place of the last closed one.
 ---@param records WindowRecord[]
----@param live_windows LiveWindow[]
+---@param open_windows OpenWindow[]
 ---@return WindowMatchResult
-function window_matching.match_records_to_reopened_windows(records, live_windows)
-    return match_by_criteria({ has_same_title }, records, live_windows)
+function window_matching.match_records_to_reopened_windows(records, open_windows)
+    return match_by_criteria({ has_same_title }, records, open_windows)
 end
 
 return window_matching
