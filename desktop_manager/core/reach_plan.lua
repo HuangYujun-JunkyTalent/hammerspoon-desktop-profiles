@@ -43,12 +43,12 @@ local function is_misplaced(record, window, configuration, desktop_layout)
         and not window_routes.are_frames_close(window.frame, recorded_frame)
 end
 
----The unseen windows whose record the restore would carry out: a record in sight whose desktop or
----frame differs from the place where the window server lists the window.
+---The unreached windows whose record the restore would carry out: a record in sight whose desktop
+---or frame differs from the place where the window server lists the window.
 ---A record on a desktop beyond the desktops of its screen counts, because the restore adds that
 ---desktop and moves the window there.
 ---@param unreached ServerWindow[]
----@param matches WindowMatch[] the records matched to the known and the unseen windows
+---@param matches WindowMatch[] the records matched to the known and the unreached windows
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
 ---@return integer[] window ids, in the order of the matches
@@ -70,13 +70,13 @@ function reach_plan.select_misplaced(unreached, matches, configuration, desktop_
     return window_ids
 end
 
----The unseen windows that the switch takes out of sight.
+---The unreached windows that the switch takes out of sight.
 ---Under the method that hides applications, an application without a kept window is hidden whole,
----which takes its unseen windows out of sight without a reach.
+---which takes its unreached windows out of sight without a reach.
 ---@param method string a value of concealment_method
 ---@param unreached ServerWindow[]
----@param candidates SwitchCandidate[] the known and the unseen windows, marked by the switch
----@return integer[] window ids, in the order of the unseen windows
+---@param candidates SwitchCandidate[] the known and the unreached windows, marked by the switch
+---@return integer[] window ids, in the order of the unreached windows
 function reach_plan.select_concealed(method, unreached, candidates)
     local candidate_by_id, is_hidden_whole = {}, {}
     for _, candidate in ipairs(candidates) do
@@ -97,7 +97,7 @@ function reach_plan.select_concealed(method, unreached, candidates)
     return window_ids
 end
 
----The moves that bring unseen windows into view, on the desktop that their screens show.
+---The moves that bring unreached windows into view, on the desktop that their screens show.
 ---@class MovesIntoView
 ---@field moves WindowMove[] in the order of the windows
 ---@field desktop_numbers table<integer, integer> the desktop of each moved window before its move
