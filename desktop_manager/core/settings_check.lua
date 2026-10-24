@@ -89,6 +89,19 @@ local function check_preview_blur(settings)
 end
 
 ---@type SettingCheck
+local function check_pause_after_macos_start_seconds(settings)
+    local seconds = settings.pause_after_macos_start_seconds
+    if type(seconds) ~= "number" or seconds < 0 then
+        return string.format(
+            "the setting pause_after_macos_start_seconds is %s, and it must be a number of seconds"
+                .. " of 0 or more",
+            tostring(seconds)
+        )
+    end
+    return nil
+end
+
+---@type SettingCheck
 local function check_search_highlight_colors(settings)
     local _, message = highlight_colors.complete(settings.search_highlight_colors)
     return message
@@ -145,6 +158,7 @@ local CHECKS = {
     build_closed_set_check("unmatched_window_action", unmatched_window_action, "action"),
     build_closed_set_check("hidden_application_windows", hidden_application_windows, "choice"),
     build_closed_set_check("concealment_method", concealment_method, "concealment method"),
+    check_pause_after_macos_start_seconds,
 }
 
 ---@param settings Settings

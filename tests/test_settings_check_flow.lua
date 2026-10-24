@@ -85,6 +85,16 @@ return {
                 { concealment_method = "close" },
                 'the setting concealment_method is "close", which names no concealment method',
             },
+            {
+                { pause_after_macos_start_seconds = -1 },
+                "the setting pause_after_macos_start_seconds is -1, and it must be a number of"
+                    .. " seconds of 0 or more",
+            },
+            {
+                { pause_after_macos_start_seconds = true },
+                "the setting pause_after_macos_start_seconds is true, and it must be a number of"
+                    .. " seconds of 0 or more",
+            },
         }
         for _, fault in ipairs(faults) do
             expect.equal(read_start_failure(fault[1]), fault[2])

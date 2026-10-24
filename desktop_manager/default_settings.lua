@@ -81,6 +81,9 @@ local default_settings = {}
 ---@field title_overflow TitleOverflow
 ---@field title_line_count integer the most lines of a title under title_overflow wrap
 ---@field builtin_screen_name_patterns string[]
+---@field pause_after_macos_start_seconds number a start of Hammerspoon less than this many
+---seconds after the start of macOS, without the time asleep, pauses the updates of the active
+---profile, and 0 never pauses them
 ---@field timing Timing
 
 ---@param state_file_path string
@@ -106,6 +109,7 @@ function default_settings.create(state_file_path)
         title_overflow = title_overflow.WRAP,
         title_line_count = 2,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
+        pause_after_macos_start_seconds = 300,
         timing = {
             poll_interval_seconds = 0.05,
             modifier_release_timeout_seconds = 3,
