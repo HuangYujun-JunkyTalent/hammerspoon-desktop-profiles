@@ -408,6 +408,7 @@ return {
         )
         world.url_handlers["desktop-manager"]("desktop-manager", { action = "save" })
         expect.equal(world.menubar_title, "◧ 1")
+        expect.equal(world.menubar_tooltip, "Profile 1")
         expect.equal(controller_world.find_menu_item(world, "1  Profile 1").state, "on")
     end,
 }
