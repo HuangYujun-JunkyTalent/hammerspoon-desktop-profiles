@@ -47,7 +47,7 @@ return {
         expect.equal(result.matches[2].window_id, 90)
     end,
 
-    the_policy_that_opens_new_windows_matches_by_id_alone = function()
+    match_id_alone_matches_by_id_alone = function()
         local records = { record(41, "com.apple.Safari", "Inbox") }
         local open_windows = { { window_id = 7, bundle_id = "com.apple.Safari", title = "Inbox" } }
         local result = window_matching.match_records_to_open_windows(
