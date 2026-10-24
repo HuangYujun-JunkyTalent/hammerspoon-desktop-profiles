@@ -138,7 +138,7 @@ end
 ---@param element table an hs.axuielement
 ---@param action string
 ---@return string|nil error_message
-local function perform(element, action)
+local function perform_action(element, action)
     local is_successful, result, error_message = pcall(element.performAction, element, action)
     if not is_successful then
         return tostring(result)
@@ -303,7 +303,7 @@ local function add_desktops(display_group, edit, timing, failures, on_done)
             return
         end
         remaining = remaining - 1
-        local error_message = perform(add_button, "AXPress")
+        local error_message = perform_action(add_button, "AXPress")
         if error_message then
             table.insert(
                 failures,
@@ -396,7 +396,7 @@ local function remove_desktops(display_group, edit, find_keeping_window, timing,
             on_done()
             return
         end
-        local error_message = perform(thumbnail, "AXRemoveDesktop")
+        local error_message = perform_action(thumbnail, "AXRemoveDesktop")
         if error_message then
             table.insert(
                 failures,
@@ -537,7 +537,7 @@ local function press_again(running_press, waited_seconds)
         return
     end
     press.is_second_press_made = true
-    press.second_press_error = perform(second_thumbnail, "AXPress")
+    press.second_press_error = perform_action(second_thumbnail, "AXPress")
 end
 
 ---Ends the press with the failure of the second opening, after the log line of the press.
@@ -572,7 +572,7 @@ local function press_in_second_opening(running_press)
     local again_thumbnail, failure =
         find_thumbnail_for_second_press(running_press.space_id, running_press.screen_uuid)
     if again_thumbnail then
-        failure = perform(again_thumbnail, "AXPress")
+        failure = perform_action(again_thumbnail, "AXPress")
     end
     if failure then
         close_mission_control(running_press.screen_id, running_press.timing, function()
@@ -728,7 +728,7 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
             tostring(position)
         )
     else
-        local error_message = perform(thumbnail, "AXPress")
+        local error_message = perform_action(thumbnail, "AXPress")
         failure = error_message
             and string.format("Showing %s failed: %s", description, error_message)
     end

@@ -299,36 +299,46 @@ local function find_macos_conflict(shortcut)
 end
 
 ---@param window ShortcutWindow
----@param is_first boolean whether the page loads, rather than drawing its list again
-local function render(window, is_first)
-    window.model = shortcut_window.build_model(
+---@return ShortcutWindowModel the model of the shortcuts, the problems and the pending shortcut of
+---the window now
+local function build_window_model(window)
+    return shortcut_window.build_model(
         window.center,
         window.problems,
         window.pending,
         find_macos_conflict
     )
-    if is_first then
-        window.view:html(shortcut_window.build_page(window.model))
-    else
-        window.view:evaluateJavaScript("render(" .. hs.json.encode(window.model) .. ")")
-    end
+end
+
+---Builds the model of the window and loads the page, which draws the list.
+---@param window ShortcutWindow
+local function load_page(window)
+    window.model = build_window_model(window)
+    window.view:html(shortcut_window.build_page(window.model))
+end
+
+---Builds the model of the window again and draws the list of the loaded page with it.
+---@param window ShortcutWindow
+local function redraw_list(window)
+    window.model = build_window_model(window)
+    window.view:evaluateJavaScript("render(" .. hs.json.encode(window.model) .. ")")
 end
 
 ---@param window ShortcutWindow
 ---@param id string
 ---@param value Shortcut|false|nil
-local function change(window, id, value)
+local function change_shortcut(window, id, value)
     window.center:resume()
     window.pending = nil
     window.problems = window.center:set_override(id, value)
-    render(window, false)
+    redraw_list(window)
 end
 
 ---Applies a recorded shortcut at once, or keeps it pending when another action or macOS uses it.
 ---@param window ShortcutWindow
 ---@param id string
 ---@param shortcut Shortcut
-local function record(window, id, shortcut)
+local function record_shortcut(window, id, shortcut)
     window.center:resume()
     local holder = window.center:find_holder(shortcut, id)
     local pending = {
@@ -338,35 +348,35 @@ local function record(window, id, shortcut)
         macos = find_macos_conflict(shortcut),
     }
     if not pending.holder and not pending.macos then
-        change(window, id, shortcut)
+        change_shortcut(window, id, shortcut)
         return
     end
     window.pending = pending
     window.problems = {}
-    render(window, false)
+    redraw_list(window)
 end
 
 ---@param window ShortcutWindow
 ---@param choice table the choice of the user: remove_holder, turn_off_macos or cancel
-local function resolve(window, choice)
+local function resolve_pending_shortcut(window, choice)
     local pending = window.pending
     if not pending or choice.cancel then
         window.pending = nil
-        render(window, false)
+        redraw_list(window)
         return
     end
     local function finish()
         if choice.remove_holder and pending.holder then
             window.center:set_override(pending.holder.id, false)
         end
-        change(window, pending.id, pending.shortcut)
+        change_shortcut(window, pending.id, pending.shortcut)
     end
     if choice.turn_off_macos and pending.macos then
         macos_shortcut_settings.turn_off(pending.macos, function(error_message)
             if error_message then
                 window.pending = nil
                 window.problems = { error_message }
-                render(window, false)
+                redraw_list(window)
                 return
             end
             finish()
@@ -383,17 +393,18 @@ local function turn_off_macos_for(window, id)
     local shortcut = window.center:find_shortcut(id)
     local conflict = shortcut and find_macos_conflict(shortcut)
     if not conflict then
-        render(window, false)
+        redraw_list(window)
         return
     end
     macos_shortcut_settings.turn_off(conflict, function(error_message)
         window.problems = error_message and { error_message } or {}
-        render(window, false)
+        redraw_list(window)
     end)
 end
 
+---Resumes the shortcuts, which a recording paused, and reports that the window closed.
 ---@param window ShortcutWindow
-local function close(window)
+local function finish_closing(window)
     window.center:resume()
     window.on_closed()
 end
@@ -409,29 +420,29 @@ local function handle_message(window, body)
         window.center:pause()
     elseif body.kind == "record_cancel" then
         window.center:resume()
-        render(window, false)
+        redraw_list(window)
     elseif body.kind == "record_unknown" then
         window.center:resume()
         window.problems = {
             string.format("The key %s has no name in Hammerspoon.", tostring(body.code)),
         }
-        render(window, false)
+        redraw_list(window)
     elseif body.kind == "record" and type(body.id) == "string" and type(body.key) == "string" then
-        record(window, body.id, { modifiers = body.modifiers or {}, key = body.key })
+        record_shortcut(window, body.id, { modifiers = body.modifiers or {}, key = body.key })
     elseif body.kind == "resolve" then
-        resolve(window, body)
+        resolve_pending_shortcut(window, body)
     elseif body.kind == "remove" and type(body.id) == "string" then
-        change(window, body.id, false)
+        change_shortcut(window, body.id, false)
     elseif body.kind == "default" and type(body.id) == "string" then
-        change(window, body.id, nil)
+        change_shortcut(window, body.id, nil)
     elseif body.kind == "reset_all" then
         window.pending = nil
         window.problems = window.center:reset_all()
-        render(window, false)
+        redraw_list(window)
     elseif body.kind == "turn_off_macos" and type(body.id) == "string" then
         turn_off_macos_for(window, body.id)
     elseif body.kind == "done" then
-        close(window)
+        finish_closing(window)
         window.view:delete()
     end
 end
@@ -476,10 +487,10 @@ function shortcut_window.open(center, on_closed)
         :deleteOnClose(true)
         :windowCallback(function(action)
             if action == "closing" then
-                close(window)
+                finish_closing(window)
             end
         end)
-    render(window, true)
+    load_page(window)
     window.view:show()
     focus(window)
     return window
@@ -487,7 +498,7 @@ end
 
 ---@param window ShortcutWindow
 function shortcut_window.bring_to_front(window)
-    render(window, false)
+    redraw_list(window)
     focus(window)
 end
 

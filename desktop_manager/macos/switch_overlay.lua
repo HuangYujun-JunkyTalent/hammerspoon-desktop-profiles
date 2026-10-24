@@ -593,7 +593,7 @@ end
 ---@return table[] elements
 ---@return table size the w and h of the list
 ---@return ScrollingTitle|nil
-local function draw(view, context)
+local function draw_list(view, context)
     if view.lines then
         return draw_rows(view.lines, context)
     end
@@ -629,7 +629,7 @@ local function find_largest_scale(view, context, screen, max_scale)
         sizes = scale_sizes(context.settings, screen, scale),
     }
     for _ = 1, FIT_ROUNDS do
-        local _, size = draw(view, trial)
+        local _, size = draw_list(view, trial)
         local share =
             math.max(size.w / (MAX_WIDTH_SHARE * screen.w), size.h / (MAX_HEIGHT_SHARE * screen.h))
         if share <= 1 then
@@ -716,7 +716,7 @@ end
 ---@return SwitchOverlay
 function switch_overlay.show(view, images, settings)
     local context = fit_to_screen(view, images, settings, hs.screen.mainScreen():frame())
-    local elements, size, scrolling = draw(view, context)
+    local elements, size, scrolling = draw_list(view, context)
     local canvas = hs.canvas.new(canvas_elements.center_on_screen(size))
     canvas:level(hs.canvas.windowLevels.overlay)
     canvas:replaceElements(elements)
@@ -736,7 +736,7 @@ end
 ---@param view SwitchView
 ---@param images SwitchImages
 function switch_overlay.update(overlay, view, images)
-    local elements, size, scrolling = draw(view, {
+    local elements, size, scrolling = draw_list(view, {
         images = images,
         sizes = overlay.sizes,
         line_count = overlay.line_count,

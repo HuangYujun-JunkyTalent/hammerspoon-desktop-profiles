@@ -70,12 +70,15 @@ function NewWindowSession:give_window(window, on_done)
     end)
 end
 
+---Polls for a window of the application of the record that `is_new` accepts, up to
+---`application_launch_timeout_seconds`, and calls `on_found` with the window, or `on_done` with
+---the failure.
 ---@param record WindowRecord
 ---@param is_new fun(window_id: integer): boolean
 ---@param action string the words that name what should have opened the window
----@param is_launch boolean whether the action launched the application
+---@param on_found fun(window: table)
 ---@param on_done fun(window: table|nil, error_message: string|nil)
-function NewWindowSession:wait_for_window(record, is_new, action, is_launch, on_done)
+function NewWindowSession:poll_for_window(record, is_new, action, on_found, on_done)
     poll_until.wait_for_value(
         function()
             local application = hs.application.get(record.bundle_id)
@@ -91,15 +94,42 @@ function NewWindowSession:wait_for_window(record, is_new, action, is_launch, on_
                 )
                 return
             end
-            if is_launch then
-                local application = hs.application.get(record.bundle_id)
-                for window_id in pairs(track_windows.index_ids(application:allWindows())) do
-                    self.launched_ids[window_id] = true
-                end
-            end
-            self:give_window(window, on_done)
+            on_found(window)
         end
     )
+end
+
+---Waits for a window after the launch of the application of the record, and notes every window
+---that the launch opened, so that the later records of the session take them.
+---@param record WindowRecord
+---@param on_done fun(window: table|nil, error_message: string|nil)
+function NewWindowSession:wait_for_launched_window(record, on_done)
+    self:poll_for_window(
+        record,
+        function()
+            return true
+        end,
+        "a launch",
+        function(window)
+            local application = hs.application.get(record.bundle_id)
+            for window_id in pairs(track_windows.index_ids(application:allWindows())) do
+                self.launched_ids[window_id] = true
+            end
+            self:give_window(window, on_done)
+        end,
+        on_done
+    )
+end
+
+---Waits for a window that `is_new` accepts after the action.
+---@param record WindowRecord
+---@param is_new fun(window_id: integer): boolean
+---@param action string the words that name what should have opened the window
+---@param on_done fun(window: table|nil, error_message: string|nil)
+function NewWindowSession:wait_for_new_window(record, is_new, action, on_done)
+    self:poll_for_window(record, is_new, action, function(window)
+        self:give_window(window, on_done)
+    end, on_done)
 end
 
 ---Gets a window that did not exist before, for a record whose window no longer exists.
@@ -114,9 +144,7 @@ function NewWindowSession:provide_window(record, on_done)
     local application = hs.application.get(record.bundle_id)
     if not application then
         hs.application.open(record.bundle_id)
-        self:wait_for_window(record, function()
-            return true
-        end, "a launch", true, on_done)
+        self:wait_for_launched_window(record, on_done)
         return
     end
     local launched_window = self:pick_window(application, function(window_id)
@@ -131,11 +159,11 @@ function NewWindowSession:provide_window(record, on_done)
         return not existing_ids[window_id]
     end
     if select_new_window_menu_item(application) then
-        self:wait_for_window(record, is_new, "its menu item for a new window", false, on_done)
+        self:wait_for_new_window(record, is_new, "its menu item for a new window", on_done)
         return
     end
     hs.application.launchOrFocusByBundleID(record.bundle_id)
-    self:wait_for_window(record, is_new, "a reopen", false, on_done)
+    self:wait_for_new_window(record, is_new, "a reopen", on_done)
 end
 
 return new_windows

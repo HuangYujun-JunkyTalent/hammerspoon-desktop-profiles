@@ -24,7 +24,7 @@ local move_windows = {}
 ---@param move WindowMove
 ---@param message string
 ---@return MoveFailure
-local function fail(move, message)
+local function describe_move_failure(move, message)
     return { window_id = move.window_id, space_id = move.space_id, message = message }
 end
 
@@ -44,7 +44,7 @@ function move_windows.move_all(moves, timing, on_done)
             if not is_called or not result then
                 table.insert(
                     failures,
-                    fail(
+                    describe_move_failure(
                         move,
                         string.format(
                             "Hammerspoon refused the move: %s",
@@ -69,7 +69,7 @@ function move_windows.move_all(moves, timing, on_done)
             if not has_arrived and now >= entry.deadline then
                 table.insert(
                     failures,
-                    fail(
+                    describe_move_failure(
                         entry.move,
                         string.format(
                             "did not reach its desktop within %g seconds",

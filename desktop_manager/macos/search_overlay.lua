@@ -416,7 +416,7 @@ end
 ---@param images SwitchImages
 ---@param layout SearchLayout
 ---@return table[] elements
-local function draw(view, images, layout)
+local function draw_panel(view, images, layout)
     local elements = {
         canvas_elements.build_rounded_rectangle(
             nil,
@@ -446,7 +446,7 @@ function search_overlay.show(view, images, settings, on_mouse)
         on_mouse(message, tostring(id))
     end)
     canvas:canvasMouseEvents(nil, nil, true, nil)
-    canvas:replaceElements(draw(view, images, layout))
+    canvas:replaceElements(draw_panel(view, images, layout))
     canvas:show()
     return { canvas = canvas, settings = settings, column_count = layout.column_count }
 end
@@ -457,7 +457,7 @@ end
 function search_overlay.update(overlay, view, images)
     local layout = lay_out(view, overlay.settings, hs.screen.mainScreen():frame())
     overlay.canvas:frame(canvas_elements.center_on_screen(layout.size))
-    overlay.canvas:replaceElements(draw(view, images, layout))
+    overlay.canvas:replaceElements(draw_panel(view, images, layout))
     overlay.column_count = layout.column_count
 end
 
