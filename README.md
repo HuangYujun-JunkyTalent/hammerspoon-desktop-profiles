@@ -39,7 +39,7 @@ The tools run on macOS 27.0.1 with a build of Hammerspoon that holds [pull reque
    In System Settings, Accessibility, Display, turn on "Reduce motion", which also shortens the openings of Mission Control.
 
 The menu bar then shows `◧`, and `◧ 2` while profile 2 is active.
-The menu bar shows `◧ 2 paused` while profile 2 is paused, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-the-start-of-macos-pauses-the-active-profile) says.
+The menu bar shows `◧ 2 paused` while profile 2 is paused, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-a-login-pauses-the-active-profile) says.
 The previews in the list of windows also need the permission for Screen Recording, as [the section on the previews](#the-previews-of-the-list-need-the-permission-for-screen-recording) explains.
 
 ## Command-Option-Shift with a number activates, switches and deactivates profiles
@@ -83,7 +83,7 @@ The desktop manager updates the record of the active profile at four times:
 - at the end of a switch;
 - before a switch to another profile.
 
-None of the four updates runs while the active profile is paused, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-the-start-of-macos-pauses-the-active-profile) says.
+None of the four updates runs while the active profile is paused, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-a-login-pauses-the-active-profile) says.
 
 When the monitors change while a profile is active and not paused, the desktop manager waits for macOS to move the windows.
 The wait lasts `screen_settle_seconds` of `timing`, 3 seconds by default, and the message at the top of every screen says so.
@@ -107,19 +107,22 @@ A choice in the menu bar item sets when two monitor configurations count as the 
 
 The menu bar item also has entries that deactivate the active profile, rename it, update its record at once and print diagnostics.
 
-### The first start of Hammerspoon soon after the start of macOS pauses the active profile
+### The first start of Hammerspoon soon after a login pauses the active profile
 
-After a restart of the Mac, macOS reopens the windows with new window ids and at places of its own.
+After a restart of the Mac or a logout, macOS reopens the windows at the next login with new window ids and at places of its own.
 The updates of the active profile would then replace its record with that arrangement within about a minute.
-When Hammerspoon starts for the first time after a start of macOS, and less than `pause_after_macos_start_seconds` after it, 300 seconds by default, the desktop manager keeps the active profile and pauses it.
-The time counts from the start of macOS and leaves out the time asleep, as `hs.timer.absoluteTime()` gives it, so a Reload Config later in the day keeps the updates of the profile going.
-The state file keeps the start of macOS that the last start of Hammerspoon saw, so a second start soon after the first pauses nothing either.
+When Hammerspoon starts for the first time after a login, and less than `pause_after_login_seconds` after it, 300 seconds by default, the desktop manager keeps the active profile and pauses it.
+A restart of the Mac ends with a login as well, so the pause covers both.
+The time counts from the minute of the login that macOS records, as `who` gives it, so a Reload Config later in the day keeps the updates of the profile going.
+The state file keeps the login that the last start of Hammerspoon saw, so a second start under the same login pauses nothing either.
+When macOS gives no login, the time counts from the start of macOS and leaves out the time asleep, as `hs.timer.absoluteTime()` gives it, and only the first start after a start of macOS pauses.
 The value 0 turns the pause off.
 
 While profile 2 is paused, no update changes its record or its application numbers, and a change of the monitors leaves the windows and the desktops to macOS.
 A press of the list or the search records no desktop shown.
 Control-Option with a number reaches the applications of the numbers of profile 2.
-The console of Hammerspoon names the pause at each start, and the state file keeps it, so a reload keeps the pause, also after `pause_after_macos_start_seconds` and also with the value 0.
+The console of Hammerspoon names the pause at each start, and the line of the start that pauses gives the seconds since the login, or since the start of macOS when no login was read.
+The state file keeps the pause, so a reload keeps it, also after `pause_after_login_seconds` and also with the value 0.
 
 | Action during the pause | Effect |
 |---|---|
@@ -439,7 +442,7 @@ The file writes each choice through its module, such as `list_layout.ROWS` for `
 | `title_overflow` | `wrap` | what happens to a title longer than its space |
 | `title_line_count` | 2 | the most lines of a title under `wrap` |
 | `url_event_name` | `desktop-manager` | the host of the URLs, as [the section on URLs](#a-url-reaches-every-action-of-the-desktop-manager) explains |
-| `pause_after_macos_start_seconds` | 300 | the time after the start of macOS within which the first start of Hammerspoon pauses the active profile, and 0 turns the pause off, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-the-start-of-macos-pauses-the-active-profile) explains |
+| `pause_after_login_seconds` | 300 | the time after a login within which the first start of Hammerspoon pauses the active profile, and 0 turns the pause off, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-a-login-pauses-the-active-profile) explains |
 | `timing` | | the waits and time limits of a switch, in seconds |
 
 The shortcuts are no settings of this file, as [the section on keyboard shortcuts](#keyboard-shortcuts-in-the-menu-bar-item-changes-the-shortcut-of-every-action) explains.
@@ -954,7 +957,7 @@ Quit Asyar and start it again, so that it loads the extension.
 | `init.lua` | the file that Hammerspoon loads, which starts the center of the shortcuts and the two tools |
 | `keyboard_shortcuts/core/` | the registry of the shortcuts of every tool, with the defaults, the overrides and the shortcuts left out, the shortcuts of macOS that a shortcut collides with, and the content of the window "Keyboard shortcuts…" |
 | `keyboard_shortcuts/macos/` | the center that binds the shortcuts and saves the overrides, the reading and turning off of macOS shortcuts, the window "Keyboard shortcuts…", and the frame of the web windows of both tools |
-| `desktop_manager/core/` | the decisions of the desktop manager: the checks of the settings, the actions with their default shortcuts, monitor configurations, the desktops of each screen, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers and the view of their list, the search of the windows and its scores, the pacing of the previews, the output of the helper of the previews, the windows of macOS that accessibility does not reach and the ones to bring into view, the text of the log of a press in Mission Control, the text of the console line of an opening of the search, the pause of the active profile after a start of macOS, URL commands, and the closed sets of the settings |
+| `desktop_manager/core/` | the decisions of the desktop manager: the checks of the settings, the actions with their default shortcuts, monitor configurations, the desktops of each screen, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers and the view of their list, the search of the windows and its scores, the pacing of the previews, the output of the helper of the previews, the windows of macOS that accessibility does not reach and the ones to bring into view, the text of the log of a press in Mission Control, the text of the console line of an opening of the search, the pause of the active profile after a login, URL commands, and the closed sets of the settings |
 | `desktop_manager/macos/` | the calls of the desktop manager to Hammerspoon: reading screens, desktops and windows, the windows that Hammerspoon knows, the list of all windows of macOS and its script, the helper script that takes the previews, showing, adding and removing desktops through Mission Control, bringing windows into view and moving them by their ids, opening new windows, the watchdog of a switch, switching to the application of a number, the list of the numbered applications and the panel of the search with the elements they share, the windows of hidden applications in them, the menu bar item, the message during a switch, the window of the managed applications, the diagnostics and the controller |
 | `window_tiling/core/` | the positions of the window tiling and the frame of each position on a screen |
 | `window_tiling/macos/` | the controller of the window tiling, which hands its actions to the center of the shortcuts, binds its URLs and sets the frame of the focused window |
