@@ -36,13 +36,17 @@ function diagnostic_lines.describe_menu_choices(state)
     return lines
 end
 
+---A screen that connects or disconnects between the read of the configuration and the read of
+---the screens has a line of its own, without a slot or without a screen.
 ---@param configuration MonitorConfiguration
 ---@param builtin_screen_name_patterns string[]
 ---@return string[] the monitor configuration and the slot of each screen
 function diagnostic_lines.describe_screens(configuration, builtin_screen_name_patterns)
     local lines = {}
     add(lines, "monitor configuration: %s", configuration.key)
+    local read_uuids = {}
     for _, screen in ipairs(read_screens.describe_screens(builtin_screen_name_patterns)) do
+        read_uuids[screen.uuid] = true
         local slot = monitor_configuration.find_slot_of_screen(configuration, screen.uuid)
         add(
             lines,
@@ -50,8 +54,19 @@ function diagnostic_lines.describe_screens(configuration, builtin_screen_name_pa
             screen.uuid,
             screen.name,
             tostring(screen.is_builtin),
-            slot.slot_key
+            slot and slot.slot_key or "none, connected after the monitor configuration was read"
         )
+    end
+    for _, slot in ipairs(configuration.slots) do
+        if not read_uuids[slot.screen_uuid] then
+            add(
+                lines,
+                "  slot %s of screen %s: the screen disconnected after the monitor configuration"
+                    .. " was read",
+                slot.slot_key,
+                slot.screen_uuid
+            )
+        end
     end
     return lines
 end
