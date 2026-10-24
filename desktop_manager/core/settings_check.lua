@@ -18,7 +18,7 @@ local settings_check = {}
 ---@param values table the module of the closed set of the values, with its `is_valid`
 ---@param noun string what a value of the setting names
 ---@return SettingCheck
-local function check_closed_set(name, values, noun)
+local function build_closed_set_check(name, values, noun)
     return function(settings)
         if values.is_valid(settings[name]) then
             return nil
@@ -99,18 +99,18 @@ end
 local CHECKS = {
     check_preview_size,
     check_list_font_size,
-    check_closed_set("title_overflow", title_overflow, "way"),
+    build_closed_set_check("title_overflow", title_overflow, "way"),
     check_title_line_count,
-    check_closed_set("list_sizing", list_sizing, "sizing"),
-    check_closed_set("list_layout", list_layout, "layout"),
+    build_closed_set_check("list_sizing", list_sizing, "sizing"),
+    build_closed_set_check("list_layout", list_layout, "layout"),
     check_preview_blur,
-    check_closed_set("preview_method", preview_method, "method"),
+    build_closed_set_check("preview_method", preview_method, "method"),
     check_search_highlight_colors,
-    check_closed_set("match_windows_by", match_windows_by, "way to match windows"),
-    check_closed_set("missing_window_policy", missing_window_policy, "policy"),
-    check_closed_set("unmatched_window_action", unmatched_window_action, "action"),
-    check_closed_set("hidden_application_windows", hidden_application_windows, "choice"),
-    check_closed_set("concealment_method", concealment_method, "concealment method"),
+    build_closed_set_check("match_windows_by", match_windows_by, "way to match windows"),
+    build_closed_set_check("missing_window_policy", missing_window_policy, "policy"),
+    build_closed_set_check("unmatched_window_action", unmatched_window_action, "action"),
+    build_closed_set_check("hidden_application_windows", hidden_application_windows, "choice"),
+    build_closed_set_check("concealment_method", concealment_method, "concealment method"),
 }
 
 ---@param settings Settings
