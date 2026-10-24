@@ -6,12 +6,12 @@ local expect = require("tests.expect")
 ---@return string[] the lines that the diagnostics printed
 local function print_diagnostics(world)
     local printed, original_print = {}, print
-    _G.print = function(text) -- luacheck: ignore 122
+    _G.print = function(text)
         table.insert(printed, text)
     end
     local is_printed, error_message =
         pcall(controller_world.find_menu_item(world, "Print diagnostics to the console").fn)
-    _G.print = original_print -- luacheck: ignore 122
+    _G.print = original_print
     if not is_printed then
         error(error_message, 0)
     end
