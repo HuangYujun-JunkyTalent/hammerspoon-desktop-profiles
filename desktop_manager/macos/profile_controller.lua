@@ -1,7 +1,7 @@
 local app_numbers = require("desktop_manager.core.app_numbers")
 local app_pool = require("desktop_manager.core.app_pool")
-local app_pool_window = require("desktop_manager.macos.app_pool_window")
 local app_number_list = require("desktop_manager.macos.app_number_list")
+local app_pool_window = require("desktop_manager.macos.app_pool_window")
 local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local busy_message = require("desktop_manager.macos.busy_message")
@@ -37,8 +37,8 @@ local state_file = require("desktop_manager.macos.state_file")
 local status_menu = require("desktop_manager.macos.status_menu")
 local track_windows = require("desktop_manager.macos.track_windows")
 local url_command = require("desktop_manager.core.url_command")
-local window_matching = require("desktop_manager.core.window_matching")
 local window_inventory = require("desktop_manager.macos.window_inventory")
+local window_matching = require("desktop_manager.core.window_matching")
 local window_previews = require("desktop_manager.macos.window_previews")
 local work_watchdog = require("desktop_manager.macos.work_watchdog")
 
@@ -69,6 +69,8 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---press of the list or the search runs
 ---@field busy_message_text string|nil the text of the message
 ---@field app_pool_window AppPoolWindow|nil the window that chooses the managed applications
+---@field color_window ColorWindow|nil the window that picks the colors of the search
+---@field shortcut_window ShortcutWindow|nil the window that changes the shortcuts of every tool
 ---@field are_saves_suspended boolean
 ---@field save_timer table|nil
 ---@field screen_timer table|nil
@@ -356,7 +358,7 @@ end
 
 ---Updates the number of desktops of each display, and the record and the numbers of the active
 ---profile, or the numbers of profile 0 while no profile is active.
-function ProfileController:capture_numbering_profile()
+function ProfileController:update_records_and_numbers()
     self:track_desktop_counts()
     if self.state.active_profile_number then
         self:capture_active_arrangement()
@@ -373,7 +375,7 @@ function ProfileController:schedule_save()
     self.save_timer = retained_timers.after(self.settings.timing.save_delay_seconds, function()
         self.save_timer = nil
         if not self.is_busy and not self.are_saves_suspended then
-            self:capture_numbering_profile()
+            self:update_records_and_numbers()
         end
     end)
 end
@@ -498,14 +500,14 @@ function ProfileController:restore_matched_windows(
 end
 
 ---Matches the records of the arrangement against the known windows of the managed applications and
----the windows that accessibility does not reach, so that a record of an unseen window takes that
+---the windows that accessibility does not reach, so that a record of an unreached window takes that
 ---window, and no new window opens for it.
 ---@param arrangement Arrangement
 ---@param managed_windows table[] hs.window objects
 ---@param unreached ServerWindow[]
 ---@return WindowMatchResult
----@return OpenWindow[] open_windows the known and the unseen windows, for the marks of a switch
-function ProfileController:match_with_unseen(arrangement, managed_windows, unreached)
+---@return OpenWindow[] open_windows the known and the unreached windows, for the marks of a switch
+function ProfileController:match_with_unreached(arrangement, managed_windows, unreached)
     local open_windows, live_windows = describe_open_windows(managed_windows)
     for _, window in ipairs(unreached) do
         table.insert(open_windows, {
@@ -537,7 +539,7 @@ function ProfileController:restore_open_windows(number, saved_arrangement, busy_
     local arrangement = app_pool.keep_managed_records(self.state.app_pool, saved_arrangement)
     local windows =
         self.known_windows:list_managed(profile_state.list_recorded_window_ids(arrangement))
-    local match_result = self:match_with_unseen(
+    local match_result = self:match_with_unreached(
         arrangement,
         windows,
         self.known_windows:list_unreached_managed(windows)
@@ -664,6 +666,7 @@ function ProfileController:stop_unfinished_work()
     self:resume_saves()
 end
 
+---@param number integer
 function ProfileController:activate_profile(number)
     if self:refuse_while_busy() then
         return
@@ -767,7 +770,7 @@ function ProfileController:mark_switch_windows(switch, managed_windows, unreache
             or { monitor_configuration_key = switch.configuration.key, monitors = {}, windows = {} }
     )
     local match_result, open_windows =
-        self:match_with_unseen(arrangement, managed_windows, unreached)
+        self:match_with_unreached(arrangement, managed_windows, unreached)
     local candidates = switch.has_layout
             and profile_switch.mark_kept_windows(open_windows, match_result.matches)
         or profile_switch.mark_kept_windows_for_new_profile(
@@ -1044,7 +1047,7 @@ function ProfileController:open_color_window()
     })
 end
 
----Opens the window that changes the shortcuts of every utility, or brings it to the front.
+---Opens the window that changes the shortcuts of every tool, or brings it to the front.
 function ProfileController:open_shortcut_window()
     if self.shortcut_window then
         shortcut_window.bring_to_front(self.shortcut_window)
@@ -1108,7 +1111,7 @@ function ProfileController:apply_numbers_change()
     if self.is_busy then
         self:write_state()
     else
-        self:capture_numbering_profile()
+        self:update_records_and_numbers()
     end
 end
 
@@ -1610,7 +1613,7 @@ function ProfileController:restore_after_screens_changed()
             local windows =
                 self.known_windows:list_managed(profile_state.list_recorded_window_ids(arrangement))
             local unreached = self.known_windows:list_unreached_managed(windows)
-            local match_result = self:match_with_unseen(arrangement, windows, unreached)
+            local match_result = self:match_with_unreached(arrangement, windows, unreached)
             local windows_to_reach = reach_plan.keep_windows_of_ids(
                 unreached,
                 reach_plan.select_misplaced(
@@ -1763,7 +1766,7 @@ function ProfileController:start_watchers()
 end
 
 ---@param unchecked_settings Settings
----@param shortcuts ShortcutCenter|nil the center of the shortcuts of every utility, or nil for a
+---@param shortcuts ShortcutCenter|nil the center of the shortcuts of every tool, or nil for a
 ---center of this tool alone
 ---@return ProfileController
 function profile_controller.start(unchecked_settings, shortcuts)
