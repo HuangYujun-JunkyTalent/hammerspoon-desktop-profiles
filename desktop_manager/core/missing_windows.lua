@@ -1,5 +1,6 @@
 local locate_desktops = require("desktop_manager.core.locate_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
+local restore_plan = require("desktop_manager.core.restore_plan")
 
 local missing_windows = {}
 
@@ -81,13 +82,12 @@ function missing_windows.plan(records, configuration, desktop_layout)
         else
             table.insert(planned, {
                 record = record,
-                placement = {
-                    window_id = record.window_id,
-                    screen_uuid = slot.screen_uuid,
-                    slot_key = slot.slot_key,
-                    desktop_number = math.min(record.desktop_number, desktop_count),
-                    unit_frame = record.unit_frame,
-                },
+                placement = restore_plan.place_record(
+                    record,
+                    slot,
+                    desktop_count,
+                    record.window_id
+                ),
             })
         end
     end

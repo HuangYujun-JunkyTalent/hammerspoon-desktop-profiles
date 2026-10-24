@@ -1,4 +1,5 @@
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
+local desktop_counts = require("desktop_manager.core.desktop_counts")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 
@@ -21,6 +22,23 @@ local restore_plan = {}
 ---@field slot_key string the name of the screen in the messages, such as "built-in"
 ---@field desktop_number integer
 ---@field unit_frame Rect|nil
+
+---The placement of the window of a record on its recorded desktop of the screen of the slot, or
+---on the last desktop of that screen when the screen has fewer desktops.
+---@param record WindowRecord a record with a desktop number
+---@param slot MonitorSlot
+---@param desktop_count integer the desktops that the screen has, or has once the restore adds them
+---@param window_id integer
+---@return WindowPlacement
+function restore_plan.place_record(record, slot, desktop_count, window_id)
+    return {
+        window_id = window_id,
+        screen_uuid = slot.screen_uuid,
+        slot_key = slot.slot_key,
+        desktop_number = math.min(record.desktop_number, desktop_count),
+        unit_frame = record.unit_frame,
+    }
+end
 
 ---@class ScreenDesktop
 ---@field screen_uuid string
@@ -46,12 +64,13 @@ local restore_plan = {}
 ---@return table<string, integer> the desktop count that each screen will have
 local function plan_desktop_additions(arrangement, configuration, desktop_layout)
     local additions, target_counts = {}, {}
+    local recorded_counts = desktop_counts.count_by_slot(arrangement)
     for _, monitor in ipairs(arrangement.monitors) do
         local slot = monitor_configuration.find_slot(configuration, monitor.slot_key)
         local screen = slot and locate_desktops.find_screen(desktop_layout, slot.screen_uuid)
         if screen then
             local current_count = #screen.space_ids
-            local recorded_count = math.max(monitor.desktop_count, 1)
+            local recorded_count = recorded_counts[monitor.slot_key]
             target_counts[screen.screen_uuid] = math.max(recorded_count, current_count)
             if recorded_count > current_count then
                 table.insert(additions, {
@@ -75,10 +94,11 @@ end
 ---@return ScreenDesktop[] in the order of the slots, the slot of the focus last
 function restore_plan.plan_shown_desktops(arrangement, configuration, desktop_layout)
     local shown_desktops, desktop_of_focus = {}, nil
+    local recorded_counts = desktop_counts.count_by_slot(arrangement)
     for _, slot in ipairs(configuration.slots) do
         local monitor = arrangement_capture.find_monitor(arrangement, slot.slot_key)
         local screen = locate_desktops.find_screen(desktop_layout, slot.screen_uuid)
-        local count = monitor and math.max(monitor.desktop_count, 1)
+        local count = recorded_counts[slot.slot_key]
         local desktop_number = monitor and monitor.shown_desktop_number
         local shown_position = screen and locate_desktops.find_shown_desktop_number(screen)
         if count and not desktop_number and shown_position and shown_position > count then
@@ -183,13 +203,7 @@ function restore_plan.plan(arrangement, configuration, desktop_layout, matches, 
             and target_count
             and record.desktop_number
         then
-            local placement = {
-                window_id = match.window_id,
-                screen_uuid = slot.screen_uuid,
-                slot_key = slot.slot_key,
-                desktop_number = math.min(record.desktop_number, target_count),
-                unit_frame = record.unit_frame,
-            }
+            local placement = restore_plan.place_record(record, slot, target_count, match.window_id)
             table.insert(plan.placements, placement)
             if state.is_minimized then
                 table.insert(plan.unminimizations, placement)

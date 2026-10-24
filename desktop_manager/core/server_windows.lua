@@ -48,6 +48,12 @@ local function is_shown(row)
     return row.is_shown ~= false
 end
 
+---@param row ServerWindowRow
+---@return boolean
+local function has_working_size(row)
+    return row.w >= MIN_WIDTH and row.h >= MIN_HEIGHT
+end
+
 ---@param rows ServerWindowRow[]
 ---@param hidden_space_by_window_id table<integer, integer> the desktop of each window on a desktop
 ---out of view
@@ -83,8 +89,7 @@ function server_windows.select_unreached_windows(
             and application
             and is_shown(row)
             and not known_window_ids[row.window_id]
-            and row.w >= MIN_WIDTH
-            and row.h >= MIN_HEIGHT
+            and has_working_size(row)
         then
             table.insert(windows, {
                 window_id = row.window_id,
@@ -122,8 +127,7 @@ function server_windows.map_occupying_windows(
             and #space_ids == 1
             and application
             and is_shown(row)
-            and row.w >= MIN_WIDTH
-            and row.h >= MIN_HEIGHT
+            and has_working_size(row)
         then
             space_by_window_id[row.window_id] = space_ids[1]
         end
