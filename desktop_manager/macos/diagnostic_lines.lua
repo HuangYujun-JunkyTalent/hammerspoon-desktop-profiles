@@ -113,7 +113,11 @@ end
 ---@return string[] the active profile, and the desktops and the focus that its arrangement records
 function diagnostic_lines.describe_profile(state, active_arrangement)
     local lines = {}
-    add(lines, "active profile: %s", tostring(state.active_profile_number))
+    add(
+        lines,
+        state.is_active_profile_paused and "active profile: %s, paused" or "active profile: %s",
+        tostring(state.active_profile_number)
+    )
     local active_number = state.active_profile_number
     for _, monitor in ipairs(active_arrangement and active_arrangement.monitors or {}) do
         add(

@@ -2082,7 +2082,9 @@ function fake_hammerspoon.install(spec)
                 function menubar:setTitle(title)
                     world.menubar_title = title
                 end
-                function menubar:setTooltip() end
+                function menubar:setTooltip(tooltip)
+                    world.menubar_tooltip = tooltip
+                end
                 function menubar:setMenu(builder)
                     world.menu_builder = builder
                 end

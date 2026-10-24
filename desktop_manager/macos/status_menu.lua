@@ -80,7 +80,7 @@ local function build_clear_items(state, settings, actions)
 end
 
 ---One item per profile that activates it, or deactivates it while it is active, with a check
----mark on the active profile.
+---mark on the active profile, or a dash while it is paused.
 ---@param state State
 ---@param settings Settings
 ---@param actions StatusMenuActions
@@ -89,9 +89,10 @@ local function build_profile_items(state, settings, actions)
     local items = {}
     for number = 1, settings.profile_count do
         local profile = profile_state.profile_or_default(state, number)
+        local is_active = state.active_profile_number == number
         table.insert(items, {
             title = string.format("%d  %s", number, profile.name),
-            checked = state.active_profile_number == number,
+            state = not is_active and "off" or state.is_active_profile_paused and "mixed" or "on",
             fn = function()
                 actions.toggle_profile(number)
             end,
@@ -172,9 +173,15 @@ end
 function status_menu.show(menubar, read_state, settings, actions)
     local state = read_state()
     local number = state.active_profile_number
-    if number then
+    local name = number and profile_state.profile_or_default(state, number).name
+    if number and state.is_active_profile_paused then
+        menubar:setTitle(string.format("%s %d paused", MENU_BAR_SYMBOL, number))
+        menubar:setTooltip(
+            string.format("%s is paused, and activating it restores its layout", name)
+        )
+    elseif number then
         menubar:setTitle(string.format("%s %d", MENU_BAR_SYMBOL, number))
-        menubar:setTooltip(profile_state.profile_or_default(state, number).name)
+        menubar:setTooltip(name)
     else
         menubar:setTitle(MENU_BAR_SYMBOL)
         menubar:setTooltip("No desktop profile is active")

@@ -385,4 +385,28 @@ return {
         )
         expect.equal(controller.state.is_active_profile_paused, true)
     end,
+
+    the_menu_bar_item_and_the_diagnostics_show_the_pause = function()
+        local world = start_after_login()
+        expect.equal(world.menubar_title, "◧ 1 paused")
+        expect.equal(
+            world.menubar_tooltip,
+            "Profile 1 is paused, and activating it restores its layout"
+        )
+        expect.equal(controller_world.find_menu_item(world, "1  Profile 1").state, "mixed")
+        expect.equal(controller_world.find_menu_item(world, "2  Profile 2").state, "off")
+        local printed, original_print = {}, print
+        _G.print = function(text)
+            table.insert(printed, text)
+        end
+        controller_world.find_menu_item(world, "Print diagnostics to the console").fn()
+        _G.print = original_print
+        expect.present(
+            table.concat(printed, "\n"):find("\nactive profile: 1, paused\n", 1, true),
+            "the line of the paused profile"
+        )
+        world.url_handlers["desktop-manager"]("desktop-manager", { action = "save" })
+        expect.equal(world.menubar_title, "◧ 1")
+        expect.equal(controller_world.find_menu_item(world, "1  Profile 1").state, "on")
+    end,
 }

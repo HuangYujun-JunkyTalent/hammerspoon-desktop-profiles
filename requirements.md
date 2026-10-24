@@ -21,6 +21,7 @@ While the profile is paused, no update changes its records or its application nu
 The pause lasts across a reload of the tool until the user restores the paused profile, switches to another profile, deactivates the profile, saves its arrangement or clears it.
 The shortcut of the paused profile restores its layout as an activation does and ends the pause.
 Another profile switches without the update of the paused profile, and the deactivation updates nothing.
+The menu bar item and the diagnostics show the pause.
 
 Workspaces have numbers, and the user can rename them.
 
