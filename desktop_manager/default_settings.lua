@@ -46,8 +46,10 @@ local default_settings = {}
 ---application, after which a notification reports the application
 ---@field application_focus_timeout_seconds number the wait after the focus before a press of the
 ---list or the search until the application of the chosen window is the frontmost application
----@field save_delay_seconds number the wait after a window opens, closes, moves, minimizes or
----changes its title, before the record of the active profile updates
+---@field save_delay_seconds number the wait from a request of an update of the records and the
+---numbers until the update, such as after a window opens, closes, moves, minimizes or changes its
+---title, after a change of desktop, after a switch or a restore, and at each tick of
+---periodic_save_seconds, and a request within the wait starts the wait again
 ---@field periodic_save_seconds number the time between two updates of the record of the active
 ---profile and two readings of the list of all windows of macOS that no event starts
 ---@field screen_settle_seconds number the wait after a change of the monitors for macOS to move
