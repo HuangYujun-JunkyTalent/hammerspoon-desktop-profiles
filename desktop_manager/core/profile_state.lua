@@ -27,6 +27,9 @@ local profile_state = {}
 ---@field last_seen_macos_start_time integer|nil the start of macOS, in seconds since 1970, that the
 ---last start of the desktop manager saw, so that only the first start after a start of macOS pauses
 ---the active profile
+---@field last_seen_login_time integer|nil the minute of the login of the user, in seconds since
+---1970, that the last start of the desktop manager saw, so that only the first start after a login
+---pauses the active profile
 ---@field profiles table<string, Profile>
 ---@field app_pool AppPool the applications that every profile manages
 ---@field desktop_counts DesktopCounts the number of desktops of each display
@@ -156,6 +159,14 @@ end
 ---manager saw
 function profile_state.with_last_seen_macos_start_time(state, macos_start_time)
     return with_field(state, "last_seen_macos_start_time", macos_start_time)
+end
+
+---@param state State
+---@param login_time integer|nil
+---@return State a copy of the state that keeps the login that this start of the desktop manager
+---saw
+function profile_state.with_last_seen_login_time(state, login_time)
+    return with_field(state, "last_seen_login_time", login_time)
 end
 
 ---@param state State
@@ -651,6 +662,7 @@ function profile_state.decode(raw)
         state.is_active_profile_paused = raw.is_active_profile_paused == true
     end
     state.last_seen_macos_start_time = to_integer(raw.last_seen_macos_start_time)
+    state.last_seen_login_time = to_integer(raw.last_seen_login_time)
     state.app_pool = app_pool.decode(raw.app_pool, raw.managed_applications)
     state.highlight_colors = highlight_colors.decode(raw.highlight_colors)
     return state, nil

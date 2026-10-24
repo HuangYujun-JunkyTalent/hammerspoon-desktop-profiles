@@ -464,12 +464,16 @@ return {
             profile_state.new_state(monitor_matching.BY_COUNT),
             1
         )
-        local paused = profile_state.with_last_seen_macos_start_time(
-            profile_state.with_active_profile_paused(active),
-            1729500000
+        local paused = profile_state.with_last_seen_login_time(
+            profile_state.with_last_seen_macos_start_time(
+                profile_state.with_active_profile_paused(active),
+                1729500000
+            ),
+            1729500060
         )
         expect.equal(profile_state.decode(paused), paused)
         expect.equal(profile_state.decode(active).last_seen_macos_start_time, nil)
+        expect.equal(profile_state.decode(active).last_seen_login_time, nil)
         local without_field = profile_state.new_state(monitor_matching.BY_COUNT)
         without_field.active_profile_number = 1
         without_field.is_active_profile_paused = nil
