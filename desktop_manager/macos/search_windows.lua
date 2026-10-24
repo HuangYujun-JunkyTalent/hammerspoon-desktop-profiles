@@ -318,10 +318,12 @@ local function read_missing_icons(panel, entries)
     end
 end
 
+---Marks the windows of the entries whose previews the panel has not asked for as asked for, and
+---counts them for the line of the opening.
 ---@param panel SearchPanel
 ---@param entries SearchEntry[]
----@return integer[] the windows of the entries whose previews the panel has not asked for yet
-local function list_new_preview_ids(panel, entries)
+---@return integer[] the windows that it marked
+local function request_new_preview_ids(panel, entries)
     local window_ids = {}
     for _, entry in ipairs(entries) do
         if not panel.requested_preview_ids[entry.window_id] then
@@ -338,7 +340,8 @@ end
 ---@param entries SearchEntry[]
 local function load_previews(panel, entries)
     local times = panel.times
-    panel.preview_queue = panel.context.preview_loader:load(list_new_preview_ids(panel, entries), {
+    local window_ids = request_new_preview_ids(panel, entries)
+    panel.preview_queue = panel.context.preview_loader:load(window_ids, {
         preview_size = search_overlay.read_preview_size(panel.overlay),
         shown_at = panel.shown_at,
         read_last_input_at = function()
@@ -374,7 +377,7 @@ local function add_unreached_windows(panel, unreached_windows)
     panel.window_by_id, panel.unreached_by_id = window_by_id, unreached_by_id
     read_missing_icons(panel, entries)
     show_search(panel, window_search.with_entries(panel.search, entries))
-    panel.preview_queue:add(list_new_preview_ids(panel, entries))
+    panel.preview_queue:add(request_new_preview_ids(panel, entries))
 end
 
 ---Shows the panel with the window before the focused one selected, loads the previews, and adds
