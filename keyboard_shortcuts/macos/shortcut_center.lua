@@ -136,6 +136,19 @@ function ShortcutCenter:find_shortcut(id)
     return binding and binding.shortcut
 end
 
+---Saves the overrides, and binds the shortcuts again and reports their problems once the file is
+---written.
+---@param center ShortcutCenter
+---@return string[] problems
+local function save_and_rebind(center)
+    if center.file_path and not hs.json.write(center.overrides, center.file_path, true, true) then
+        return { string.format("the shortcuts could not be written to %s", center.file_path) }
+    end
+    local problems = center:rebind()
+    center:report(problems)
+    return problems
+end
+
 ---Gives an action a new shortcut, no shortcut, or its default again, and saves the overrides.
 ---@param id string
 ---@param value Shortcut|false|nil a shortcut, false for none, or nil for the default
@@ -145,12 +158,7 @@ function ShortcutCenter:set_override(id, value)
         return { string.format("no shortcut action is named %q", id) }
     end
     self.overrides[id] = value
-    if self.file_path and not hs.json.write(self.overrides, self.file_path, true, true) then
-        return { string.format("the shortcuts could not be written to %s", self.file_path) }
-    end
-    local problems = self:rebind()
-    self:report(problems)
-    return problems
+    return save_and_rebind(self)
 end
 
 ---@param shortcut Shortcut
@@ -173,15 +181,8 @@ end
 ---Gives every action its default shortcut again, and saves the empty overrides.
 ---@return string[] problems
 function ShortcutCenter:reset_all()
-    for id in pairs(self.overrides) do
-        self.overrides[id] = nil
-    end
-    if self.file_path and not hs.json.write(self.overrides, self.file_path, true, true) then
-        return { string.format("the shortcuts could not be written to %s", self.file_path) }
-    end
-    local problems = self:rebind()
-    self:report(problems)
-    return problems
+    self.overrides = {}
+    return save_and_rebind(self)
 end
 
 ---Reports the overrides that name no action, once every utility has registered.

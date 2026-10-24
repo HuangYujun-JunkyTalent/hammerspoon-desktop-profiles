@@ -420,41 +420,65 @@ local function finish_closing(window)
     window.on_closed()
 end
 
+---The handler of each kind of message of the page, which checks the fields that it reads.
+---@type table<string, fun(window: ShortcutWindow, body: table)>
+local MESSAGE_KIND_HANDLERS = {
+    record_start = function(window)
+        window.pending = nil
+        window.center:pause()
+    end,
+    record_cancel = function(window)
+        window.center:resume()
+        redraw_list(window)
+    end,
+    record_unknown = function(window, body)
+        window.center:resume()
+        window.problems = {
+            string.format("The key %s has no name in Hammerspoon.", tostring(body.code)),
+        }
+        redraw_list(window)
+    end,
+    record = function(window, body)
+        if type(body.id) == "string" and type(body.key) == "string" then
+            record_shortcut(window, body.id, { modifiers = body.modifiers or {}, key = body.key })
+        end
+    end,
+    resolve = resolve_pending_shortcut,
+    remove = function(window, body)
+        if type(body.id) == "string" then
+            change_shortcut(window, body.id, false)
+        end
+    end,
+    default = function(window, body)
+        if type(body.id) == "string" then
+            change_shortcut(window, body.id, nil)
+        end
+    end,
+    reset_all = function(window)
+        window.pending = nil
+        window.problems = window.center:reset_all()
+        redraw_list(window)
+    end,
+    turn_off_macos = function(window, body)
+        if type(body.id) == "string" then
+            turn_off_macos_for(window, body.id)
+        end
+    end,
+    done = function(window)
+        finish_closing(window)
+        window.view:delete()
+    end,
+}
+
 ---@param window ShortcutWindow
 ---@param body table the message of the page
 local function handle_message(window, body)
     if type(body) ~= "table" then
         return
     end
-    if body.kind == "record_start" then
-        window.pending = nil
-        window.center:pause()
-    elseif body.kind == "record_cancel" then
-        window.center:resume()
-        redraw_list(window)
-    elseif body.kind == "record_unknown" then
-        window.center:resume()
-        window.problems = {
-            string.format("The key %s has no name in Hammerspoon.", tostring(body.code)),
-        }
-        redraw_list(window)
-    elseif body.kind == "record" and type(body.id) == "string" and type(body.key) == "string" then
-        record_shortcut(window, body.id, { modifiers = body.modifiers or {}, key = body.key })
-    elseif body.kind == "resolve" then
-        resolve_pending_shortcut(window, body)
-    elseif body.kind == "remove" and type(body.id) == "string" then
-        change_shortcut(window, body.id, false)
-    elseif body.kind == "default" and type(body.id) == "string" then
-        change_shortcut(window, body.id, nil)
-    elseif body.kind == "reset_all" then
-        window.pending = nil
-        window.problems = window.center:reset_all()
-        redraw_list(window)
-    elseif body.kind == "turn_off_macos" and type(body.id) == "string" then
-        turn_off_macos_for(window, body.id)
-    elseif body.kind == "done" then
-        finish_closing(window)
-        window.view:delete()
+    local handler = MESSAGE_KIND_HANDLERS[body.kind]
+    if handler then
+        handler(window, body)
     end
 end
 
