@@ -1,5 +1,5 @@
-local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
+local unit_frames = require("desktop_manager.core.unit_frames")
 
 ---Plans the way of one window to its placement without a switch of desktops.
 ---A window goes to another screen by its frame, which macOS 27.0.1 places on the desktop that shows
@@ -66,7 +66,7 @@ function window_routes.plan(placement, location, desktop_layout)
     end
     local current_screen = location_in_layout.screen
     local recorded_frame = placement.unit_frame
-        and arrangement_capture.from_unit_frame(placement.unit_frame, target_screen.screen_frame)
+        and unit_frames.from_unit_frame(placement.unit_frame, target_screen.screen_frame)
     local is_across_screens = current_screen.screen_uuid ~= target_screen.screen_uuid
     if is_across_screens and not recorded_frame then
         return nil, string.format("has no recorded frame for %s, and stays", placement.slot_key)

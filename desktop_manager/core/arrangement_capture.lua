@@ -1,6 +1,7 @@
 local deep_copy = require("desktop_manager.core.deep_copy")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
+local unit_frames = require("desktop_manager.core.unit_frames")
 
 local arrangement_capture = {}
 
@@ -27,51 +28,6 @@ local arrangement_capture = {}
 ---@field monitors MonitorDesktops[]
 ---@field focused_slot_key string|nil the screen whose desktop had the focus
 ---@field windows WindowRecord[]
-
-local UNIT_FRAME_DECIMALS = 10000
-
----@param value number
----@return number
-local function round_unit(value)
-    return math.floor(value * UNIT_FRAME_DECIMALS + 0.5) / UNIT_FRAME_DECIMALS
-end
-
----@param frame Rect
----@param screen_frame Rect
----@return Rect
-function arrangement_capture.to_unit_frame(frame, screen_frame)
-    return {
-        x = round_unit((frame.x - screen_frame.x) / screen_frame.w),
-        y = round_unit((frame.y - screen_frame.y) / screen_frame.h),
-        w = round_unit(frame.w / screen_frame.w),
-        h = round_unit(frame.h / screen_frame.h),
-    }
-end
-
----macOS reports a frame without area for some windows, and no window can be given one.
----@param frame Rect
----@return boolean
-local function has_area(frame)
-    return frame.w > 0 and frame.h > 0
-end
-
----The frame on the screen of a unit frame.
----A unit frame reaches past 0 or 1 for a window that reaches past the screen without the menu bar
----and the Dock, and `hs.geometry` refuses such a unit frame, so the conversion is done here.
----@param unit_frame Rect
----@param screen_frame Rect
----@return Rect|nil frame nil for a unit frame without area
-function arrangement_capture.from_unit_frame(unit_frame, screen_frame)
-    if not has_area(unit_frame) then
-        return nil
-    end
-    return {
-        x = math.floor(screen_frame.x + unit_frame.x * screen_frame.w),
-        y = math.floor(screen_frame.y + unit_frame.y * screen_frame.h),
-        w = math.floor(unit_frame.w * screen_frame.w),
-        h = math.floor(unit_frame.h * screen_frame.h),
-    }
-end
 
 ---@param arrangement Arrangement|nil
 ---@param slot_key string
@@ -182,9 +138,9 @@ local function record_window(configuration, desktop_layout, observation, previou
     if location and slot then
         record.slot_key = slot.slot_key
         record.desktop_number = location.desktop_number
-        if observation.frame and has_area(observation.frame) then
+        if observation.frame and unit_frames.has_area(observation.frame) then
             record.unit_frame =
-                arrangement_capture.to_unit_frame(observation.frame, location.screen.screen_frame)
+                unit_frames.to_unit_frame(observation.frame, location.screen.screen_frame)
         end
     elseif previous_record then
         record.slot_key = previous_record.slot_key

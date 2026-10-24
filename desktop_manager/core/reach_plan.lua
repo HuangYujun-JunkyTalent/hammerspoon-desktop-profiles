@@ -1,7 +1,7 @@
-local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local profile_switch = require("desktop_manager.core.profile_switch")
+local unit_frames = require("desktop_manager.core.unit_frames")
 local window_routes = require("desktop_manager.core.window_routes")
 
 ---Chooses the windows that accessibility does not reach and that a switch or a restore acts on.
@@ -38,7 +38,7 @@ local function is_misplaced(record, window, configuration, desktop_layout)
         return true
     end
     local recorded_frame = record.unit_frame
-        and arrangement_capture.from_unit_frame(record.unit_frame, location.screen.screen_frame)
+        and unit_frames.from_unit_frame(record.unit_frame, location.screen.screen_frame)
     return recorded_frame ~= nil
         and not window_routes.are_frames_close(window.frame, recorded_frame)
 end
