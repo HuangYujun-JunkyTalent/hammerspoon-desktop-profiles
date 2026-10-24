@@ -71,6 +71,51 @@ return {
         expect.equal(profile_pause.parse_macos_start_time(nil), nil)
     end,
 
+    the_login_is_read_from_the_console_line_of_the_user = function()
+        local reading_time = os.time({ year = 2026, month = 10, day = 4, hour = 21, min = 1 })
+        local login = profile_pause.parse_login(
+            "jane\n"
+                .. reading_time
+                .. "\nalex             console      Oct  4 21:00 \n"
+                .. "jane             ttys011      Oct  4 21:00 \n"
+                .. "jane             console      Oct  4 20:59 \n"
+        )
+        expect.equal(login, { time = reading_time - 120, seconds_since = 120 })
+    end,
+
+    of_two_console_lines_of_the_user_the_latest_login_is_read = function()
+        local reading_time = os.time({ year = 2027, month = 1, day = 15, hour = 12, min = 0 })
+        local login = profile_pause.parse_login(
+            "jane\n"
+                .. reading_time
+                .. "\njane             console      Jan  2 10:00 \n"
+                .. "jane             console      Jan 14 09:30 \n"
+        )
+        local latest_time = os.time({ year = 2027, month = 1, day = 14, hour = 9, min = 30 })
+        expect.equal(login, { time = latest_time, seconds_since = reading_time - latest_time })
+    end,
+
+    a_login_dated_after_the_reading_lies_in_the_year_before = function()
+        local reading_time =
+            os.time({ year = 2027, month = 1, day = 1, hour = 0, min = 0, sec = 30 })
+        local login = profile_pause.parse_login(
+            "jane\n" .. reading_time .. "\njane             console      Dec 31 23:59 \n"
+        )
+        expect.equal(login, { time = reading_time - 90, seconds_since = 90 })
+    end,
+
+    an_output_without_a_console_line_of_the_user_gives_no_login = function()
+        expect.equal(profile_pause.parse_login(nil), nil)
+        expect.equal(profile_pause.parse_login(""), nil)
+        expect.equal(profile_pause.parse_login("jane\nnot a time\n"), nil)
+        expect.equal(
+            profile_pause.parse_login(
+                "jane\n1791162000\nalex             console      Oct  4 20:59 \n"
+            ),
+            nil
+        )
+    end,
+
     the_lines_name_the_profile_and_the_seconds = function()
         expect.equal(
             profile_pause.describe_start_pause(2, 42.4, 300),

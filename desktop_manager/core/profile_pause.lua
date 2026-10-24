@@ -10,6 +10,85 @@ function profile_pause.parse_macos_start_time(boot_time_output)
     return seconds and math.tointeger(tonumber(seconds)) or nil
 end
 
+---The months as `who` names them under the locale C.
+local MONTH_NUMBERS = {
+    Jan = 1,
+    Feb = 2,
+    Mar = 3,
+    Apr = 4,
+    May = 5,
+    Jun = 6,
+    Jul = 7,
+    Aug = 8,
+    Sep = 9,
+    Oct = 10,
+    Nov = 11,
+    Dec = 12,
+}
+
+---The login of the user to the console, which macOS records at each login, also at the login
+---after a start of macOS.
+---@class Login
+---@field time integer the minute of the login, in seconds since 1970
+---@field seconds_since integer the seconds from that minute to the reading
+
+---`who` dates a login without the year, so a login that the year of the reading would date after
+---the reading lies in the year before.
+---@param reading_time integer the time of the reading, in seconds since 1970
+---@param login_date table the `month`, `day`, `hour` and `min` of the login, as `who` gives them
+---@return integer the minute of the login, in seconds since 1970, in the time zone of the Mac
+local function find_login_time(reading_time, login_date)
+    local function find_time_in(year)
+        return os.time({
+            year = year,
+            month = login_date.month,
+            day = login_date.day,
+            hour = login_date.hour,
+            min = login_date.min,
+            sec = 0,
+        })
+    end
+    local reading_year = math.tointeger(tonumber(os.date("%Y", reading_time)))
+    local time = find_time_in(reading_year)
+    if time > reading_time then
+        return find_time_in(reading_year - 1)
+    end
+    return time
+end
+
+---@param login_output string|nil the output of `id -un; date +%s; LC_ALL=C who`: the name of the
+---user, the time of the reading in seconds since 1970, and one line per session, such as
+---"jane     console      Oct  4 20:59 "
+---@return Login|nil the latest console login of the user, or nil when the output gives none
+function profile_pause.parse_login(login_output)
+    if type(login_output) ~= "string" then
+        return nil
+    end
+    local user, reading_text, sessions = login_output:match("^([^\n]+)\n(%d+)\n(.*)$")
+    local reading_time = reading_text and math.tointeger(tonumber(reading_text))
+    if not reading_time then
+        return nil
+    end
+    local latest_time = nil
+    for line in sessions:gmatch("[^\n]+") do
+        local name, month, day, hour, minute =
+            line:match("^(%S+)%s+console%s+(%a%a%a)%s+(%d+)%s+(%d%d):(%d%d)")
+        if name == user and MONTH_NUMBERS[month] then
+            local time = find_login_time(reading_time, {
+                month = MONTH_NUMBERS[month],
+                day = tonumber(day),
+                hour = tonumber(hour),
+                min = tonumber(minute),
+            })
+            latest_time = math.max(time, latest_time or time)
+        end
+    end
+    if not latest_time then
+        return nil
+    end
+    return { time = latest_time, seconds_since = reading_time - latest_time }
+end
+
 ---A start under a start of macOS that the state file already saw pauses nothing, so a Reload
 ---Config after the user ended the pause keeps the updates going.
 ---A start of macOS that could not be read counts as a new one, because a pause that was not needed
