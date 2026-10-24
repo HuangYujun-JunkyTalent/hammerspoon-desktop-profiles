@@ -96,6 +96,9 @@ return {
     a_second_start_within_the_setting_after_the_end_of_the_pause_pauses_nothing = function()
         local routes = {
             function(world)
+                world.hotkeys["1"]()
+            end,
+            function(world)
                 world.hotkeys["2"]()
             end,
             function(world)
@@ -197,5 +200,85 @@ return {
         expect.equal(controller.state.active_profile_number, nil)
         expect.equal(controller.state.is_active_profile_paused, false)
         expect_profile_1_as_saved(controller, saved)
+    end,
+
+    each_route_of_the_paused_profile_restores_its_layout_and_ends_the_pause = function()
+        local routes = {
+            function(world)
+                world.hotkeys["1"]()
+            end,
+            function(world)
+                world.url_handlers["desktop-manager"](
+                    "desktop-manager",
+                    { action = "activate", profile = "1" }
+                )
+            end,
+            function(world)
+                world.url_handlers["desktop-manager"](
+                    "desktop-manager",
+                    { action = "toggle", profile = "1" }
+                )
+            end,
+            function(world)
+                controller_world.find_menu_item(world, "1  Profile 1").fn()
+            end,
+        }
+        for _, route in ipairs(routes) do
+            local world, controller = start_after_login()
+            world.minimize_window(42)
+            local news = world.add_window_of("com.apple.Safari", "News", 3)
+            route(world)
+            world.advance(controller_world.SETTLE_SECONDS)
+            expect.equal(controller.state.active_profile_number, 1)
+            expect.equal(controller.state.is_active_profile_paused, false)
+            expect.equal(world.windows[42].is_minimized, false)
+            expect.equal(world.windows[news.id].is_minimized, true)
+            world.minimize_window(42)
+            world.advance(controller_world.SETTLE_SECONDS)
+            expect.equal(controller_world.recorded_sight(controller, 1, 42), "out of sight")
+        end
+    end,
+
+    the_url_that_deactivates_the_paused_profile_updates_nothing = function()
+        local world, controller, saved = start_after_login()
+        world.minimize_window(42)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "deactivate", profile = "1" }
+        )
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(controller.state.active_profile_number, nil)
+        expect_profile_1_as_saved(controller, saved)
+    end,
+
+    a_restore_that_the_watchdog_stops_before_the_concealment_keeps_the_pause = function()
+        local world, controller, saved = start_after_login({
+            timing = (function()
+                local timing = require("tests.fake_worlds").create_default_timing()
+                timing.busy_watchdog_seconds = 0.5
+                return timing
+            end)(),
+        })
+        world.windows[41].space_id = 64
+        world.windows[41].is_unseen = true
+        world.move_delay_seconds = 5
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(controller.state.is_active_profile_paused, true)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        expect.equal(controller.state.is_active_profile_paused, true)
+        expect.equal(
+            profile_state.find_arrangement(controller.state, 1, "built-in"),
+            profile_state.find_arrangement(profile_state.decode(saved), 1, "built-in")
+        )
+    end,
+
+    the_profile_shortcut_after_the_restore_deactivates_as_before = function()
+        local world, controller = start_after_login()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.hotkeys["1"]()
+        expect.equal(controller.state.active_profile_number, nil)
     end,
 }

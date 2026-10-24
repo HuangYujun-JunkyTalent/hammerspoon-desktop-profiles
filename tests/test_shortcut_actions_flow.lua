@@ -66,6 +66,10 @@ return {
         controller_world.find_menu_item(world, "Keyboard shortcuts…").fn()
         local row = find_shortcut_row(controller, "window_search.toggle")
         expect.equal(row.title, "Show the search of the windows, or close it")
+        expect.equal(
+            find_shortcut_row(controller, "profiles.toggle.1").title,
+            "Activate profile 1, restore it while it is paused, or deactivate it while it is active"
+        )
         expect.equal(row.macos_conflict, nil)
         world.hotkey_events = {}
         world.post_to_webview("shortcuts", { kind = "record_start" })

@@ -25,7 +25,8 @@ function shortcut_actions.list(profile_count, app_number_count, handlers)
             id = "profiles.toggle." .. number,
             group = "Profiles",
             title = string.format(
-                "Activate profile %d, or deactivate it while it is active",
+                "Activate profile %d, restore it while it is paused, or deactivate it while it"
+                    .. " is active",
                 number
             ),
             default = { modifiers = profile_modifiers, key = tostring(number) },

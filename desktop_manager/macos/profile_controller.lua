@@ -663,12 +663,13 @@ function ProfileController:stop_unfinished_work()
     self:resume_saves()
 end
 
+---Switches to the profile, or restores the layout of the active profile while it is paused.
 ---@param number integer
 function ProfileController:activate_profile(number)
     if self:refuse_while_busy() then
         return
     end
-    if self.state.active_profile_number == number then
+    if self.state.active_profile_number == number and not self.state.is_active_profile_paused then
         return
     end
     local started_at = hs.timer.secondsSinceEpoch()
@@ -925,9 +926,11 @@ function ProfileController:deactivate_profile_if_active(number)
     self:deactivate_profile()
 end
 
+---Deactivates the active profile, or activates the profile, which restores the layout of the
+---active profile while it is paused.
 ---@param number integer
 function ProfileController:toggle_profile(number)
-    if self.state.active_profile_number == number then
+    if self.state.active_profile_number == number and not self.state.is_active_profile_paused then
         self:deactivate_profile()
     else
         self:activate_profile(number)
