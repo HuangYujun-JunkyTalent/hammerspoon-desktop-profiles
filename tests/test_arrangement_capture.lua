@@ -34,6 +34,17 @@ local LAYOUT = {
     focused_space_id = 649,
 }
 
+local INBOX_RECORD = {
+    window_id = 41,
+    bundle_id = "com.apple.Safari",
+    app_name = "Safari",
+    title = "Inbox",
+    slot_key = "built-in",
+    desktop_number = 3,
+    unit_frame = { x = 0, y = 0, w = 1, h = 1 },
+    is_out_of_sight = false,
+}
+
 return {
     to_unit_frame_is_relative_to_the_screen = function()
         local unit =
@@ -220,14 +231,9 @@ return {
         expect.equal(record.desktop_number, 3)
         expect.equal(record.unit_frame, { x = 0, y = 0, w = 1, h = 1 })
         expect.equal(record.is_out_of_sight, true)
-        expect.equal(arrangement_capture.observe_unlisted_record(previous.windows[1], 64), {
-            window_id = 41,
-            bundle_id = "com.apple.Safari",
-            app_name = "Safari",
-            title = "Inbox",
-            space_id = 64,
-            is_out_of_sight = false,
-        })
+    end,
+
+    an_unseen_window_keeps_the_recorded_title_when_macos_gives_none = function()
         local server_window = {
             window_id = 41,
             bundle_id = "com.apple.Safari",
@@ -236,11 +242,27 @@ return {
             space_id = 64,
             frame = { x = 0, y = 25, w = 600, h = 400 },
         }
-        expect.equal(
-            arrangement_capture.observe_server_window(server_window, previous.windows[1]).title,
-            "Inbox"
-        )
+        expect.equal(arrangement_capture.observe_server_window(server_window, INBOX_RECORD), {
+            window_id = 41,
+            bundle_id = "com.apple.Safari",
+            app_name = "Safari",
+            title = "Inbox",
+            space_id = 64,
+            frame = { x = 0, y = 25, w = 600, h = 400 },
+            is_out_of_sight = false,
+        })
         expect.equal(arrangement_capture.observe_server_window(server_window, nil).title, "")
+    end,
+
+    an_unlisted_record_keeps_its_title_and_sight_on_the_desktop_that_macos_lists = function()
+        expect.equal(arrangement_capture.observe_unlisted_record(INBOX_RECORD, 64), {
+            window_id = 41,
+            bundle_id = "com.apple.Safari",
+            app_name = "Safari",
+            title = "Inbox",
+            space_id = 64,
+            is_out_of_sight = false,
+        })
     end,
 
     a_window_on_an_unknown_space_without_history_has_no_location = function()
