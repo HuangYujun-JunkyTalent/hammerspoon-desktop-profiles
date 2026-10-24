@@ -159,6 +159,7 @@ local current_world = nil
 ---The fake records each bounce in `bounces`, with the desktop shown, the desktop shown again and
 ---the time.
 ---`on_window_manager_read` is called at each read of the accessibility tree of WindowManager.
+---`execute_calls` counts the calls of `hs.execute`, each of which exports the shortcuts of macOS.
 ---@param spec FakeWorldSpec
 ---@return table world
 function fake_hammerspoon.install(spec)
@@ -174,6 +175,7 @@ function fake_hammerspoon.install(spec)
         held_modifiers = {},
         key_strokes = {},
         symbolic_hotkeys = {},
+        execute_calls = 0,
         tasks = {},
         task_exit_code = 0,
         alerts = {},
@@ -1488,6 +1490,7 @@ function fake_hammerspoon.install(spec)
             if command ~= SYMBOLIC_HOTKEYS_EXPORT then
                 error("the fake runs no command but the export of the shortcuts: " .. command)
             end
+            world.execute_calls = world.execute_calls + 1
             return SYMBOLIC_HOTKEYS_EXPORT, true
         end,
         webview = {

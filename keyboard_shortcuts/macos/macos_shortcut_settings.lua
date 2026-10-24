@@ -24,15 +24,12 @@ function macos_shortcut_settings.list()
     return macos_shortcuts.list(macos_shortcut_settings.read_symbolic_hotkeys() or {})
 end
 
+---@param shortcuts MacosShortcut[] the shortcuts of macOS that `list` returned
 ---@param modifiers string[]
 ---@param key string a name of hs.keycodes.map
 ---@return MacosShortcut|nil the shortcut of macOS that is on with the same keys
-function macos_shortcut_settings.find_conflict(modifiers, key)
-    return macos_shortcuts.find_conflict(
-        macos_shortcut_settings.list(),
-        modifiers,
-        hs.keycodes.map[key]
-    )
+function macos_shortcut_settings.find_conflict(shortcuts, modifiers, key)
+    return macos_shortcuts.find_conflict(shortcuts, modifiers, hs.keycodes.map[key])
 end
 
 ---Turns the shortcut of macOS off and keeps its keys, as the user chose in the window of the

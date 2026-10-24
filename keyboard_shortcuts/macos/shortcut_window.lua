@@ -292,21 +292,32 @@ function shortcut_window.build_page(model)
     })
 end
 
+---@param macos_shortcut_list MacosShortcut[] the shortcuts of macOS that
+---`macos_shortcut_settings.list` returned
 ---@param shortcut Shortcut
 ---@return MacosShortcut|nil
-local function find_macos_conflict(shortcut)
-    return macos_shortcut_settings.find_conflict(shortcut.modifiers, shortcut.key)
+local function find_macos_conflict(macos_shortcut_list, shortcut)
+    return macos_shortcut_settings.find_conflict(
+        macos_shortcut_list,
+        shortcut.modifiers,
+        shortcut.key
+    )
 end
 
+---Reads the shortcuts of macOS once and finds the conflict of every row in that list, because each
+---read runs `defaults` and blocks Hammerspoon until it ends.
 ---@param window ShortcutWindow
 ---@return ShortcutWindowModel the model of the shortcuts, the problems and the pending shortcut of
 ---the window now
 local function build_window_model(window)
+    local macos_shortcut_list = macos_shortcut_settings.list()
     return shortcut_window.build_model(
         window.center,
         window.problems,
         window.pending,
-        find_macos_conflict
+        function(shortcut)
+            return find_macos_conflict(macos_shortcut_list, shortcut)
+        end
     )
 end
 
@@ -345,7 +356,7 @@ local function record_shortcut(window, id, shortcut)
         id = id,
         shortcut = shortcut,
         holder = holder and { id = holder.id, title = holder.title },
-        macos = find_macos_conflict(shortcut),
+        macos = find_macos_conflict(macos_shortcut_settings.list(), shortcut),
     }
     if not pending.holder and not pending.macos then
         change_shortcut(window, id, shortcut)
@@ -391,7 +402,7 @@ end
 ---@param id string
 local function turn_off_macos_for(window, id)
     local shortcut = window.center:find_shortcut(id)
-    local conflict = shortcut and find_macos_conflict(shortcut)
+    local conflict = shortcut and find_macos_conflict(macos_shortcut_settings.list(), shortcut)
     if not conflict then
         redraw_list(window)
         return

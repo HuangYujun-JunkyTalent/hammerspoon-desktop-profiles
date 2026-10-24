@@ -1290,6 +1290,15 @@ return {
         )
     end,
 
+    each_drawing_of_the_window_of_the_shortcuts_reads_the_macos_shortcuts_once = function()
+        local world = start_world()
+        world.execute_calls = 0
+        find_menu_item(world, "Keyboard shortcuts…").fn()
+        expect.equal(world.execute_calls, 1)
+        world.post_to_webview({ kind = "remove", id = "window_search.toggle" })
+        expect.equal(world.execute_calls, 2)
+    end,
+
     a_highlight_color_of_the_setting_marks_the_selection = function()
         local selection = { hex = "#2E8B57", alpha = 0.9 }
         local world = start_world({ search_highlight_colors = { selection = selection } })
