@@ -1,3 +1,5 @@
+local enumeration = require("desktop_manager.core.enumeration")
+
 ---What the list of numbered applications shows beside the title of a window.
 ---`APP_ICONS` shows the icon of the application.
 ---`BLURRED_SNAPSHOTS` shows a blurred image of the window, and the icon when no image comes.
@@ -5,20 +7,11 @@
 ---On macOS 27.0.1 the function behind it once blocked Hammerspoon for two minutes, and after the
 ---user turned the permission on it took less than 0.3 seconds.
 ---Snapshots are therefore the default, and a slow snapshot turns them off until the next reload.
-local preview_method = {
+local preview_method = enumeration.define({
     APP_ICONS = "app_icons",
     BLURRED_SNAPSHOTS = "blurred_snapshots",
-}
+})
 
-local VALID = {
-    [preview_method.APP_ICONS] = true,
-    [preview_method.BLURRED_SNAPSHOTS] = true,
-}
-
----@param value any
----@return boolean
-function preview_method.is_valid(value)
-    return VALID[value] == true
-end
+---@alias PreviewMethod "app_icons"|"blurred_snapshots"
 
 return preview_method

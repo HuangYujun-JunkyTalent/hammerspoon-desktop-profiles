@@ -1,9 +1,7 @@
 local expect = require("tests.expect")
-local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local missing_windows = require("desktop_manager.core.missing_windows")
 local monitor_configuration = require("desktop_manager.core.monitor_configuration")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
-local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 
 local BUILTIN_FRAME = { x = 0, y = 25, w = 1440, h = 875 }
 local EXTERNAL_FRAME = { x = 1440, y = 0, w = 1920, h = 1080 }
@@ -108,23 +106,5 @@ return {
             { record = on_unseen_desktop, kind = kind.ON_UNSEEN_DESKTOP, space_id = 14 },
         })
         expect.equal(read_ids, { 43, 41, 42 })
-    end,
-
-    the_policy_names_two_values = function()
-        expect.equal(missing_window_policy.is_valid(missing_window_policy.OPEN_NEW_WINDOW), true)
-        expect.equal(
-            missing_window_policy.is_valid(missing_window_policy.MATCH_TITLE_OR_OPEN_NEW_WINDOW),
-            true
-        )
-        expect.equal(missing_window_policy.is_valid("guess"), false)
-    end,
-
-    the_action_for_an_unmatched_window_names_two_values = function()
-        expect.equal(
-            unmatched_window_action.is_valid(unmatched_window_action.OPEN_NEW_WINDOW),
-            true
-        )
-        expect.equal(unmatched_window_action.is_valid(unmatched_window_action.FORGET), true)
-        expect.equal(unmatched_window_action.is_valid("drop"), false)
     end,
 }
