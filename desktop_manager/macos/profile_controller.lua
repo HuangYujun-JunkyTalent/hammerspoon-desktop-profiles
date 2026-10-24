@@ -10,6 +10,7 @@ local concatenate_lists = require("desktop_manager.core.concatenate_lists")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
+local diagnostic_lines = require("desktop_manager.macos.diagnostic_lines")
 local extra_desktops = require("desktop_manager.macos.extra_desktops")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_known_windows = require("desktop_manager.macos.list_known_windows")
@@ -1623,124 +1624,32 @@ end
 
 ---Prints what the tool reads of the screens, desktops and windows, without changing anything.
 function ProfileController:print_diagnostics()
-    local lines = {}
-    local function add(format, ...)
-        table.insert(lines, string.format(format, ...))
-    end
-    add("Hammerspoon %s", tostring(hs.processInfo and hs.processInfo.version))
-    add("accessibility permission: %s", tostring(hs.accessibilityState()))
-    add("running timers: %d", retained_timers.count_running())
-    add("monitor matching: %s", self.state.monitor_matching)
-    add("application pool: %s", app_pool.describe(self.state.app_pool))
+    local build_lines = diagnostic_lines.describe_build(self.state)
     local configuration = self:read_monitor_configuration()
-    add("monitor configuration: %s", configuration.key)
-    for _, screen in
-        ipairs(read_screens.describe_screens(self.settings.builtin_screen_name_patterns))
-    do
-        local slot = monitor_configuration.find_slot_of_screen(configuration, screen.uuid)
-        add(
-            "  screen %s %q built-in=%s slot=%s",
-            screen.uuid,
-            screen.name,
-            tostring(screen.is_builtin),
-            slot.slot_key
-        )
-    end
-    local layout = read_desktops.read_desktop_layout()
-    for _, screen in ipairs(layout.screens) do
-        local numbered, shown = {}, nil
-        for position, space_id in ipairs(screen.space_ids) do
-            table.insert(numbered, string.format("%d=%d", position, space_id))
-            if space_id == screen.active_space_id then
-                shown = tostring(position)
-            end
-        end
-        local slot = monitor_configuration.find_slot_of_screen(configuration, screen.screen_uuid)
-        add(
-            "  desktops of %s (%s): %s, shown %s",
-            screen.screen_uuid,
-            slot and slot.slot_key or "no slot",
-            table.concat(numbered, " "),
-            shown or string.format("space %s", tostring(screen.active_space_id))
-        )
-    end
-    add("focused desktop: %s", tostring(layout.focused_space_id))
-    local kept_counts = {}
-    for slot_key, count in pairs(self.state.desktop_counts.kept) do
-        table.insert(kept_counts, string.format("%s %d", slot_key, count))
-    end
-    table.sort(kept_counts)
-    add("desktops kept per display: %s", table.concat(kept_counts, ", "))
-    add("active profile: %s", tostring(self.state.active_profile_number))
+    local screen_lines =
+        diagnostic_lines.describe_screens(configuration, self.settings.builtin_screen_name_patterns)
+    local desktop_lines = diagnostic_lines.describe_desktops(configuration)
     local active_number = self.state.active_profile_number
-    local active_layout = active_number
+    local active_arrangement = active_number
         and profile_state.find_arrangement(self.state, active_number, configuration.key)
-    for _, monitor in ipairs(active_layout and active_layout.monitors or {}) do
-        add(
-            monitor.shown_desktop_number
-                    and "profile %d holds %d desktops on %s and shows desktop %d"
-                or "profile %d holds %d desktops on %s and records no desktop shown",
-            active_number,
-            monitor.desktop_count,
-            monitor.slot_key,
-            monitor.shown_desktop_number
-        )
-    end
-    if active_layout and active_layout.focused_slot_key then
-        add("profile %d had the focus on %s", active_number, active_layout.focused_slot_key)
-    end
-    local numbering_profile = self:read_numbering_profile()
-    add("application numbers of %s:", numbering_profile.name)
-    for _, entry in ipairs(numbering_profile.app_numbers) do
-        add(
-            "  app number %d: %s %s%s",
-            entry.number,
-            entry.app_name,
-            entry.bundle_id,
-            entry.is_chosen_by_user and " (chosen)" or ""
-        )
-    end
-    local records_by_profile = {}
-    for number = 1, self.settings.profile_count do
-        local arrangement = profile_state.find_arrangement(self.state, number, configuration.key)
-        records_by_profile[number] = {}
-        for _, record in ipairs(arrangement and arrangement.windows or {}) do
-            if record.window_id then
-                records_by_profile[number][record.window_id] = record
-            end
-        end
-    end
-    local listed = track_windows.index_by_id(self.window_filter:getWindows())
-    local active_arrangement = self.state.active_profile_number
-        and profile_state.find_arrangement(
-            self.state,
-            self.state.active_profile_number,
-            configuration.key
-        )
-    local managed_windows =
-        self.known_windows:list_managed(profile_state.list_recorded_window_ids(active_arrangement))
-    add("windows out of reach: %d", #self.known_windows:list_unreached_managed(managed_windows))
-    for _, window in ipairs(managed_windows) do
-        local observation = track_windows.observe(window)
-        local recorded_states = {}
-        for number = 1, self.settings.profile_count do
-            local record = records_by_profile[number][observation.window_id]
-            if record then
-                local sight = record.is_out_of_sight and "out of sight" or "in sight"
-                table.insert(recorded_states, string.format("%d %s", number, sight))
-            end
-        end
-        add(
-            "  window %s %s %q desktop=%s out-of-sight=%s in-filter=%s recorded=%s",
-            tostring(observation.window_id),
-            observation.bundle_id,
-            observation.title,
-            tostring(observation.space_id),
-            tostring(observation.is_out_of_sight),
-            tostring(listed[observation.window_id] ~= nil),
-            table.concat(recorded_states, ", ")
-        )
-    end
+    local profile_lines = diagnostic_lines.describe_profile(self.state, active_arrangement)
+    local app_number_lines = diagnostic_lines.describe_app_numbers(self:read_numbering_profile())
+    local window_lines = diagnostic_lines.describe_windows(
+        self.state,
+        self.settings.profile_count,
+        configuration.key,
+        active_arrangement,
+        self.known_windows,
+        self.window_filter
+    )
+    local lines = concatenate_lists.concatenate(
+        build_lines,
+        screen_lines,
+        desktop_lines,
+        profile_lines,
+        app_number_lines,
+        window_lines
+    )
     print(table.concat(lines, "\n"))
 end
 
