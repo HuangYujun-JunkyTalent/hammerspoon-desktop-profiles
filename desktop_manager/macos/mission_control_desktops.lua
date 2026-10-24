@@ -521,13 +521,13 @@ end
 
 ---Finds the thumbnail again and presses it a second time in the same opening, or notes that the
 ---group of the display had closed.
----@param running RunningPress
+---@param running_press RunningPress
 ---@param waited_seconds number
-local function press_again(running, waited_seconds)
-    local press = running.press
+local function press_again(running_press, waited_seconds)
+    local press = running_press.press
     press.second_press_after = waited_seconds
     local second_thumbnail, failure, is_group_shown =
-        find_thumbnail_for_second_press(running.space_id, running.screen_uuid)
+        find_thumbnail_for_second_press(running_press.space_id, running_press.screen_uuid)
     if is_group_shown == false then
         press.is_closed_at_second_check = true
         return
@@ -541,23 +541,23 @@ local function press_again(running, waited_seconds)
 end
 
 ---Ends the press with the failure of the second opening, after the log line of the press.
----@param running RunningPress
+---@param running_press RunningPress
 ---@param failure string
-local function fail_second_opening(running, failure)
-    running.press.second_press_error = failure
+local function fail_second_opening(running_press, failure)
+    running_press.press.second_press_error = failure
     get_log().f(
         "%s: %s",
-        running.description,
+        running_press.description,
         thumbnail_press_log.describe_press(
-            running.press,
-            hs.timer.secondsSinceEpoch() - running.pressed_at
+            running_press.press,
+            hs.timer.secondsSinceEpoch() - running_press.pressed_at
         )
     )
-    running.on_done(
+    running_press.on_done(
         string.format(
             "Mission Control did not show %s after one press,"
                 .. " and the second opening failed: %s",
-            running.description,
+            running_press.description,
             failure
         )
     )
@@ -567,109 +567,114 @@ local poll_press
 
 ---Presses the thumbnail, found anew, once Mission Control shows a second time, and goes on polling
 ---up to `desktop_show_timeout_seconds` after that press.
----@param running RunningPress
-local function press_in_second_opening(running)
+---@param running_press RunningPress
+local function press_in_second_opening(running_press)
     local again_thumbnail, failure =
-        find_thumbnail_for_second_press(running.space_id, running.screen_uuid)
+        find_thumbnail_for_second_press(running_press.space_id, running_press.screen_uuid)
     if again_thumbnail then
         failure = perform(again_thumbnail, "AXPress")
     end
     if failure then
-        close_mission_control(running.screen_id, running.timing, function()
-            fail_second_opening(running, failure)
+        close_mission_control(running_press.screen_id, running_press.timing, function()
+            fail_second_opening(running_press, failure)
         end)
         return
     end
-    running.last_pressed_at = hs.timer.secondsSinceEpoch()
-    running.press.is_second_press_made = true
-    running.press.second_opening_press_after = running.last_pressed_at - running.pressed_at
-    poll_press(running)
+    running_press.last_pressed_at = hs.timer.secondsSinceEpoch()
+    running_press.press.is_second_press_made = true
+    running_press.press.second_opening_press_after = running_press.last_pressed_at
+        - running_press.pressed_at
+    poll_press(running_press)
 end
 
 ---Opens Mission Control a second time and presses the thumbnail there.
----@param running RunningPress
-local function open_again(running)
-    running.press.is_opened_again = true
-    open_mission_control(running.screen_id, running.timing, function()
-        press_in_second_opening(running)
+---@param running_press RunningPress
+local function open_again(running_press)
+    running_press.press.is_opened_again = true
+    open_mission_control(running_press.screen_id, running_press.timing, function()
+        press_in_second_opening(running_press)
     end, function(failure)
-        fail_second_opening(running, failure)
+        fail_second_opening(running_press, failure)
     end)
 end
 
 ---Closes Mission Control by a toggle when it still shows at the end of the wait, and ends the
 ---press, with a warning and a failure when the desktop is not active.
----@param running RunningPress
+---@param running_press RunningPress
 ---@param waited_seconds number
-local function finish_at_deadline(running, waited_seconds)
-    local press = running.press
-    local is_active = is_space_active_safely(running.space_id)
-    press.is_closed_by_toggle = close_mission_control(running.screen_id, running.timing, function()
-        if is_active then
-            retained_timers.after(
-                running.timing.desktop_settle_seconds,
-                continue_opening(function()
-                    running.on_done(nil)
-                end)
+local function finish_at_deadline(running_press, waited_seconds)
+    local press = running_press.press
+    local is_active = is_space_active_safely(running_press.space_id)
+    press.is_closed_by_toggle = close_mission_control(
+        running_press.screen_id,
+        running_press.timing,
+        function()
+            if is_active then
+                retained_timers.after(
+                    running_press.timing.desktop_settle_seconds,
+                    continue_opening(function()
+                        running_press.on_done(nil)
+                    end)
+                )
+                return
+            end
+            local is_read, screen_desktops =
+                pcall(read_desktops.find_screen_desktops, running_press.screen_uuid)
+            local shown_space_id = is_read and screen_desktops and screen_desktops.active_space_id
+            get_log().w(
+                string.format(
+                    "%s did not show. Its screen shows %s, and Mission Control %s at the end of"
+                        .. " the wait. %s",
+                    running_press.description,
+                    shown_space_id and describe_desktop(shown_space_id) or "no desktop",
+                    press.is_closed_by_toggle and "still showed" or "had closed",
+                    thumbnail_press_log.describe_press_errors(press)
+                )
             )
-            return
+            running_press.on_done(
+                string.format(
+                    "Mission Control did not show %s within %g seconds, after %s",
+                    running_press.description,
+                    running_press.timing.desktop_show_timeout_seconds,
+                    thumbnail_press_log.count_openings_and_presses(press)
+                )
+            )
         end
-        local is_read, screen_desktops =
-            pcall(read_desktops.find_screen_desktops, running.screen_uuid)
-        local shown_space_id = is_read and screen_desktops and screen_desktops.active_space_id
-        get_log().w(
-            string.format(
-                "%s did not show. Its screen shows %s, and Mission Control %s at the end of"
-                    .. " the wait. %s",
-                running.description,
-                shown_space_id and describe_desktop(shown_space_id) or "no desktop",
-                press.is_closed_by_toggle and "still showed" or "had closed",
-                thumbnail_press_log.describe_press_errors(press)
-            )
-        )
-        running.on_done(
-            string.format(
-                "Mission Control did not show %s within %g seconds, after %s",
-                running.description,
-                running.timing.desktop_show_timeout_seconds,
-                thumbnail_press_log.count_openings_and_presses(press)
-            )
-        )
-    end)
+    )
     get_log().f(
         "%s: %s",
-        running.description,
+        running_press.description,
         thumbnail_press_log.describe_press(press, waited_seconds)
     )
 end
 
 ---Checks whether the desktop is active and Mission Control has closed, ends the press then or at
 ---the deadline, makes the second check once, and otherwise polls again.
----@param running RunningPress
-poll_press = function(running)
-    local press, timing = running.press, running.timing
+---@param running_press RunningPress
+poll_press = function(running_press)
+    local press, timing = running_press.press, running_press.timing
     local now = hs.timer.secondsSinceEpoch()
-    local waited_seconds = now - running.pressed_at
-    if not press.active_after and is_space_active_safely(running.space_id) then
+    local waited_seconds = now - running_press.pressed_at
+    if not press.active_after and is_space_active_safely(running_press.space_id) then
         press.active_after = waited_seconds
     end
-    if press.active_after and find_display_group(running.screen_id) == nil then
+    if press.active_after and find_display_group(running_press.screen_id) == nil then
         press.closed_after = waited_seconds
         get_log().f(
             "%s: %s",
-            running.description,
+            running_press.description,
             thumbnail_press_log.describe_press(press, waited_seconds)
         )
         retained_timers.after(
             timing.desktop_settle_seconds,
             continue_opening(function()
-                running.on_done(nil)
+                running_press.on_done(nil)
             end)
         )
         return
     end
-    if now - running.last_pressed_at >= timing.desktop_show_timeout_seconds then
-        finish_at_deadline(running, waited_seconds)
+    if now - running_press.last_pressed_at >= timing.desktop_show_timeout_seconds then
+        finish_at_deadline(running_press, waited_seconds)
         return
     end
     if
@@ -677,16 +682,18 @@ poll_press = function(running)
         and not press.second_press_after
         and waited_seconds >= timing.desktop_press_retry_seconds
     then
-        press_again(running, waited_seconds)
-        if press.is_closed_at_second_check and not is_space_active_safely(running.space_id) then
-            open_again(running)
+        press_again(running_press, waited_seconds)
+        if
+            press.is_closed_at_second_check and not is_space_active_safely(running_press.space_id)
+        then
+            open_again(running_press)
             return
         end
     end
     retained_timers.after(
         timing.poll_interval_seconds,
         continue_opening(function()
-            poll_press(running)
+            poll_press(running_press)
         end)
     )
 end
