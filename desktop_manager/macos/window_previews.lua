@@ -1,15 +1,19 @@
 local preview_method = require("desktop_manager.core.preview_method")
+local preview_pacing = require("desktop_manager.core.preview_pacing")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 
 ---Reads the icons of applications and the blurred snapshots of windows for the list.
 local window_previews = {}
 
----How the previews of a list load: their blur, their size, the time limit of a snapshot, and the
----calls that the loading makes.
+---How the previews of a list load: their blur, their size, the time limit of a snapshot, the
+---times that pace the snapshots, and the calls that the loading makes.
 ---@class PreviewLoading
 ---@field blur number the setting preview_blur
 ---@field preview_size table the w and h of a preview in points
 ---@field time_limit_seconds number
+---@field shown_at number when the list showed, in seconds since the epoch
+---@field read_last_input_at fun(): number|nil when the last key, press, click or hover of the list
+---came, or nil before any
 ---@field is_wanted fun(): boolean whether the list still shows and the snapshots may run
 ---@field on_image fun(window_id: integer, image: table) receives each snapshot that macOS gives
 ---@field on_preview_taken fun(window_id: integer, blocking_seconds: number)|nil receives the time
@@ -20,6 +24,9 @@ local window_previews = {}
 ---What a list asks of the loader of the previews.
 ---@class PreviewRequest
 ---@field preview_size table the w and h of a preview in points
+---@field shown_at number when the list showed, in seconds since the epoch
+---@field read_last_input_at fun(): number|nil when the last key, press, click or hover of the list
+---came, or nil before any
 ---@field is_wanted fun(): boolean whether the list still shows
 ---@field on_image fun(window_id: integer, image: table) receives each preview as it comes
 ---@field on_preview_taken fun(window_id: integer, blocking_seconds: number)|nil receives the time
@@ -63,34 +70,75 @@ local function take_blurred_snapshot(window_id, blur, preview_size)
         snapshot_seconds
 end
 
----Takes the snapshots of the windows one at a time, each after Hammerspoon has handled its other
----events, so the list shows at once and its previews come as they are taken.
----@param window_ids integer[]
----@param loading PreviewLoading
-function window_previews.load_one_at_a_time(window_ids, loading)
-    local index = 0
-    local function take_next_snapshot()
-        index = index + 1
-        local window_id = window_ids[index]
-        if not window_id or not loading.is_wanted() then
-            return
-        end
-        local started_at = hs.timer.secondsSinceEpoch()
-        local image, snapshot_seconds =
-            take_blurred_snapshot(window_id, loading.blur, loading.preview_size)
-        if loading.on_preview_taken then
-            loading.on_preview_taken(window_id, hs.timer.secondsSinceEpoch() - started_at)
-        end
-        if snapshot_seconds > loading.time_limit_seconds then
-            loading.on_too_slow(snapshot_seconds)
-            return
-        end
-        if image then
-            loading.on_image(window_id, image)
-        end
-        retained_timers.defer(take_next_snapshot)
+---The snapshots of the windows of a list, which the queue takes one at a time, after the list has
+---drawn and while its input pauses, as `preview_pacing` says, so that the list shows at once and
+---its previews come as they are taken.
+---@class PreviewQueue
+---@field loading PreviewLoading
+---@field window_ids integer[] the windows in the order of their snapshots
+---@field taken_count integer the windows whose snapshots the queue has taken or skipped
+---@field timer table|nil the one hs.timer of the queue, while a snapshot waits for its time
+local PreviewQueue = {}
+PreviewQueue.__index = PreviewQueue
+
+---@param queue PreviewQueue
+---@return number the seconds until the next snapshot may start
+local function read_seconds_until_next_snapshot(queue)
+    return preview_pacing.seconds_until_next_preview(
+        hs.timer.secondsSinceEpoch(),
+        queue.loading.shown_at,
+        queue.loading.read_last_input_at()
+    )
+end
+
+---Sets the timer of the next snapshot, unless one is set, no snapshot waits or the list no longer
+---wants the snapshots.
+function PreviewQueue:schedule()
+    if self.timer or self.taken_count >= #self.window_ids or not self.loading.is_wanted() then
+        return
     end
-    retained_timers.defer(take_next_snapshot)
+    self.timer = retained_timers.after(read_seconds_until_next_snapshot(self), function()
+        self.timer = nil
+        self:take_next_snapshot()
+    end)
+end
+
+---Takes the next snapshot when its time has come, as an input may have come since the timer was
+---set, and sets the timer of the snapshot after it.
+function PreviewQueue:take_next_snapshot()
+    if not self.loading.is_wanted() then
+        return
+    end
+    if read_seconds_until_next_snapshot(self) > 0 then
+        self:schedule()
+        return
+    end
+    self.taken_count = self.taken_count + 1
+    local window_id = self.window_ids[self.taken_count]
+    local loading = self.loading
+    local started_at = hs.timer.secondsSinceEpoch()
+    local image, snapshot_seconds =
+        take_blurred_snapshot(window_id, loading.blur, loading.preview_size)
+    if loading.on_preview_taken then
+        loading.on_preview_taken(window_id, hs.timer.secondsSinceEpoch() - started_at)
+    end
+    if snapshot_seconds > loading.time_limit_seconds then
+        loading.on_too_slow(snapshot_seconds)
+        return
+    end
+    if image then
+        loading.on_image(window_id, image)
+    end
+    self:schedule()
+end
+
+---Puts the windows at the end of the queue, as when a new list of the window server adds windows.
+---@param window_ids integer[]
+function PreviewQueue:add(window_ids)
+    for _, window_id in ipairs(window_ids) do
+        table.insert(self.window_ids, window_id)
+    end
+    self:schedule()
 end
 
 ---Loads the previews of the list and the search under the setting for snapshots, and stops the
@@ -138,16 +186,19 @@ end
 ---to `on_image` as it comes, under the setting for snapshots.
 ---@param window_ids integer[]
 ---@param request PreviewRequest
+---@return PreviewQueue the queue that takes the windows that the list adds later
 function PreviewLoader:load(window_ids, request)
-    if self.settings.preview_method ~= preview_method.BLURRED_SNAPSHOTS then
-        return
-    end
-    window_previews.load_one_at_a_time(window_ids, {
+    local queue = setmetatable({ window_ids = {}, taken_count = 0 }, PreviewQueue)
+    queue.loading = {
         blur = self.settings.preview_blur,
         preview_size = request.preview_size,
         time_limit_seconds = self.settings.timing.snapshot_time_limit_seconds,
+        shown_at = request.shown_at,
+        read_last_input_at = request.read_last_input_at,
         is_wanted = function()
-            return request.is_wanted() and not self.are_snapshots_stopped
+            return self.settings.preview_method == preview_method.BLURRED_SNAPSHOTS
+                and request.is_wanted()
+                and not self.are_snapshots_stopped
         end,
         on_image = request.on_image,
         on_preview_taken = request.on_preview_taken,
@@ -160,7 +211,9 @@ function PreviewLoader:load(window_ids, request)
                 )
             )
         end,
-    })
+    }
+    queue:add(window_ids)
+    return queue
 end
 
 return window_previews

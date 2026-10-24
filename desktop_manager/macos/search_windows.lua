@@ -41,6 +41,10 @@ local search_windows = {}
 ---@field is_open boolean
 ---@field is_redraw_due boolean whether a redraw waits for the events that came at once
 ---@field times SearchOpeningTimes what happened since the opening, for the console
+---@field shown_at number when the panel showed, in seconds since the epoch
+---@field last_input_at number|nil when the last key, click or hover came, which holds the next
+---preview back
+---@field preview_queue PreviewQueue the snapshots of the windows of the panel
 
 ---The windows of the search, the most recently focused first, and the windows that accessibility
 ---does not reach after them.
@@ -260,6 +264,7 @@ end
 ---@param event table an hs.eventtap.event
 ---@return boolean that the event stops here
 local function handle_key(panel, event)
+    panel.last_input_at = hs.timer.secondsSinceEpoch()
     time_key(panel, event)
     local flags = event:getFlags()
     local action = KEY_ACTIONS[hs.keycodes.map[event:getKeyCode()]]
@@ -281,6 +286,7 @@ end
 ---@param message string
 ---@param id string
 local function handle_mouse(panel, message, id)
+    panel.last_input_at = hs.timer.secondsSinceEpoch()
     local bundle_id = id:match("^application:(.+)$")
     local window_id = math.tointeger(tonumber(id:match("^window:(%d+)$")))
     if message == "mouseEnter" and bundle_id then
@@ -311,10 +317,10 @@ local function read_missing_icons(panel, entries)
     end
 end
 
----Asks for the previews of the entries that the panel has not asked for yet.
 ---@param panel SearchPanel
 ---@param entries SearchEntry[]
-local function load_previews(panel, entries)
+---@return integer[] the windows of the entries whose previews the panel has not asked for yet
+local function list_new_preview_ids(panel, entries)
     local window_ids = {}
     for _, entry in ipairs(entries) do
         if not panel.requested_preview_ids[entry.window_id] then
@@ -322,10 +328,21 @@ local function load_previews(panel, entries)
             table.insert(window_ids, entry.window_id)
         end
     end
+    panel.times.requested_preview_count = panel.times.requested_preview_count + #window_ids
+    return window_ids
+end
+
+---Starts the queue of the previews of the panel with the entries that it shows.
+---@param panel SearchPanel
+---@param entries SearchEntry[]
+local function load_previews(panel, entries)
     local times = panel.times
-    times.requested_preview_count = times.requested_preview_count + #window_ids
-    panel.context.preview_loader:load(window_ids, {
+    panel.preview_queue = panel.context.preview_loader:load(list_new_preview_ids(panel, entries), {
         preview_size = search_overlay.read_preview_size(panel.overlay),
+        shown_at = panel.shown_at,
+        read_last_input_at = function()
+            return panel.last_input_at
+        end,
         is_wanted = function()
             return panel.is_open
         end,
@@ -356,7 +373,7 @@ local function add_unreached_windows(panel, unreached_windows)
     panel.window_by_id, panel.unreached_by_id = window_by_id, unreached_by_id
     read_missing_icons(panel, entries)
     show_search(panel, window_search.with_entries(panel.search, entries))
-    load_previews(panel, entries)
+    panel.preview_queue:add(list_new_preview_ids(panel, entries))
 end
 
 ---Shows the panel with the window before the focused one selected, loads the previews, and adds
@@ -402,6 +419,7 @@ function search_windows.open(context)
             handle_mouse(panel, message, id)
         end
     )
+    panel.shown_at = hs.timer.secondsSinceEpoch()
     panel.event_tap = hs.eventtap
         .new({ hs.eventtap.event.types.keyDown }, function(event)
             return handle_key(panel, event)

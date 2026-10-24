@@ -183,8 +183,8 @@ return {
             world.advance(0)
         end)
         expect.equal(lines, {
-            "search of 2 windows: shown after 0.000 seconds, first preview after 0.050 seconds,"
-                .. " 2 of 2 previews by 0.100 seconds, blocking Hammerspoon for 0.100 seconds in"
+            "search of 2 windows: shown after 0.000 seconds, first preview after 0.200 seconds,"
+                .. " 2 of 2 previews by 0.250 seconds, blocking Hammerspoon for 0.100 seconds in"
                 .. " total and 0.050 seconds at most, list of the window server after 0.200"
                 .. " seconds, blocking Hammerspoon for 0.000 seconds, 2 keys, waiting 0.030"
                 .. " seconds at most",
@@ -228,6 +228,40 @@ return {
             "plain Draft.docx | Microsoft Word",
             "plain Reading list | Safari",
         })
+    end,
+
+    the_search_takes_the_previews_after_drawing_and_while_no_key_comes = function()
+        local world = controller_world.start_world()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local snapshots_before = world.snapshot_count
+        world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        expect.equal(world.snapshot_count, snapshots_before)
+        world.advance(0.04)
+        expect.equal(world.snapshot_count, snapshots_before)
+        world.press_key("tab")
+        world.advance(0.11)
+        expect.equal(world.snapshot_count, snapshots_before)
+        world.advance(0.15)
+        expect.equal(world.snapshot_count, snapshots_before + 2)
+        expect.equal(world.read_overlay_images(), {
+            "blurred 41",
+            "blurred 42",
+            "icon com.apple.Safari",
+            "icon com.microsoft.Word",
+        })
+    end,
+
+    a_hover_holds_the_next_preview_of_the_search_back = function()
+        local world = controller_world.start_world()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local snapshots_before = world.snapshot_count
+        world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
+        world.advance(0.04)
+        world.move_mouse_to("application:com.microsoft.Word")
+        world.advance(0.11)
+        expect.equal(world.snapshot_count, snapshots_before)
+        world.advance(0.15)
+        expect.equal(world.snapshot_count, snapshots_before + 2)
     end,
 
     a_window_found_after_the_panel_opened_joins_it = function()

@@ -413,6 +413,24 @@ return {
         expect.equal(retained_timers.count_running(), timers_before)
     end,
 
+    a_press_of_a_number_holds_the_next_preview_back = function()
+        local world = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local snapshots_before = world.snapshot_count
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.advance(0.1)
+        expect.equal(world.snapshot_count, snapshots_before)
+        world.app_hotkeys["1"]()
+        world.advance(0.1)
+        expect.equal(world.snapshot_count, snapshots_before)
+        world.advance(0.06)
+        expect.equal(world.snapshot_count, snapshots_before + 1)
+        world.advance(1)
+        expect.equal(world.snapshot_count, snapshots_before + 2)
+    end,
+
     a_slow_snapshot_stops_the_snapshots_until_a_reload = function()
         local world =
             controller_world.start_world({ preview_method = preview_method.BLURRED_SNAPSHOTS })

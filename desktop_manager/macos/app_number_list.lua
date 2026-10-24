@@ -47,6 +47,10 @@ local app_number_list = {}
 ---holds
 ---@field overlay table|nil the hs.canvas of the list
 ---@field event_tap table|nil the hs.eventtap that watches the modifiers and Escape
+---@field shown_at number|nil when the list showed, in seconds since the epoch
+---@field last_input_at number when the last press of a number came, which holds the next preview
+---back
+---@field preview_queue PreviewQueue|nil the snapshots of the windows of the list
 
 ---The windows that the list shows, as the setting for the windows of hidden applications keeps
 ---them.
@@ -191,6 +195,7 @@ end
 function AppNumberList:press(app_number, binding)
     local session = self.session
     if session then
+        session.last_input_at = hs.timer.secondsSinceEpoch()
         session.selection =
             app_number_list_view.press(session.applications, session.selection, app_number)
         if session.overlay then
@@ -234,6 +239,7 @@ function AppNumberList:open(entries, app_number, modifiers)
         },
         displays = list_displays_from_left(self.context.settings),
         modifiers = modifiers,
+        last_input_at = hs.timer.secondsSinceEpoch(),
     }
     self.session = session
     if not keyboard_modifiers.are_held(modifiers) then
@@ -256,6 +262,7 @@ function AppNumberList:show(session)
         session.images,
         describe_list_settings(self.context.settings)
     )
+    session.shown_at = hs.timer.secondsSinceEpoch()
     local event_types = hs.eventtap.event.types
     session.event_tap = hs.eventtap
         .new({ event_types.flagsChanged, event_types.keyDown }, function(event)
@@ -273,8 +280,12 @@ function AppNumberList:load_previews(session)
             table.insert(window_ids, window.window_id)
         end
     end
-    self.context.preview_loader:load(window_ids, {
+    session.preview_queue = self.context.preview_loader:load(window_ids, {
         preview_size = app_number_list_overlay.read_preview_size(session.overlay),
+        shown_at = session.shown_at,
+        read_last_input_at = function()
+            return session.last_input_at
+        end,
         is_wanted = function()
             return self.session == session
         end,
