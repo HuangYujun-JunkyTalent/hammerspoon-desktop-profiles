@@ -193,6 +193,17 @@ return {
         })
     end,
 
+    a_decode_at_the_end_of_an_advance_keeps_the_clock_after_the_decode = function()
+        local world = controller_world.start_world()
+        world.decode_seconds = 0.5
+        local started_at = world.clock
+        world.schedule(1, function()
+            _G.hs.image.imageFromURL("data:,")
+        end)
+        world.advance(1)
+        expect.equal(world.clock - started_at, 1.5)
+    end,
+
     a_key_that_a_program_made_counts_without_a_wait = function()
         local world = controller_world.start_world()
         world.advance(controller_world.SETTLE_SECONDS)
