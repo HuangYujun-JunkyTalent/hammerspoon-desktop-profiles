@@ -3,23 +3,7 @@ local tiling_position = require("window_tiling.core.tiling_position")
 
 local tiling_controller = {}
 
-local TITLE_BY_POSITION = {
-    [tiling_position.FILL] = "Fill the screen with the front window",
-    [tiling_position.LEFT_HALF] = "Tile the front window to the left half",
-    [tiling_position.RIGHT_HALF] = "Tile the front window to the right half",
-    [tiling_position.TOP_HALF] = "Tile the front window to the top half",
-    [tiling_position.BOTTOM_HALF] = "Tile the front window to the bottom half",
-}
-local DEFAULT_KEY_BY_POSITION = {
-    [tiling_position.FILL] = "return",
-    [tiling_position.LEFT_HALF] = "left",
-    [tiling_position.RIGHT_HALF] = "right",
-    [tiling_position.TOP_HALF] = "up",
-    [tiling_position.BOTTOM_HALF] = "down",
-}
-
 ---@class TilingController
----@field settings TilingSettings
 ---@field shortcuts ShortcutCenter
 ---@field log table an hs.logger, whose lines show in the Hammerspoon console
 local TilingController = {}
@@ -86,14 +70,14 @@ end
 ---@return RegisteredAction[]
 function TilingController:list_shortcut_actions()
     local actions = {}
-    for _, position in ipairs(tiling_position.POSITIONS) do
+    for _, description in ipairs(tiling_position.DESCRIPTIONS) do
         table.insert(actions, {
-            id = "tiling." .. position,
+            id = "tiling." .. description.position,
             group = "Window tiling",
-            title = TITLE_BY_POSITION[position],
-            default = { modifiers = { "ctrl", "alt" }, key = DEFAULT_KEY_BY_POSITION[position] },
+            title = description.title,
+            default = { modifiers = { "ctrl", "alt" }, key = description.default_key },
             on_press = function()
-                self:tile_front_window(position)
+                self:tile_front_window(description.position)
             end,
         })
     end
@@ -106,7 +90,6 @@ end
 ---@return TilingController
 function tiling_controller.start(settings, shortcuts)
     local controller = setmetatable({
-        settings = settings,
         shortcuts = shortcuts or shortcut_center.new(nil),
         log = hs.logger.new("win_tiling", "info"),
     }, TilingController)

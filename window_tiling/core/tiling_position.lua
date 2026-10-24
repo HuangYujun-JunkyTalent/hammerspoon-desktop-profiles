@@ -8,23 +8,55 @@ local tiling_position = {
     BOTTOM_HALF = "bottom-half",
 }
 
----The part of the screen that each position takes, as fractions of its width and height.
-local UNIT_RECT_BY_POSITION = {
-    [tiling_position.FILL] = { x = 0, y = 0, w = 1, h = 1 },
-    [tiling_position.LEFT_HALF] = { x = 0, y = 0, w = 0.5, h = 1 },
-    [tiling_position.RIGHT_HALF] = { x = 0.5, y = 0, w = 0.5, h = 1 },
-    [tiling_position.TOP_HALF] = { x = 0, y = 0, w = 1, h = 0.5 },
-    [tiling_position.BOTTOM_HALF] = { x = 0, y = 0.5, w = 1, h = 0.5 },
-}
+---A position with the part of the screen that it takes and the action of its shortcut.
+---@class PositionDescription
+---@field position string a value of tiling_position
+---@field unit_rect Rect the part of the screen, as fractions of its width and height
+---@field title string the title of the action in the window of the shortcuts
+---@field default_key string the key that the default shortcut holds with Control and Option
 
 ---The positions in the order in which the README and the Asyar extension list them.
-tiling_position.POSITIONS = {
-    tiling_position.FILL,
-    tiling_position.LEFT_HALF,
-    tiling_position.RIGHT_HALF,
-    tiling_position.TOP_HALF,
-    tiling_position.BOTTOM_HALF,
+---@type PositionDescription[]
+tiling_position.DESCRIPTIONS = {
+    {
+        position = tiling_position.FILL,
+        unit_rect = { x = 0, y = 0, w = 1, h = 1 },
+        title = "Fill the screen with the front window",
+        default_key = "return",
+    },
+    {
+        position = tiling_position.LEFT_HALF,
+        unit_rect = { x = 0, y = 0, w = 0.5, h = 1 },
+        title = "Tile the front window to the left half",
+        default_key = "left",
+    },
+    {
+        position = tiling_position.RIGHT_HALF,
+        unit_rect = { x = 0.5, y = 0, w = 0.5, h = 1 },
+        title = "Tile the front window to the right half",
+        default_key = "right",
+    },
+    {
+        position = tiling_position.TOP_HALF,
+        unit_rect = { x = 0, y = 0, w = 1, h = 0.5 },
+        title = "Tile the front window to the top half",
+        default_key = "up",
+    },
+    {
+        position = tiling_position.BOTTOM_HALF,
+        unit_rect = { x = 0, y = 0.5, w = 1, h = 0.5 },
+        title = "Tile the front window to the bottom half",
+        default_key = "down",
+    },
 }
+
+---The values of tiling_position in the order of `DESCRIPTIONS`.
+tiling_position.POSITIONS = {}
+local UNIT_RECT_BY_POSITION = {}
+for _, description in ipairs(tiling_position.DESCRIPTIONS) do
+    table.insert(tiling_position.POSITIONS, description.position)
+    UNIT_RECT_BY_POSITION[description.position] = description.unit_rect
+end
 
 ---Reads the position that a URL such as `hammerspoon://window-tiling?position=left-half` names.
 ---@param text any the value of the parameter `position`
