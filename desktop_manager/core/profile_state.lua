@@ -68,12 +68,20 @@ local function new_profile(number)
     }
 end
 
+---@param state State
+---@param field string
+---@param value any
+---@return State a copy of the state with a copy of the value in the field
+local function with_field(state, field, value)
+    local updated = deep_copy.copy(state)
+    updated[field] = deep_copy.copy(value)
+    return updated
+end
+
 ---@param matching string
 ---@return State
 function profile_state.new_state(matching)
-    if not monitor_matching.is_valid(matching) then
-        error(string.format("unknown monitor matching %q", tostring(matching)), 2)
-    end
+    monitor_matching.check(matching)
     return {
         format_version = profile_state.FORMAT_VERSION,
         monitor_matching = matching,
@@ -114,9 +122,7 @@ function profile_state.with_active_profile_number(state, number)
     if number == profile_state.NO_PROFILE_NUMBER then
         error("profile 0 holds the numbers of no active profile, and cannot be activated", 2)
     end
-    local updated = deep_copy.copy(state)
-    updated.active_profile_number = number
-    return updated
+    return with_field(state, "active_profile_number", number)
 end
 
 ---@param state State
@@ -130,12 +136,8 @@ end
 ---@param matching string
 ---@return State
 function profile_state.with_monitor_matching(state, matching)
-    if not monitor_matching.is_valid(matching) then
-        error(string.format("unknown monitor matching %q", tostring(matching)), 2)
-    end
-    local updated = deep_copy.copy(state)
-    updated.monitor_matching = matching
-    return updated
+    monitor_matching.check(matching)
+    return with_field(state, "monitor_matching", matching)
 end
 
 ---@param state State
@@ -184,27 +186,36 @@ end
 ---@param pool AppPool
 ---@return State
 function profile_state.with_app_pool(state, pool)
-    local updated = deep_copy.copy(state)
-    updated.app_pool = deep_copy.copy(pool)
-    return updated
+    return with_field(state, "app_pool", pool)
 end
 
 ---@param state State
 ---@param colors table<string, table> the colors of the search that the window of the colors chose
 ---@return State
 function profile_state.with_highlight_colors(state, colors)
-    local updated = deep_copy.copy(state)
-    updated.highlight_colors = deep_copy.copy(colors)
-    return updated
+    return with_field(state, "highlight_colors", colors)
 end
 
 ---@param state State
 ---@param counts DesktopCounts
 ---@return State
 function profile_state.with_desktop_counts(state, counts)
-    local updated = deep_copy.copy(state)
-    updated.desktop_counts = deep_copy.copy(counts)
-    return updated
+    return with_field(state, "desktop_counts", counts)
+end
+
+---@param state State
+---@return WindowRecord[] the records of every arrangement of every profile, as the tables of the
+---state itself
+local function list_records_of_state(state)
+    local records = {}
+    for _, profile in pairs(state.profiles) do
+        for _, arrangement in pairs(profile.arrangements) do
+            for _, record in ipairs(arrangement.windows) do
+                table.insert(records, record)
+            end
+        end
+    end
+    return records
 end
 
 ---The windows that some arrangement of some profile records.
@@ -213,14 +224,10 @@ end
 ---@return table<integer, table<string, boolean>> the applications recorded for each window id
 function profile_state.index_recorded_windows(state)
     local recorded = {}
-    for _, profile in pairs(state.profiles) do
-        for _, arrangement in pairs(profile.arrangements) do
-            for _, record in ipairs(arrangement.windows) do
-                if record.window_id then
-                    recorded[record.window_id] = recorded[record.window_id] or {}
-                    recorded[record.window_id][record.bundle_id] = true
-                end
-            end
+    for _, record in ipairs(list_records_of_state(state)) do
+        if record.window_id then
+            recorded[record.window_id] = recorded[record.window_id] or {}
+            recorded[record.window_id][record.bundle_id] = true
         end
     end
     return recorded
@@ -230,12 +237,8 @@ end
 ---@return WindowRecord[] the records of every arrangement of every profile
 function profile_state.list_all_records(state)
     local records = {}
-    for _, profile in pairs(state.profiles) do
-        for _, arrangement in pairs(profile.arrangements) do
-            for _, record in ipairs(arrangement.windows) do
-                table.insert(records, deep_copy.copy(record))
-            end
-        end
+    for _, record in ipairs(list_records_of_state(state)) do
+        table.insert(records, deep_copy.copy(record))
     end
     return records
 end
@@ -263,17 +266,13 @@ end
 ---@return State
 function profile_state.rename_windows(state, renames)
     local updated = deep_copy.copy(state)
-    for _, profile in pairs(updated.profiles) do
-        for _, arrangement in pairs(profile.arrangements) do
-            for _, record in ipairs(arrangement.windows) do
-                for _, rename in ipairs(renames) do
-                    if
-                        record.window_id == rename.old_window_id
-                        and record.bundle_id == rename.bundle_id
-                    then
-                        record.window_id = rename.new_window_id
-                    end
-                end
+    for _, record in ipairs(list_records_of_state(updated)) do
+        for _, rename in ipairs(renames) do
+            if
+                record.window_id == rename.old_window_id
+                and record.bundle_id == rename.bundle_id
+            then
+                record.window_id = rename.new_window_id
             end
         end
     end

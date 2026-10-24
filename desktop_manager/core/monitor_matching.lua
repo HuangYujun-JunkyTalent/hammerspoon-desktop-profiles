@@ -19,6 +19,15 @@ function monitor_matching.is_valid(value)
     return LABELS[value] ~= nil
 end
 
+---Raises an error when the matching names no way of deciding when two monitor configurations are
+---the same, and the error names the place that called the function that runs the check.
+---@param matching any
+function monitor_matching.check(matching)
+    if not monitor_matching.is_valid(matching) then
+        error(string.format("unknown monitor matching %q", tostring(matching)), 3)
+    end
+end
+
 ---@return string[]
 function monitor_matching.all()
     return { table.unpack(ORDER) }
@@ -27,22 +36,19 @@ end
 ---@param matching string
 ---@return string
 function monitor_matching.label_of(matching)
-    local label = LABELS[matching]
-    if not label then
-        error(string.format("unknown monitor matching %q", tostring(matching)), 2)
-    end
-    return label
+    monitor_matching.check(matching)
+    return LABELS[matching]
 end
 
 ---@param matching string
 ---@return string
 function monitor_matching.next_after(matching)
-    for index, candidate in ipairs(ORDER) do
-        if candidate == matching then
-            return ORDER[index % #ORDER + 1]
-        end
+    monitor_matching.check(matching)
+    local index = 1
+    while ORDER[index] ~= matching do
+        index = index + 1
     end
-    error(string.format("unknown monitor matching %q", tostring(matching)), 2)
+    return ORDER[index % #ORDER + 1]
 end
 
 return monitor_matching

@@ -133,9 +133,7 @@ function monitor_configuration.describe(screens, matching)
     if #screens == 0 then
         error("a monitor configuration needs at least one screen, and 0 were given", 2)
     end
-    if not monitor_matching.is_valid(matching) then
-        error(string.format("unknown monitor matching %q", tostring(matching)), 2)
-    end
+    monitor_matching.check(matching)
     local builtin_screens, external_screens = {}, {}
     for _, screen in ipairs(screens) do
         table.insert(screen.is_builtin and builtin_screens or external_screens, screen)
