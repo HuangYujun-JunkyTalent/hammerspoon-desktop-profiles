@@ -92,7 +92,27 @@ return {
         state = profile_state.with_arrangement(state, 3, ARRANGEMENT)
         expect.equal(profile_state.find_arrangement(state, 3, "built-in"), ARRANGEMENT)
         expect.equal(profile_state.find_arrangement(state, 3, "built-in + 1 external"), nil)
-        expect.equal(profile_state.list_recorded_window_ids(ARRANGEMENT), { 41 })
+    end,
+
+    the_recorded_window_ids_leave_out_a_record_without_an_id = function()
+        local arrangement = {
+            monitor_configuration_key = ARRANGEMENT.monitor_configuration_key,
+            monitors = ARRANGEMENT.monitors,
+            focused_slot_key = ARRANGEMENT.focused_slot_key,
+            windows = {
+                ARRANGEMENT.windows[1],
+                {
+                    bundle_id = "com.apple.Notes",
+                    app_name = "Notes",
+                    title = "Shopping",
+                    slot_key = "built-in",
+                    desktop_number = 1,
+                    unit_frame = { x = 0.5, y = 0, w = 0.5, h = 1 },
+                    is_out_of_sight = false,
+                },
+            },
+        }
+        expect.equal(profile_state.list_recorded_window_ids(arrangement), { 41 })
         expect.equal(profile_state.list_recorded_window_ids(nil), {})
     end,
 
