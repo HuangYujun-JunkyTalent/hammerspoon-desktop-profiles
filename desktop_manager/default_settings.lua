@@ -54,7 +54,8 @@ local default_settings = {}
 ---profile and two readings of the list of all windows of macOS that no event starts
 ---@field screen_settle_seconds number the wait after a change of the monitors for macOS to move
 ---the windows, before the restore of the active profile
----@field snapshot_time_limit_seconds number a slower snapshot stops the snapshots until a reload
+---@field snapshot_time_limit_seconds number a slower capture of a preview stops the previews until
+---a reload
 
 ---@class Settings
 ---@field state_file_path string

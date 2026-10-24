@@ -1,3 +1,4 @@
+local javascript_tasks = require("desktop_manager.macos.javascript_tasks")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local server_windows = require("desktop_manager.core.server_windows")
 local track_windows = require("desktop_manager.macos.track_windows")
@@ -7,12 +8,6 @@ local track_windows = require("desktop_manager.macos.track_windows")
 ---A refresh runs the script in the background in about 0.2 seconds, so the lists use the windows
 ---of the last refresh and draw again when a refresh ends.
 local window_inventory = {}
-
-local OSASCRIPT_PATH = "/usr/bin/osascript"
-local SCRIPT_PATH = (
-    debug.getinfo(1, "S").source:match("^@(.*/desktop_manager/macos)/window_inventory%.lua$")
-    or "./desktop_manager/macos"
-) .. "/list_server_windows.js"
 
 ---@class WindowInventory
 ---@field windows ServerWindow[] the windows out of reach at the last refresh
@@ -92,7 +87,7 @@ end
 ---@param list_known_window_ids fun(): table<integer, boolean>
 local function start_refresh(inventory, list_known_window_ids)
     inventory.is_refreshing = true
-    local task = hs.task.new(OSASCRIPT_PATH, function(exit_code, stdout)
+    local task = javascript_tasks.new("list_server_windows.js", {}, function(exit_code, stdout)
         inventory.last_update_started_at = hs.timer.secondsSinceEpoch()
         inventory.is_refreshing = false
         local is_decoded, rows = pcall(hs.json.decode, stdout or "")
@@ -116,7 +111,7 @@ local function start_refresh(inventory, list_known_window_ids)
         if #inventory.waiting > 0 and not inventory.is_refreshing then
             start_refresh(inventory, list_known_window_ids)
         end
-    end, { "-l", "JavaScript", SCRIPT_PATH })
+    end)
     if not task or not task:start() then
         inventory.last_update_started_at = hs.timer.secondsSinceEpoch()
         inventory.is_refreshing = false

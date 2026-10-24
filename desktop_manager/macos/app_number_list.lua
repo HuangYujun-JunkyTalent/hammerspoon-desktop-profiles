@@ -48,9 +48,8 @@ local app_number_list = {}
 ---@field overlay table|nil the hs.canvas of the list
 ---@field event_tap table|nil the hs.eventtap that watches the modifiers and Escape
 ---@field shown_at number|nil when the list showed, in seconds since the epoch
----@field last_input_at number when the last press of a number came, which holds the next preview
----back
 ---@field is_redraw_due boolean whether a redraw waits for the previews that came at once
+---@field preview_queue PreviewQueue|nil the previews of the windows of the list, once it shows
 
 ---The windows that the list shows, as the setting for the windows of hidden applications keeps
 ---them.
@@ -195,7 +194,6 @@ end
 function AppNumberList:press(app_number, binding)
     local session = self.session
     if session then
-        session.last_input_at = hs.timer.secondsSinceEpoch()
         session.selection =
             app_number_list_view.press(session.applications, session.selection, app_number)
         self:redraw(session)
@@ -233,7 +231,6 @@ function AppNumberList:open(entries, app_number, modifiers)
         },
         displays = list_displays_from_left(self.context.settings),
         modifiers = modifiers,
-        last_input_at = hs.timer.secondsSinceEpoch(),
         is_redraw_due = false,
     }
     self.session = session
@@ -294,7 +291,7 @@ function AppNumberList:request_redraw(session)
     end)
 end
 
----Draws the preview of each window of the list in the place of the icon, as the snapshot comes.
+---Draws the preview of each window of the list in the place of the icon, as the helper gives it.
 ---@param session AppNumberListSession
 function AppNumberList:load_previews(session)
     local window_ids = {}
@@ -303,12 +300,9 @@ function AppNumberList:load_previews(session)
             table.insert(window_ids, window.window_id)
         end
     end
-    self.context.preview_loader:load(window_ids, {
+    session.preview_queue = self.context.preview_loader:load(window_ids, {
         preview_size = app_number_list_overlay.read_preview_size(session.overlay),
         shown_at = session.shown_at,
-        read_last_input_at = function()
-            return session.last_input_at
-        end,
         is_wanted = function()
             return self.session == session
         end,
@@ -352,6 +346,9 @@ function AppNumberList:close()
     self.session = nil
     if session.event_tap then
         session.event_tap:stop()
+    end
+    if session.preview_queue then
+        session.preview_queue:stop()
     end
     if session.overlay then
         app_number_list_overlay.hide(session.overlay)

@@ -98,6 +98,11 @@ local CHARACTER_KEY_CODE = 1000
 ---The output of the fake of `list_server_windows.js`, which the fake of hs.json.decode reads.
 local SERVER_WINDOWS_OUTPUT = "server windows"
 local OSASCRIPT_PATH = "/usr/bin/osascript"
+---The status with which a task that Hammerspoon terminated ends, the number of SIGTERM.
+local TERMINATED_STATUS = 15
+---The size of the capture of every window in the fake of the helper of the previews.
+local CAPTURE_PIXELS = { w = 1200, h = 600 }
+local DATA_URL_PREFIX = "data:image/png;base64,"
 local NANOSECONDS_PER_SECOND = 1e9
 local FIRST_PID = 500
 local WINDOW_MANAGER_BUNDLE_ID = "com.apple.WindowManager"
@@ -147,6 +152,26 @@ local current_world = nil
 ---icon.
 ---`filter_reads` counts the calls of `getWindows` of the window filter.
 ---Each canvas counts the calls of its `replaceElements` in `replace_count`.
+---The fake of the helper of the previews, `capture_window_previews.js`, gives its first line
+---`helper_start_seconds` after its start, 0.15 by default, and each line takes `snapshot_seconds`,
+---0.05 by default, which the line also reports as the time of its capture.
+---`gives_helper_lines_at_once` makes the helper give all its lines in one chunk after the last
+---capture.
+---The helper then ends with `helper_exit_code`, 0 by default.
+---`helpers` records each helper with its `arguments`, whether it `is_running` and whether it
+---`is_terminated`, `snapshot_count` counts the captures, and `rendered_sizes[window_id]` holds the
+---size in pixels of the last preview of each window, a capture of 1200 by 600 pixels scaled into
+---the box of the helper.
+---A missing or minimized window gives no image.
+---`last_helper_line_route` sets how the last line of a helper comes: through the streaming
+---callback before the exit when it is nil, with the exit as the output of the exit callback under
+---`"exit_output"`, or after the exit through the streaming callback with no task under
+---`"stream_after_exit"`.
+---On macOS 27.0.1, Hammerspoon gave the last line of the helper with the exit in two of three runs,
+---and its documentation names the streaming callback after the exit.
+---`garbled_window_ids[window_id]` makes the helper give a line for the window that holds no time
+---and no image.
+---`decode_seconds`, 0 by default, is the time that `hs.image.imageFromURL` takes.
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
 ---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
 ---`type_keys` and `release_modifiers` was made, as `timestamp()` of the event gives it.
@@ -206,6 +231,13 @@ function fake_hammerspoon.install(spec)
         snapshot_count = 0,
         rendered_sizes = {},
         snapshot_seconds = 0.05,
+        helpers = {},
+        helper_start_seconds = 0.15,
+        gives_helper_lines_at_once = false,
+        helper_exit_code = 0,
+        last_helper_line_route = nil,
+        garbled_window_ids = {},
+        decode_seconds = 0,
         overlay = nil,
         canvases = {},
         focused_window_id = nil,
@@ -1390,6 +1422,97 @@ function fake_hammerspoon.install(spec)
         return filter_object
     end
 
+    ---@param window_id integer
+    ---@param box table the w and h in pixels of the box of the helper
+    ---@return string the line of the helper for the window, with its end
+    local function capture_window(window_id, box)
+        world.snapshot_count = world.snapshot_count + 1
+        if world.garbled_window_ids[window_id] then
+            return string.format("%d garbled\n", window_id)
+        end
+        local window = world.windows[window_id]
+        if not window or window.is_minimized then
+            return string.format("%d %.3f none\n", window_id, world.snapshot_seconds)
+        end
+        local scale = math.min(box.w / CAPTURE_PIXELS.w, box.h / CAPTURE_PIXELS.h)
+        world.rendered_sizes[window_id] = {
+            w = math.max(1, math.floor(CAPTURE_PIXELS.w * scale + 0.5)),
+            h = math.max(1, math.floor(CAPTURE_PIXELS.h * scale + 0.5)),
+        }
+        return string.format(
+            "%d %.3f %s%d\n",
+            window_id,
+            world.snapshot_seconds,
+            DATA_URL_PREFIX,
+            window_id
+        )
+    end
+
+    ---Runs the fake of `capture_window_previews.js` for the task, which takes the arguments
+    ---`-l JavaScript <script> <box width> <box height> <window id> ...`.
+    ---@param task table
+    ---@param on_exit fun(exit_code: integer, output: string, error_output: string)
+    ---@param on_output fun(task: table|nil, output: string, error_output: string)
+    ---@param arguments string[]
+    local function start_fake_helper(task, on_exit, on_output, arguments)
+        local box = { w = tonumber(arguments[4]), h = tonumber(arguments[5]) }
+        local window_ids = {}
+        for index = 6, #arguments do
+            table.insert(window_ids, math.tointeger(tonumber(arguments[index])))
+        end
+        local helper = { arguments = arguments, is_running = true, is_terminated = false }
+        table.insert(world.helpers, helper)
+        local timers = {}
+        local function after(seconds, callback)
+            table.insert(timers, new_timer(seconds, callback, false))
+        end
+        function task:isRunning()
+            return helper.is_running
+        end
+        function task:terminate()
+            if helper.is_running then
+                helper.is_running = false
+                helper.is_terminated = true
+                for _, timer in ipairs(timers) do
+                    timer:stop()
+                end
+                new_timer(0, function()
+                    on_exit(TERMINATED_STATUS, "", "")
+                end, false)
+            end
+            return task
+        end
+        local last_line_seconds = world.helper_start_seconds + #window_ids * world.snapshot_seconds
+        local route = world.last_helper_line_route
+        if world.gives_helper_lines_at_once then
+            after(last_line_seconds, function()
+                local lines = {}
+                for _, window_id in ipairs(window_ids) do
+                    table.insert(lines, capture_window(window_id, box))
+                end
+                on_output(task, table.concat(lines), "")
+            end)
+        else
+            for position, window_id in ipairs(window_ids) do
+                if position < #window_ids or route == nil then
+                    after(world.helper_start_seconds + position * world.snapshot_seconds, function()
+                        on_output(task, capture_window(window_id, box), "")
+                    end)
+                end
+            end
+        end
+        after(last_line_seconds, function()
+            helper.is_running = false
+            local is_last_line_left = route ~= nil and not world.gives_helper_lines_at_once
+            local last_line = is_last_line_left and capture_window(window_ids[#window_ids], box)
+            on_exit(world.helper_exit_code, route == "exit_output" and last_line or "", "")
+            if route == "stream_after_exit" and last_line then
+                on_output(nil, last_line, "")
+            end
+        end)
+        return task
+    end
+
     _G.hs = {
         configdir = "/fake/.hammerspoon",
         processInfo = { version = "8cde946" },
@@ -1572,13 +1695,25 @@ function fake_hammerspoon.install(spec)
             end,
         },
         task = {
-            ---A task of the fake lists the windows of the window server after 0.2 seconds, or
-            ---runs the script that turns one shortcut of macOS off at once, and the fake runs no
-            ---other script.
-            new = function(path, callback, arguments)
+            ---A task of the fake lists the windows of the window server after 0.2 seconds, runs
+            ---the fake of the helper of the previews, or runs the script that turns one shortcut
+            ---of macOS off at once, and the fake runs no other script.
+            ---The streaming callback comes before the arguments, as in Hammerspoon.
+            new = function(path, callback, stream_callback_or_arguments, arguments)
+                local stream_callback = stream_callback_or_arguments
+                if type(stream_callback_or_arguments) == "table" then
+                    stream_callback, arguments = nil, stream_callback_or_arguments
+                end
                 local task = {}
                 function task:start()
                     if path == OSASCRIPT_PATH then
+                        local script = arguments[3]
+                        if script:match("capture_window_previews%.js$") then
+                            return start_fake_helper(task, callback, stream_callback, arguments)
+                        end
+                        if not script:match("list_server_windows%.js$") then
+                            error("the fake runs no script of osascript but two: " .. script)
+                        end
                         new_timer(0.2, function()
                             callback(0, SERVER_WINDOWS_OUTPUT, "")
                         end, false)
@@ -1655,6 +1790,15 @@ function fake_hammerspoon.install(spec)
                 end
                 return { source = "icon " .. bundle_id }
             end,
+            ---Reads the data URL that the fake of the helper gives a window.
+            imageFromURL = function(url)
+                local window_id = url:match("^" .. DATA_URL_PREFIX:gsub("%p", "%%%0") .. "(%d+)$")
+                world.clock = world.clock + world.decode_seconds
+                if not window_id then
+                    return nil
+                end
+                return { source = "blurred " .. window_id }
+            end,
         },
         drawing = {
             getTextDrawingSize = function(text, style)
@@ -1709,23 +1853,6 @@ function fake_hammerspoon.install(spec)
         },
         window = {
             allWindows = list_window_objects,
-            snapshotForID = function(window_id)
-                world.snapshot_count = world.snapshot_count + 1
-                world.clock = world.clock + world.snapshot_seconds
-                local window = world.windows[window_id]
-                if not window or window.is_minimized then
-                    return nil
-                end
-                return {
-                    size = function()
-                        return { w = 1200, h = 600 }
-                    end,
-                    bitmapRepresentation = function(_, size)
-                        world.rendered_sizes[window_id] = size
-                        return { source = "blurred " .. window_id }
-                    end,
-                }
-            end,
             ---The windows in sight, front to back: the focused window first, then the others in the
             ---order in which they opened.
             orderedWindows = function()

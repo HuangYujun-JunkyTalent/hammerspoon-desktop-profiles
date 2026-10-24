@@ -44,9 +44,7 @@ local search_windows = {}
 ---once
 ---@field times SearchOpeningTimes what happened since the opening, for the console
 ---@field shown_at number when the panel showed, in seconds since the epoch
----@field last_input_at number|nil when the last key, click or hover came, which holds the next
----preview back
----@field preview_queue PreviewQueue the snapshots of the windows of the panel
+---@field preview_queue PreviewQueue the previews of the windows of the panel
 
 ---The windows of the search, the most recently focused first, and the windows that accessibility
 ---does not reach after them.
@@ -148,6 +146,7 @@ function search_windows.close(panel)
     end
     panel.is_open = false
     panel.event_tap:stop()
+    panel.preview_queue:stop()
     search_overlay.hide(panel.overlay)
     panel.context.log.i(search_opening_log.describe(panel.times))
     panel.context.on_closed()
@@ -272,7 +271,6 @@ end
 ---@param event table an hs.eventtap.event
 ---@return boolean that the event stops here
 local function handle_key(panel, event)
-    panel.last_input_at = hs.timer.secondsSinceEpoch()
     time_key(panel, event)
     local flags = event:getFlags()
     local action = KEY_ACTIONS[hs.keycodes.map[event:getKeyCode()]]
@@ -294,7 +292,6 @@ end
 ---@param message string
 ---@param id string
 local function handle_mouse(panel, message, id)
-    panel.last_input_at = hs.timer.secondsSinceEpoch()
     local bundle_id = id:match("^application:(.+)$")
     local window_id = math.tointeger(tonumber(id:match("^window:(%d+)$")))
     if message == "mouseEnter" and bundle_id then
@@ -351,9 +348,6 @@ local function load_previews(panel, entries)
     panel.preview_queue = panel.context.preview_loader:load(window_ids, {
         preview_size = search_overlay.read_preview_size(panel.overlay),
         shown_at = panel.shown_at,
-        read_last_input_at = function()
-            return panel.last_input_at
-        end,
         is_wanted = function()
             return panel.is_open
         end,

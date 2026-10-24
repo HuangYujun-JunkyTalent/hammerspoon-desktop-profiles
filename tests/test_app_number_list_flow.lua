@@ -413,22 +413,54 @@ return {
         expect.equal(retained_timers.count_running(), timers_before)
     end,
 
-    a_press_of_a_number_holds_the_next_preview_back = function()
+    the_list_starts_the_helper_after_drawing_while_numbers_are_pressed = function()
         local world = controller_world.start_world()
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
         local snapshots_before = world.snapshot_count
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["1"]()
-        world.advance(0.1)
-        expect.equal(world.snapshot_count, snapshots_before)
+        world.advance(0.04)
+        expect.equal(#world.helpers, 0)
         world.app_hotkeys["1"]()
-        world.advance(0.1)
-        expect.equal(world.snapshot_count, snapshots_before)
-        world.advance(0.06)
-        expect.equal(world.snapshot_count, snapshots_before + 1)
+        world.advance(0.02)
+        expect.equal(#world.helpers, 1)
+        world.app_hotkeys["2"]()
         world.advance(1)
         expect.equal(world.snapshot_count, snapshots_before + 2)
+    end,
+
+    the_previews_of_one_chunk_of_the_helper_give_the_list_one_redraw = function()
+        local world = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.gives_helper_lines_at_once = true
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.advance(0.26)
+        local redraws_before = world.overlay.replace_count
+        world.advance(0.1)
+        expect.equal(world.overlay.replace_count, redraws_before + 1)
+        expect.equal(world.read_overlay_images(), {
+            "icon com.microsoft.Word",
+            "blurred 42",
+            "icon com.apple.Safari",
+            "blurred 41",
+        })
+    end,
+
+    closing_the_list_terminates_its_helper = function()
+        local world = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        local snapshots_before = world.snapshot_count
+        world.held_modifiers = { ctrl = true, alt = true }
+        world.app_hotkeys["1"]()
+        world.advance(0.26)
+        world.press_escape()
+        world.advance(1)
+        expect.equal(world.helpers[1].is_terminated, true)
+        expect.equal(world.snapshot_count, snapshots_before + 1)
     end,
 
     a_slow_snapshot_stops_the_snapshots_until_a_reload = function()
@@ -436,11 +468,12 @@ return {
             controller_world.start_world({ preview_method = preview_method.BLURRED_SNAPSHOTS })
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        world.snapshot_seconds = 2
+        world.snapshot_seconds = 1
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["1"]()
-        world.advance(1)
+        world.advance(2)
         expect.equal(world.snapshot_count, 1)
+        expect.equal(world.helpers[1].is_terminated, true)
         expect.equal(world.read_overlay_images(), {
             "icon com.microsoft.Word",
             "icon com.microsoft.Word",
@@ -451,8 +484,9 @@ return {
         world.advance(controller_world.SETTLE_SECONDS)
         world.held_modifiers = { ctrl = true, alt = true }
         world.app_hotkeys["1"]()
-        world.advance(1)
+        world.advance(2)
         expect.equal(world.snapshot_count, 1)
+        expect.equal(#world.helpers, 1)
     end,
 
     a_number_reaches_a_window_that_another_profile_recorded = function()
@@ -822,14 +856,14 @@ return {
             controller_world.start_world({ preview_method = preview_method.BLURRED_SNAPSHOTS })
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        world.snapshot_seconds = 2
+        world.snapshot_seconds = 1
         local lines = controller_world.record_log_lines(world, function()
             world.held_modifiers = { ctrl = true, alt = true }
             world.app_hotkeys["1"]()
-            world.advance(1)
+            world.advance(2)
         end)
         expect.equal(lines, {
-            "a snapshot took 2.0 seconds, so the list shows icons until the next reload",
+            "a snapshot took 1.0 seconds, so the list shows icons until the next reload",
         })
     end,
 }
