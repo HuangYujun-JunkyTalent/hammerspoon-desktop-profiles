@@ -306,15 +306,23 @@ return {
         local world = start_world()
         local session = open_shortcut_window()
         local view = session.window.web_window.view
+        local window_callback, closing_count = view.window_callback, 0
+        view.window_callback = function(action, ...)
+            if action == "closing" then
+                closing_count = closing_count + 1
+            end
+            return window_callback(action, ...)
+        end
         world.hotkey_events = {}
         world.post_to_webview("shortcuts", { kind = "done" })
-        local event_count = #world.hotkey_events
-        expect.equal(event_count > 0, true)
+        expect.equal(closing_count, 1)
+        local events_of_done = #world.hotkey_events
+        expect.equal(events_of_done > 0, true)
         expect.equal(session.window, nil)
-        view.window_callback("closing")
-        expect.equal(#world.hotkey_events, event_count)
         open_window(session)
+        world.hotkey_events = {}
         session.window.web_window.view.window_callback("closing")
+        expect.equal(#world.hotkey_events, events_of_done)
         expect.equal(session.window, nil)
     end,
 }

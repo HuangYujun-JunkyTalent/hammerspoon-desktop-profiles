@@ -1701,8 +1701,12 @@ function fake_hammerspoon.install(spec)
                 function view:hswindow()
                     return nil
                 end
+                ---Calls the window callback with "closing", as `hs.webview:delete` does.
                 function view:delete()
                     view.is_visible = false
+                    if view.window_callback then
+                        view.window_callback("closing", view)
+                    end
                 end
                 return view
             end,
