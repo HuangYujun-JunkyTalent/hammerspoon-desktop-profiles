@@ -1,5 +1,6 @@
 local app_numbers = require("desktop_manager.core.app_numbers")
 local app_switcher = require("desktop_manager.macos.app_switcher")
+local hidden_application_filter = require("desktop_manager.macos.hidden_application_filter")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local read_desktops = require("desktop_manager.macos.read_desktops")
 local read_screens = require("desktop_manager.macos.read_screens")
@@ -50,7 +51,8 @@ local app_number_list = {}
 ---The windows that the list shows, as the setting for the windows of hidden applications keeps
 ---them.
 ---@class ShownWindows
----@field hidden HiddenApplications the hidden applications, as `app_switcher` reads them
+---@field hidden HiddenApplications the hidden applications, as `hidden_application_filter` reads
+---them
 ---@field filter_windows table[] the hs.window objects of the window filter that the list shows
 ---@field unreached_windows ServerWindow[] the windows that accessibility does not reach and that
 ---the list shows
@@ -114,13 +116,14 @@ end
 ---@param context AppNumberListContext
 ---@return ShownWindows
 local function read_shown_windows(context)
-    local hidden = app_switcher.read_hidden_applications(
+    local hidden = hidden_application_filter.read_hidden_applications(
         context.settings.hidden_application_windows,
         context.hidden_states
     )
     local all_filter_windows = context.window_filter:getWindows()
-    local filter_windows = app_switcher.keep_shown_filter_windows(hidden, all_filter_windows)
-    local unreached_windows = app_switcher.keep_shown_unreached_windows(
+    local filter_windows =
+        hidden_application_filter.keep_shown_filter_windows(hidden, all_filter_windows)
+    local unreached_windows = hidden_application_filter.keep_shown_unreached_windows(
         hidden,
         window_inventory.list_unreached_windows(
             context.window_inventory,

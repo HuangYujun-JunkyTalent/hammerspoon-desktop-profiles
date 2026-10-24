@@ -2,7 +2,6 @@ local app_number_list = require("desktop_manager.macos.app_number_list")
 local app_numbers = require("desktop_manager.core.app_numbers")
 local app_pool = require("desktop_manager.core.app_pool")
 local app_pool_window = require("desktop_manager.macos.app_pool_window")
-local app_switcher = require("desktop_manager.macos.app_switcher")
 local arrangement_capture = require("desktop_manager.core.arrangement_capture")
 local busy_message = require("desktop_manager.macos.busy_message")
 local color_window = require("desktop_manager.macos.color_window")
@@ -11,6 +10,7 @@ local conceal_windows = require("desktop_manager.macos.conceal_windows")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local diagnostic_lines = require("desktop_manager.macos.diagnostic_lines")
 local extra_desktops = require("desktop_manager.macos.extra_desktops")
+local hidden_application_filter = require("desktop_manager.macos.hidden_application_filter")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_known_windows = require("desktop_manager.macos.list_known_windows")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
@@ -1350,12 +1350,12 @@ function ProfileController:open_window_search()
     if self.search_panel then
         return
     end
-    local hidden = app_switcher.read_hidden_applications(
+    local hidden = hidden_application_filter.read_hidden_applications(
         self.settings.hidden_application_windows,
         self.hidden_states
     )
     local function list_unreached_windows()
-        return app_switcher.keep_shown_unreached_windows(
+        return hidden_application_filter.keep_shown_unreached_windows(
             hidden,
             window_inventory.list_unreached_windows(
                 self.window_inventory,
@@ -1364,7 +1364,10 @@ function ProfileController:open_window_search()
         )
     end
     self.search_panel = search_windows.open({
-        filter_windows = app_switcher.list_search_windows(hidden, self.window_filter:getWindows()),
+        filter_windows = hidden_application_filter.list_search_windows(
+            hidden,
+            self.window_filter:getWindows()
+        ),
         unreached_windows = list_unreached_windows(),
         refresh_unreached_windows = function(on_done)
             self:refresh_window_inventory(function()
@@ -1743,7 +1746,11 @@ function ProfileController:start_watchers()
         self.watchers,
         hs.application.watcher
             .new(function(_, event, application)
-                app_switcher.update_hidden_states(self.hidden_states, event, application)
+                hidden_application_filter.update_hidden_states(
+                    self.hidden_states,
+                    event,
+                    application
+                )
                 if event == hs.application.watcher.unhidden then
                     self:handle_application_unhidden(application)
                 end
