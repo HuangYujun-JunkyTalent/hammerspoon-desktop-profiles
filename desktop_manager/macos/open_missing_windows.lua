@@ -37,20 +37,20 @@ function open_missing_windows.open_all(number, unmatched_records, context, on_do
     local missing_records = {}
     local classified =
         missing_windows.classify_unmatched(unmatched_records, read_desktops.find_window_space_id)
-    for _, unmatched in ipairs(classified) do
-        local record = unmatched.record
-        if unmatched.kind == missing_windows.UNMATCHED_KIND.OUT_OF_SIGHT then
+    for _, classified_record in ipairs(classified) do
+        local record = classified_record.record
+        if classified_record.kind == missing_windows.UNMATCHED_KIND.OUT_OF_SIGHT then
             context.log.f(
                 "%s window %q is recorded out of sight and gone",
                 record.app_name,
                 record.title
             )
-        elseif unmatched.kind == missing_windows.UNMATCHED_KIND.ON_UNSEEN_DESKTOP then
+        elseif classified_record.kind == missing_windows.UNMATCHED_KIND.ON_UNSEEN_DESKTOP then
             context.log.f(
                 "%s window %q stays on desktop %d, where Hammerspoon has not seen it",
                 record.app_name,
                 record.title,
-                unmatched.space_id
+                classified_record.space_id
             )
         else
             table.insert(missing_records, record)

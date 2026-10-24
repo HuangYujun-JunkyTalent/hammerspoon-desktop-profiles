@@ -16,7 +16,8 @@ missing_windows.UNMATCHED_KIND = {
 
 ---@alias UnmatchedKind "out_of_sight"|"on_unseen_desktop"|"missing"
 
----@class UnmatchedRecord
+---A record that no open window matched at a switch, with its kind.
+---@class ClassifiedRecord
 ---@field record WindowRecord
 ---@field kind UnmatchedKind
 ---@field space_id integer|nil the desktop where macOS lists the window of an `ON_UNSEEN_DESKTOP`
@@ -35,7 +36,7 @@ missing_windows.UNMATCHED_KIND = {
 ---@param records WindowRecord[]
 ---@param find_space_id fun(window_id: integer): integer|nil the desktop where macOS lists a window,
 ---which is read for every record with a window id
----@return UnmatchedRecord[]
+---@return ClassifiedRecord[]
 function missing_windows.classify_unmatched(records, find_space_id)
     local classified = {}
     for _, record in ipairs(records) do
