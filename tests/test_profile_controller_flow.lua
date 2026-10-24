@@ -1132,7 +1132,7 @@ return {
         local record = arrangement.windows[#arrangement.windows]
         expect.equal(record.title, "Reading list")
         expect.equal(record.desktop_number, 3)
-        expect.equal(record.unit_frame ~= nil, true)
+        expect.present(record.unit_frame, "the unit frame of the record")
         expect.equal(world.mission_control_actions, {})
         expect.equal(world.window_moves, {})
     end,
@@ -1182,7 +1182,7 @@ return {
         world.notifications = {}
         expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 1"], nil)
         expect.equal(world.hotkey_by_shortcut["ctrl+alt return"], nil)
-        expect.equal(world.hotkey_by_shortcut["ctrl+alt left"] ~= nil, true)
+        expect.present(world.hotkey_by_shortcut["ctrl+alt left"], "the hotkey ctrl+alt left")
         world.hotkey_by_shortcut["cmd+alt+shift a"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(controller.state.active_profile_number, 1)
@@ -1197,7 +1197,10 @@ return {
         expect.equal(row.macos_conflict, nil)
         world.hotkey_events = {}
         world.post_to_webview("shortcuts", { kind = "record_start" })
-        expect.equal(world.hotkey_events[1]:match("^disable") ~= nil, true)
+        expect.present(
+            world.hotkey_events[1]:match("^disable"),
+            "a disable as the first hotkey event"
+        )
         world.post_to_webview("shortcuts", {
             kind = "record",
             id = "window_search.toggle",
@@ -1207,11 +1210,11 @@ return {
         expect.equal(controller.shortcut_window.model.pending, nil)
         expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT], nil)
         world.hotkey_by_shortcut["ctrl+alt f"]()
-        expect.equal(world.read_search_panel() ~= nil, true)
+        expect.present(world.read_search_panel(), "the search panel")
         expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, false)
         world.post_to_webview("shortcuts", { kind = "default", id = "window_search.toggle" })
         expect.equal(world.hotkey_by_shortcut["ctrl+alt f"], nil)
-        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+        expect.present(world.hotkey_by_shortcut[SEARCH_SHORTCUT], "the hotkey of the search")
     end,
 
     a_shortcut_of_another_action_moves_after_a_choice = function()
@@ -1227,7 +1230,7 @@ return {
         local pending = controller.shortcut_window.model.pending
         expect.equal(pending.holder.id, "profiles.toggle.2")
         expect.equal(pending.text, "Option-Shift-Command-2")
-        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"] ~= nil, true)
+        expect.present(world.hotkey_by_shortcut["cmd+alt+shift 0"], "the hotkey cmd+alt+shift 0")
         world.post_to_webview("shortcuts", { kind = "resolve", remove_holder = true })
         expect.equal(controller.shortcut_window.model.pending, nil)
         expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"], nil)
@@ -1256,7 +1259,7 @@ return {
             true
         )
         expect.equal(world.symbolic_hotkeys["64"].enabled, false)
-        expect.equal(world.hotkey_by_shortcut["cmd space"] ~= nil, true)
+        expect.present(world.hotkey_by_shortcut["cmd space"], "the hotkey cmd space")
         expect.equal(find_shortcut_row(controller, "window_search.toggle").macos_conflict, nil)
     end,
 
@@ -1283,7 +1286,10 @@ return {
         expect.equal(pending.macos.name, "Switch to Desktop 3")
         world.post_to_webview("shortcuts", { kind = "resolve" })
         expect.equal(controller.shortcuts:find_shortcut("window_search.toggle").key, "3")
-        expect.equal(world.hotkey_by_shortcut["ctrl+alt+shift+cmd 3"] ~= nil, true)
+        expect.present(
+            world.hotkey_by_shortcut["ctrl+alt+shift+cmd 3"],
+            "the hotkey ctrl+alt+shift+cmd 3"
+        )
         expect.equal(
             find_shortcut_row(controller, "window_search.toggle").macos_conflict.name,
             "Switch to Desktop 3"
@@ -1345,8 +1351,8 @@ return {
         world.post_to_webview("shortcuts", { kind = "remove", id = "profiles.deactivate" })
         expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"], nil)
         world.post_to_webview("shortcuts", { kind = "reset_all" })
-        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
-        expect.equal(world.hotkey_by_shortcut["cmd+alt+shift 0"] ~= nil, true)
+        expect.present(world.hotkey_by_shortcut[SEARCH_SHORTCUT], "the hotkey of the search")
+        expect.present(world.hotkey_by_shortcut["cmd+alt+shift 0"], "the hotkey cmd+alt+shift 0")
         expect.equal(find_shortcut_row(controller, "window_search.toggle").is_default, true)
         expect.equal(find_shortcut_row(controller, "profiles.deactivate").is_default, true)
         expect.equal(controller.shortcuts.overrides, {})
@@ -1384,7 +1390,7 @@ return {
             'The macOS shortcut "Show Spotlight search" could not be turned off: ',
         })
         expect.equal(world.symbolic_hotkeys["64"].enabled, true)
-        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+        expect.present(world.hotkey_by_shortcut[SEARCH_SHORTCUT], "the hotkey of the search")
         expect.equal(world.hotkey_by_shortcut["cmd space"], nil)
     end,
 
@@ -1404,10 +1410,10 @@ return {
         local problems = { "the shortcuts could not be written to /fake/keyboard-shortcuts.json" }
         world.post_to_webview("shortcuts", { kind = "remove", id = "window_search.toggle" })
         expect.equal(controller.shortcut_window.model.problems, problems)
-        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+        expect.present(world.hotkey_by_shortcut[SEARCH_SHORTCUT], "the hotkey of the search")
         world.post_to_webview("shortcuts", { kind = "reset_all" })
         expect.equal(controller.shortcut_window.model.problems, problems)
-        expect.equal(world.hotkey_by_shortcut[SEARCH_SHORTCUT] ~= nil, true)
+        expect.present(world.hotkey_by_shortcut[SEARCH_SHORTCUT], "the hotkey of the search")
         expect.equal(world.json_files[world.shortcuts_file_path], nil)
     end,
 
@@ -1827,7 +1833,7 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         local opened = find_window_titled(world, "Start Page")
-        expect.equal(opened ~= nil, true)
+        expect.present(opened, "the window titled Start Page")
         expect.equal(opened.space_id, 14)
         expect.equal(opened.is_minimized, false)
         expect_frame_near(opened.frame, { x = 0, y = 25, w = 720, h = 875 })
@@ -1896,7 +1902,7 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         local opened = find_window_titled(world, "Document1")
-        expect.equal(opened ~= nil, true)
+        expect.present(opened, "the window titled Document1")
         expect.equal(opened.is_minimized, false)
         expect.equal(world.windows[reopened.id].is_minimized, true)
         expect.equal(world.notifications, {})
@@ -1914,7 +1920,7 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         local opened = find_window_titled(world, "Main Window")
-        expect.equal(opened ~= nil, true)
+        expect.present(opened, "the window titled Main Window")
         expect.equal(opened.space_id, 3)
         expect.equal(world.notifications, {})
     end,
@@ -2391,7 +2397,7 @@ return {
         expect.equal(three_lines.textLineBreak, "wordWrap")
         local two_lines = read_title_element(2)
         expect.equal(two_lines.frame.h, 40)
-        expect.equal(two_lines.text:match("…$") ~= nil, true)
+        expect.present(two_lines.text:match("…$"), "an ellipsis at the end of the title")
     end,
 
     the_selected_title_scrolls_and_the_scrolling_stops_with_the_list = function()
@@ -2419,7 +2425,10 @@ return {
         expect.equal(world.read_overlay()[3]:sub(1, 1), ">")
         local scrolling = find_text("A very")
         expect.equal(scrolling.text:match("…$"), nil)
-        expect.equal(find_text("Another").text:match("…$") ~= nil, true)
+        expect.present(
+            find_text("Another").text:match("…$"),
+            "an ellipsis at the end of the title"
+        )
         local first_line = world.read_overlay()[3]
         world.advance(2)
         local later_line = world.read_overlay()[3]
@@ -2651,7 +2660,7 @@ return {
         world.app_hotkeys["4"]()
         world.advance(SETTLE_SECONDS)
         local opened = find_window_titled(world, "Document1")
-        expect.equal(opened ~= nil, true)
+        expect.present(opened, "the window titled Document1")
         expect.equal(world.focused_window_id, opened.id)
     end,
 
@@ -2898,7 +2907,7 @@ return {
                 relaunched = window
             end
         end
-        expect.equal(relaunched ~= nil, true)
+        expect.present(relaunched, "the window titled Shopping")
         expect.equal(recorded_sight(controller, 1, relaunched.id), "in sight")
         expect.equal(relaunched.is_minimized, false)
     end,
@@ -3236,7 +3245,7 @@ return {
     the_search_shortcut_again_closes_the_search = function()
         local world = start_world()
         world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
-        expect.equal(world.read_search_panel() ~= nil, true)
+        expect.present(world.read_search_panel(), "the search panel")
         world.hotkey_by_shortcut[SEARCH_SHORTCUT]()
         expect.equal(world.read_search_panel(), nil)
         world.type_keys("x")
@@ -3565,7 +3574,10 @@ return {
         expect.equal(world.mission_control_openings, 0)
         expect.equal(world.displays[1].space_ids, { 3, 14 })
         expect.equal(#world.notifications, 1)
-        expect.equal(world.notifications[1]:match("^Release the modifier keys") ~= nil, true)
+        expect.present(
+            world.notifications[1]:match("^Release the modifier keys"),
+            "the notification to release the modifier keys"
+        )
     end,
 
     the_first_record_of_a_configuration_holds_the_desktops_that_macos_moved_there = function()
@@ -4287,7 +4299,7 @@ return {
         for line in table.concat(printed, "\n"):gmatch("[^\n]+") do
             table.insert(lines, line)
         end
-        expect.equal(lines[3]:match("^running timers: %d+$") ~= nil, true)
+        expect.present(lines[3]:match("^running timers: %d+$"), "the line of the running timers")
         lines[3] = "running timers"
         expect.equal(lines, {
             "Hammerspoon 8cde946",

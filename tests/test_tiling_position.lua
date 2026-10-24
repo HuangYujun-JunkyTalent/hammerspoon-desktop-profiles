@@ -41,7 +41,10 @@ return {
         local is_successful, message =
             pcall(tiling_position.compute_frame, "middle-third", USABLE_FRAME)
         expect.equal(is_successful, false)
-        expect.equal(message:match('the tiling position "middle%-third" is unknown') ~= nil, true)
+        expect.present(
+            message:match('the tiling position "middle%-third" is unknown'),
+            "the message that the tiling position is unknown"
+        )
     end,
 
     parse_accepts_each_position = function()

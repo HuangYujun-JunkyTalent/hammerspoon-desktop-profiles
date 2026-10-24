@@ -743,7 +743,7 @@ return {
         world.advance(SETTLE_SECONDS)
         local warning = world.log_lines[#world.log_lines]
         local cause = "At the second check, Mission Control listed no thumbnail"
-        expect.equal(warning:find(cause, 1, true) ~= nil, true)
+        expect.present(warning:find(cause, 1, true), "the cause in the warning")
     end,
 
     without_the_focus_a_press_from_another_application_bounces_and_opens_again = function()
@@ -880,7 +880,7 @@ return {
         local log_line = world.log_lines[#world.log_lines]
         local focus = 'Code window "future-work.tex" focused before the press,'
             .. " not frontmost after 1.00 seconds"
-        expect.equal(log_line:find(focus, 1, true) ~= nil, true)
+        expect.present(log_line:find(focus, 1, true), "the focus in the log line")
     end,
 
     no_focus_runs_while_the_application_is_frontmost = function()
@@ -942,7 +942,10 @@ return {
         world.advance(SETTLE_SECONDS)
         expect.equal(state.result, "shown")
         expect.equal(world.window_operations, {})
-        expect.equal(world.log_lines[1]:find(SEARCH_FAILURE, 1, true) ~= nil, true)
+        expect.present(
+            world.log_lines[1]:find(SEARCH_FAILURE, 1, true),
+            "the failed search in the first log line"
+        )
         expect.equal(world.log_lines[#world.log_lines], LOG_OF_A_SECOND_OPENING_AFTER_A_BOUNCE)
     end,
 

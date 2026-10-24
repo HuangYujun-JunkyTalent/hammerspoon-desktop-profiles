@@ -9,10 +9,19 @@ return {
             { bundle_id = "org.mozilla.firefox", app_name = "Firefox", is_listed = true },
             { bundle_id = "com.apple.Safari", app_name = "Safari", is_listed = false },
         })
-        expect.equal(page:find("value='manage_listed' checked", 1, true) ~= nil, true)
+        expect.present(
+            page:find("value='manage_listed' checked", 1, true),
+            "the mode manage_listed checked"
+        )
         expect.equal(page:find("value='skip_listed' checked", 1, true), nil)
-        expect.equal(page:find('data-app-name="Firefox" checked> Firefox', 1, true) ~= nil, true)
-        expect.equal(page:find('data-app-name="Safari"> Safari', 1, true) ~= nil, true)
+        expect.present(
+            page:find('data-app-name="Firefox" checked> Firefox', 1, true),
+            "Firefox ticked in the list"
+        )
+        expect.present(
+            page:find('data-app-name="Safari"> Safari', 1, true),
+            "Safari unticked in the list"
+        )
     end,
 
     the_page_escapes_the_names_of_applications = function()
@@ -20,6 +29,9 @@ return {
             { bundle_id = "com.example.tool", app_name = 'A <b>"Tool"</b>', is_listed = false },
         })
         expect.equal(page:find("<b>", 1, true), nil)
-        expect.equal(page:find("A &lt;b&gt;&quot;Tool&quot;&lt;/b&gt;", 1, true) ~= nil, true)
+        expect.present(
+            page:find("A &lt;b&gt;&quot;Tool&quot;&lt;/b&gt;", 1, true),
+            "the escaped name of the application"
+        )
     end,
 }

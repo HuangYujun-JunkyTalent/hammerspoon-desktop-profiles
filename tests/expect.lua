@@ -55,6 +55,18 @@ function expect.equal(actual, expected)
     end
 end
 
+---Returns the value, and fails with a message that names what is missing when the value is nil.
+---@generic T
+---@param value T|nil
+---@param missing string what the case expects, such as "the window titled Start Page"
+---@return T
+function expect.present(value, missing)
+    if value == nil then
+        error(string.format("expected %s, got nil", missing), 2)
+    end
+    return value
+end
+
 ---@param action fun()
 ---@param message_pattern string
 function expect.raises(action, message_pattern)

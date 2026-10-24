@@ -86,7 +86,7 @@ return {
         local world = start_world()
         reach_after(world, { 41 }, 0.5)
         local reached, seconds = wait_and_settle(world, { 41 }, 1)
-        expect.equal(reached[41] ~= nil, true)
+        expect.present(reached[41], "window 41 among the reached windows")
         expect.equal(math.abs(seconds - 0.6) < 0.01, true)
     end,
 
@@ -101,7 +101,9 @@ return {
         local world = start_world()
         reach_after(world, { 41, 42, 43 }, 0.5)
         local reached = wait_and_settle(world, { 41, 42, 43 }, 1)
-        expect.equal(reached[41] ~= nil and reached[42] ~= nil and reached[43] ~= nil, true)
+        expect.present(reached[41], "window 41 among the reached windows")
+        expect.present(reached[42], "window 42 among the reached windows")
+        expect.present(reached[43], "window 43 among the reached windows")
         expect.equal(world.application_window_reads, {
             ["com.apple.Safari"] = 4,
             ["com.microsoft.Word"] = 4,
