@@ -24,6 +24,9 @@ local DELL_SCREEN = fake_worlds.build_dell_screen()
 local SETTLE_SECONDS = 30
 local SEARCH_SHORTCUT = "ctrl+alt+cmd space"
 local MONITOR_CONFIGURATION_KEY = "built-in"
+---One second past `periodic_save_seconds` of the default timing, so that the update once a minute
+---has run.
+local AFTER_THE_MINUTE_UPDATE_SECONDS = 61
 
 ---Saved frames are fractions of the screen rounded to four decimals, so a restored frame is near
 ---the original frame and not equal to it.
@@ -102,16 +105,28 @@ end
 ---@param controller ProfileController
 ---@param number integer
 ---@param window_id integer
----@return string|nil "in sight" or "out of sight" when the profile recorded the window
-local function recorded_sight(controller, number, window_id)
+---@return WindowRecord|nil the record of the window in the profile for the built-in display alone
+local function find_record(controller, number, window_id)
     local arrangement =
         profile_state.find_arrangement(controller.state, number, MONITOR_CONFIGURATION_KEY)
     for _, record in ipairs(arrangement and arrangement.windows or {}) do
         if record.window_id == window_id then
-            return record.is_out_of_sight and "out of sight" or "in sight"
+            return record
         end
     end
     return nil
+end
+
+---@param controller ProfileController
+---@param number integer
+---@param window_id integer
+---@return string|nil "in sight" or "out of sight" when the profile recorded the window
+local function recorded_sight(controller, number, window_id)
+    local record = find_record(controller, number, window_id)
+    if not record then
+        return nil
+    end
+    return record.is_out_of_sight and "out of sight" or "in sight"
 end
 
 ---@param setting_changes table|nil settings that replace the defaults, such as concealment_method
@@ -266,7 +281,7 @@ local function switch_with_a_window_left_to_macos(change_window)
     world.displays[1].space_ids = { 3, 14, 64, 99 }
     local shopping = world.add_window_of("com.apple.Notes", "Shopping", 99)
     change_window(world, shopping)
-    world.advance(61)
+    world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
     world.hotkeys["1"]()
     world.advance(SETTLE_SECONDS)
     return world, shopping
@@ -279,20 +294,6 @@ local function make_desktops_unreadable_once_mission_control_opens(world)
     world.on_mission_control_open = function()
         world.desktop_read_error = "macOS stopped answering"
     end
-end
-
----@param controller ProfileController
----@param window_id integer
----@return WindowRecord|nil the record of the window in profile 1 for the built-in display alone
-local function find_record_of_profile_1(controller, window_id)
-    local arrangement =
-        profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY)
-    for _, record in ipairs(arrangement and arrangement.windows or {}) do
-        if record.window_id == window_id then
-            return record
-        end
-    end
-    return nil
 end
 
 local WATCHDOG_MESSAGE = "Desktop Manager stopped a switch that did not finish within 90 seconds"
@@ -320,7 +321,7 @@ local function start_world_with_hidden_applications(setting)
     world.applications["com.microsoft.Word"].is_dropped_by_filter_while_hidden = true
     world.hide_application("com.microsoft.Word")
     world.hide_application("com.apple.Safari")
-    world.advance(61)
+    world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
     return world, controller, notes
 end
 
@@ -374,7 +375,7 @@ return {
         local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 3, ["external 1"] = 4 })
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
@@ -382,7 +383,7 @@ return {
         expect.equal(world.displays[1].space_ids, { 3, 14, 64, 8, 9 })
         expect.equal(world.mission_control_actions, { "remove 10" })
         expect.equal(world.is_mission_control_open, false)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 3, ["external 1"] = 4 })
         world.connect_screen(DELL_SCREEN, { 20 })
         world.screen_watchers[1]()
@@ -405,7 +406,7 @@ return {
         expect.equal(world.frames_set_out_of_view, {})
         expect.equal(world.is_mission_control_open, false)
         expect.equal(world.notifications, {})
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 3, ["external 1"] = 4 })
     end,
 
@@ -413,7 +414,7 @@ return {
         local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
@@ -529,7 +530,7 @@ return {
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         world.displays[1].space_ids = { 3, 14, 64, 98, 99 }
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.displays[1].space_ids, { 3, 14, 64 })
@@ -583,7 +584,7 @@ return {
         local closed = world.create_unseen_window("com.apple.Notes", "New Note", 99)
         world.windows[closed.id].is_ordered_out = true
         world.applications["com.apple.Notes"].is_hidden = true
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.mission_control_actions, { "remove 99" })
@@ -600,7 +601,7 @@ return {
         world.displays[1].space_ids = { 3, 14, 64, 99 }
         local closed = world.create_unseen_window("com.apple.Notes", "New Note", 99)
         world.windows[closed.id].is_ordered_out = true
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.mission_control_actions, { "remove 99" })
@@ -615,7 +616,7 @@ return {
         world.advance(SETTLE_SECONDS)
         world.displays[1].space_ids = { 3, 14, 64, 99 }
         world.add_window_of("com.apple.Notes", "Shopping", 99)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.applications["com.apple.Notes"].is_hidden, true)
@@ -634,7 +635,7 @@ return {
         world.displays[1].space_ids = { 3, 14, 64, 99 }
         local sticky = world.add_window_of("com.apple.Notes", "Sticky", 99)
         world.windows[sticky.id].is_on_every_desktop = true
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.mission_control_actions, { "remove 99" })
@@ -652,7 +653,7 @@ return {
         local news = world.create_window("com.apple.Safari", "News")
         world.advance(SETTLE_SECONDS)
         world.displays[1].active_space_id = 3
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.windows[news.id].is_minimized, true)
@@ -678,7 +679,7 @@ return {
         world.advance(SETTLE_SECONDS)
         world.displays[1].space_ids = { 3, 14, 64, 99 }
         world.displays[1].active_space_id = 99
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.mission_control_actions, { "show 3", "remove 99" })
@@ -698,7 +699,7 @@ return {
         arrangement.focused_slot_key = nil
         world.displays[1].space_ids = { 3, 14, 64, 99 }
         world.displays[1].active_space_id = 99
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.mission_control_actions, { "show 64", "remove 99" })
@@ -732,12 +733,12 @@ return {
         local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
         local news = world.create_window("com.apple.Safari", "News")
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.connect_screen(DELL_SCREEN, { 20 })
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
@@ -824,7 +825,7 @@ return {
         world.advance(SETTLE_SECONDS)
         world.displays[1].space_ids = { 3, 14 }
         world.displays[2].space_ids = { 7, 8, 9 }
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.mission_control_actions, { "add 2000", "add 2001" })
@@ -861,7 +862,7 @@ return {
         local world, controller = start_world({ timing = timing })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         world.hotkeys["1"]()
@@ -923,7 +924,7 @@ return {
         expect.equal(recorded_sight(controller, 2, 42), "out of sight")
         world.close_window(42)
         local reopened = world.create_unseen_window("com.microsoft.Word", "Draft.docx", 64)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.hotkeys["1"]()
         world.advance(0.5)
         expect.equal(controller.is_busy, true)
@@ -952,9 +953,9 @@ return {
         local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         table.insert(world.displays[1].space_ids, 99)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 4, ["external 1"] = 4 })
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
@@ -968,11 +969,11 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.displays[1].active_space_id = 14
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.displays[1].active_space_id = 3
         world.mission_control_actions = {}
         world.mission_control_openings = 0
@@ -1000,7 +1001,7 @@ return {
         local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
@@ -1044,7 +1045,7 @@ return {
 
     a_monitor_change_without_an_active_profile_leaves_everything_to_macos = function()
         local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
@@ -1061,7 +1062,7 @@ return {
         local world = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.hotkeys["0"]()
@@ -1549,7 +1550,8 @@ return {
         expect.equal(world.windows[42].is_minimized, true)
         expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
         expect.equal(world.applications["com.microsoft.Word"].is_hidden, false)
-        local arrangement = profile_state.find_arrangement(controller.state, 1, "built-in")
+        local arrangement =
+            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY)
         expect.equal(arrangement.windows[1].desktop_number, 2)
         expect.equal(arrangement.windows[2].desktop_number, 1)
     end,
@@ -1585,7 +1587,8 @@ return {
         world.advance(SETTLE_SECONDS)
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        local arrangement = profile_state.find_arrangement(controller.state, 1, "built-in")
+        local arrangement =
+            profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY)
         expect.equal(arrangement.monitors[1].desktop_count, 4)
         expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99 })
         expect.equal(world.mission_control_actions, {})
@@ -1788,7 +1791,7 @@ return {
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         world.unhide_application("com.apple.Safari")
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         expect.equal(world.applications["com.apple.Safari"].is_hidden, false)
         expect.equal(world.windows[41].is_minimized, false)
         expect.equal(recorded_sight(controller, 2, 41), "in sight")
@@ -1945,7 +1948,7 @@ return {
         local world = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
         expect.equal(world.alerts, { "Profile 1" })
@@ -1955,7 +1958,7 @@ return {
         local world = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
         local _, visible_while_settling = read_busy_messages(world)
@@ -1975,7 +1978,7 @@ return {
         local world = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.screens[1].name = "LG TV SSCR2"
         world.screens[1].frame = { x = 0, y = 25, w = 1872, h = 1053 }
         world.screen_watchers[1]()
@@ -2084,7 +2087,7 @@ return {
         local world, controller = start_world({ timing = timing })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.app_hotkeys["2"]()
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
@@ -2493,7 +2496,7 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.create_unseen_window("com.apple.Safari", "Reading list", 64)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         local printed, original_print = {}, print
         _G.print = function(text) -- luacheck: ignore 122
             table.insert(printed, text)
@@ -2701,7 +2704,7 @@ return {
             "desktop-manager",
             { action = "number-app", number = "1", app = "Microsoft Word" }
         )
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         local entries = profile_state.profile_or_default(controller.state, 1).app_numbers
         expect.equal(entries[1].bundle_id, "com.microsoft.Word")
         expect.equal(entries[1].is_chosen_by_user, true)
@@ -3245,8 +3248,8 @@ return {
         local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
-        local recorded_frame = find_record_of_profile_1(controller, 42).unit_frame
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
+        local recorded_frame = find_record(controller, 1, 42).unit_frame
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
         world.advance(3.1)
@@ -3264,7 +3267,7 @@ return {
         end
         world.advance(SETTLE_SECONDS)
         expect.equal(is_message_shown_between, true)
-        expect.equal(find_record_of_profile_1(controller, 42).unit_frame, recorded_frame)
+        expect.equal(find_record(controller, 1, 42).unit_frame, recorded_frame)
         expect_frame_near(world.windows[42].frame, { x = 720, y = 25, w = 720, h = 875 })
         expect.equal(controller.are_saves_suspended, false)
     end,
@@ -3273,7 +3276,7 @@ return {
         local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
         world.advance(3.1)
@@ -3311,7 +3314,7 @@ return {
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
         world.displays[1].space_ids = { 3, 14, 64, 98, 99 }
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.mission_control_actions = {}
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
@@ -3350,7 +3353,7 @@ return {
         local world, controller = start_world()
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.swallows_timer_errors = true
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
@@ -3364,8 +3367,8 @@ return {
         expect.equal(controller.are_saves_suspended, false)
         expect.equal(world.notifications, { WATCHDOG_MESSAGE })
         world.windows[42].frame = { x = 100, y = 125, w = 600, h = 500 }
-        world.advance(61)
-        local unit_frame = find_record_of_profile_1(controller, 42).unit_frame
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
+        local unit_frame = find_record(controller, 1, 42).unit_frame
         expect.equal(math.abs(unit_frame.x - 100 / 1512) < 0.001, true)
     end,
 
@@ -3391,7 +3394,7 @@ return {
         local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.url_handlers["desktop-manager"]("desktop-manager", { action = "save" })
@@ -3481,7 +3484,7 @@ return {
         world.displays[1].full_screen_space_ids = { 500 }
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.displays[1].active_space_id = 500
         world.screens[1].frame = { x = 0, y = 25, w = 1512, h = 957 }
         world.screen_watchers[1]()
@@ -3555,18 +3558,18 @@ return {
         local world, controller = start_two_screen_world({ 3, 14, 64 }, { 7, 8, 9, 10 })
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         local arrangement =
             profile_state.find_arrangement(controller.state, 1, MONITOR_CONFIGURATION_KEY)
         expect.equal(arrangement.monitors[1].desktop_count, 5)
         world.connect_screen(DELL_SCREEN, { 20 })
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         world.disconnect_screen(DELL_SCREEN.uuid)
         world.screen_watchers[1]()
         world.advance(SETTLE_SECONDS)
@@ -4079,7 +4082,7 @@ return {
         leave_notes_to_macos(world)
         world.displays[1].space_ids = { 3, 14, 64, 97, 98, 99 }
         world.add_window_of("com.apple.Notes", "Shopping", 98)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         local lines = record_log_lines(world, function()
             world.hotkeys["1"]()
             world.advance(SETTLE_SECONDS)
@@ -4223,7 +4226,7 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.create_unseen_window("com.apple.Safari", "Reading list", 64)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         local lines = record_log_lines(world, function()
             world.hotkeys["2"]()
             world.advance(SETTLE_SECONDS)
@@ -4255,7 +4258,7 @@ return {
         world.hotkeys["1"]()
         world.advance(SETTLE_SECONDS)
         world.create_unseen_window("com.apple.Safari", "Reading list", 64)
-        world.advance(61)
+        world.advance(AFTER_THE_MINUTE_UPDATE_SECONDS)
         local printed, original_print = {}, print
         _G.print = function(text) -- luacheck: ignore 122
             table.insert(printed, text)
