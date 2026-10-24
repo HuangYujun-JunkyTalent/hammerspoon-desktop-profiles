@@ -23,6 +23,10 @@ local function describe(value)
     return "{ " .. table.concat(parts, ", ") .. " }"
 end
 
+---Renders a value on one line, with the keys of each table in sorted order, as a failed
+---expectation shows it.
+expect.describe = describe
+
 ---@param first any
 ---@param second any
 ---@return boolean

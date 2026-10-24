@@ -3947,13 +3947,51 @@ return {
         world.advance(SETTLE_SECONDS)
         world.hotkeys["2"]()
         world.advance(SETTLE_SECONDS)
-        local lines = record_log_lines(world, function()
+        local reading_list = world.add_window_of("com.apple.Safari", "Reading List", 3)
+        world.advance(SETTLE_SECONDS)
+        local original_inspect = _G.hs.inspect
+        _G.hs.inspect = expect.describe
+        local is_switched, lines = pcall(record_log_lines, world, function()
             world.hotkeys["1"]()
             world.advance(SETTLE_SECONDS)
         end)
+        _G.hs.inspect = original_inspect
+        if not is_switched then
+            error(lines, 0)
+        end
+        local placement_of_inbox = {
+            window_id = 41,
+            screen_uuid = "BUILTIN-UUID",
+            slot_key = "built-in",
+            desktop_number = 2,
+            unit_frame = { x = 0.0, y = 0.0, w = 0.5, h = 1.0 },
+        }
+        local placement_of_draft = {
+            window_id = 42,
+            screen_uuid = "BUILTIN-UUID",
+            slot_key = "built-in",
+            desktop_number = 1,
+            unit_frame = { x = 0.5, y = 0.0, w = 0.5, h = 1.0 },
+        }
+        local concealment =
+            { bundle_ids_to_hide = {}, window_ids_to_minimize = { reading_list.id } }
+        local plan = {
+            bundle_ids_to_unhide = {},
+            desktop_additions = {},
+            unminimizations = { placement_of_inbox, placement_of_draft },
+            placements = { placement_of_inbox, placement_of_draft },
+            shown_desktops = {
+                {
+                    screen_uuid = "BUILTIN-UUID",
+                    slot_key = "built-in",
+                    desktop_number = 1,
+                },
+            },
+        }
         expect.equal(lines, {
-            "switching to profile 1: 2 of 2 saved windows open, concealing <inspected>",
-            "restoring profile 1: 2 of 2 saved windows open, plan <inspected>",
+            "switching to profile 1: 2 of 2 saved windows open, concealing "
+                .. expect.describe(concealment),
+            "restoring profile 1: 2 of 2 saved windows open, plan " .. expect.describe(plan),
             "profile 1 is active after 1.1 seconds, with 0 problems",
         })
     end,
