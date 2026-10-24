@@ -143,6 +143,8 @@ local current_world = nil
 ---`hidden_reads[bundle_id]` counts the calls of `isHidden` of each application, and
 ---`focused_window_reads[bundle_id]` the calls of `focusedWindow` and `mainWindow`.
 ---`icon_reads[bundle_id]` counts the calls of `hs.image.imageFromAppBundle` for each application.
+---`bundle_ids_without_icon` holds the bundle ids for which `hs.image.imageFromAppBundle` gives no
+---icon.
 ---`filter_reads` counts the calls of `getWindows` of the window filter.
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
 ---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
@@ -245,6 +247,7 @@ function fake_hammerspoon.install(spec)
         hidden_reads = {},
         focused_window_reads = {},
         icon_reads = {},
+        bundle_ids_without_icon = {},
         filter_reads = 0,
         on_mission_control_open = nil,
         key_wait_seconds = 0,
@@ -1646,6 +1649,9 @@ function fake_hammerspoon.install(spec)
         image = {
             imageFromAppBundle = function(bundle_id)
                 world.icon_reads[bundle_id] = (world.icon_reads[bundle_id] or 0) + 1
+                if world.bundle_ids_without_icon[bundle_id] then
+                    return nil
+                end
                 return { source = "icon " .. bundle_id }
             end,
         },

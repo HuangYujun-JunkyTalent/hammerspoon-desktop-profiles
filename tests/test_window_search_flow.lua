@@ -214,6 +214,9 @@ return {
         local world = controller_world.start_world()
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
+        world.bundle_ids_without_icon["com.apple.Notes"] = true
+        world.create_window("com.apple.Notes", "Shopping")
+        world.advance(controller_world.SETTLE_SECONDS)
         world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
         expect.equal(world.read_overlay_images(), {
             "icon com.apple.Safari",
@@ -228,11 +231,17 @@ return {
         world.press_escape()
         world.release_modifiers()
         world.advance(controller_world.SETTLE_SECONDS)
-        expect.equal(world.icon_reads, { ["com.apple.Safari"] = 1, ["com.microsoft.Word"] = 1 })
+        expect.equal(
+            world.icon_reads,
+            { ["com.apple.Safari"] = 1, ["com.microsoft.Word"] = 1, ["com.apple.Notes"] = 1 }
+        )
         world.terminate_application("com.apple.Safari")
         world.applications["com.apple.Safari"].is_running = true
         world.hotkey_by_shortcut[controller_world.SEARCH_SHORTCUT]()
-        expect.equal(world.icon_reads, { ["com.apple.Safari"] = 2, ["com.microsoft.Word"] = 1 })
+        expect.equal(
+            world.icon_reads,
+            { ["com.apple.Safari"] = 2, ["com.microsoft.Word"] = 1, ["com.apple.Notes"] = 1 }
+        )
     end,
 
     the_search_reads_the_window_filter_once_before_the_panel_shows = function()
