@@ -50,7 +50,6 @@ local app_number_list = {}
 ---@field shown_at number|nil when the list showed, in seconds since the epoch
 ---@field last_input_at number when the last press of a number came, which holds the next preview
 ---back
----@field preview_queue PreviewQueue|nil the snapshots of the windows of the list
 
 ---The windows that the list shows, as the setting for the windows of hidden applications keeps
 ---them.
@@ -280,7 +279,7 @@ function AppNumberList:load_previews(session)
             table.insert(window_ids, window.window_id)
         end
     end
-    session.preview_queue = self.context.preview_loader:load(window_ids, {
+    self.context.preview_loader:load(window_ids, {
         preview_size = app_number_list_overlay.read_preview_size(session.overlay),
         shown_at = session.shown_at,
         read_last_input_at = function()
