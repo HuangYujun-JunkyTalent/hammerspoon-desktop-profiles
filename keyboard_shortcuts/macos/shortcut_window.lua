@@ -1,5 +1,5 @@
 local macos_shortcut_settings = require("keyboard_shortcuts.macos.macos_shortcut_settings")
-local shortcut_registry = require("keyboard_shortcuts.core.shortcut_registry")
+local shortcut_window_model = require("keyboard_shortcuts.core.shortcut_window_model")
 
 ---The window that lists the shortcuts of every utility and changes them.
 ---Clicking a shortcut records the next key press with modifiers, while every shortcut of the tools
@@ -18,12 +18,6 @@ local WINDOW_SIZE = { w = 720, h = 720 }
 ---@field holder table|nil the id and the title of the other action that has the shortcut
 ---@field macos MacosShortcut|nil the shortcut of macOS that is on with the same keys
 
----@class ShortcutWindowModel
----@field groups table[] each with a name and rows, a row being a ShortcutRow with the macOS
----shortcut that it collides with
----@field problems string[]
----@field pending table|nil the PendingShortcut, without the details of the macOS shortcut
-
 ---@class ShortcutWindow
 ---@field view table the hs.webview
 ---@field center ShortcutCenter
@@ -31,49 +25,6 @@ local WINDOW_SIZE = { w = 720, h = 720 }
 ---@field pending PendingShortcut|nil
 ---@field model ShortcutWindowModel the content that the page shows now
 ---@field on_closed fun()
-
----@param shortcut MacosShortcut|nil
----@return table|nil the part of the shortcut of macOS that the page shows
-local function describe_macos(shortcut)
-    return shortcut and { id = shortcut.id, name = shortcut.name } or nil
-end
-
----@param center ShortcutCenter
----@param problems string[]
----@param pending PendingShortcut|nil
----@param find_macos_conflict fun(shortcut: Shortcut): MacosShortcut|nil
----@return ShortcutWindowModel
-function shortcut_window.build_model(center, problems, pending, find_macos_conflict)
-    local groups, group_by_name = {}, {}
-    for _, row in ipairs(center:list_rows()) do
-        local group = group_by_name[row.group]
-        if not group then
-            group = { name = row.group, rows = {} }
-            group_by_name[row.group] = group
-            table.insert(groups, group)
-        end
-        table.insert(group.rows, {
-            id = row.id,
-            title = row.title,
-            shortcut = row.shortcut,
-            default = row.default,
-            default_text = row.default and shortcut_registry.describe(row.default) or "none",
-            is_default = row.is_default,
-            macos_conflict = row.shortcut and describe_macos(find_macos_conflict(row.shortcut)),
-        })
-    end
-    local pending_view = nil
-    if pending then
-        pending_view = {
-            id = pending.id,
-            shortcut = pending.shortcut,
-            text = shortcut_registry.describe(pending.shortcut),
-            holder = pending.holder,
-            macos = describe_macos(pending.macos),
-        }
-    end
-    return { groups = groups, problems = problems, pending = pending_view }
-end
 
 local STYLE = [[
 :root { color-scheme: light dark; --accent: #0a84ff; --warn: #c27c0e;
@@ -311,7 +262,7 @@ end
 ---the window now
 local function build_window_model(window)
     local macos_shortcut_list = macos_shortcut_settings.list()
-    return shortcut_window.build_model(
+    return shortcut_window_model.build_model(
         window.center,
         window.problems,
         window.pending,
