@@ -74,6 +74,9 @@ return {
         }
         local result = window_matching.match_records_to_reopened_windows(records, live)
         expect.equal(result.matches[1].window_id, 90)
+    end,
+
+    a_closed_window_is_listed_and_read_once_per_application = function()
         local recorded = {
             record(42, "com.apple.TextEdit", "Untitled"),
             record(42, "com.apple.TextEdit", "Untitled"),
