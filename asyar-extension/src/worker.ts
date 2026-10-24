@@ -46,9 +46,9 @@ class DesktopProfilesExtension implements Extension {
    * to the permissions, and a read without consent rejects only after ten seconds.
    */
   async activate(): Promise<void> {
-    const summaryWithoutState = readProfileSummary(null);
-    const itemsWithoutState = describeProfileCommands(summaryWithoutState, settings.profileCount);
-    await this.registerItems(itemsWithoutState);
+    await this.registerItems(
+      describeProfileCommands(readProfileSummary(null), settings.profileCount),
+    );
     void this.refreshProfileItems();
   }
 

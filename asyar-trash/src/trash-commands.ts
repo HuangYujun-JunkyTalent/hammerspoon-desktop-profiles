@@ -36,13 +36,6 @@ export const EMPTY_TRASH_CONFIRMATION = {
 
 export const TRASH_IS_EMPTY_NOTICE = 'The Trash is empty.';
 
-/** Whether Asyar started a script, and the reason when it did not. */
-export interface ScriptStart {
-  spawnError?: string;
-}
-
-export type AppleScriptStarter = (scriptLines: readonly string[]) => Promise<ScriptStart>;
-
 export function quoteAppleScriptString(text: string): string {
   return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }

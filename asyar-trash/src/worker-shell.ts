@@ -7,7 +7,12 @@
 
 import type { SpawnParams } from 'asyar-sdk/contracts';
 
-import type { ScriptStart } from './trash-commands';
+/** Whether Asyar started a script, and the reason when it did not. */
+export interface ScriptStart {
+  spawnError?: string;
+}
+
+export type AppleScriptStarter = (scriptLines: readonly string[]) => Promise<ScriptStart>;
 
 /** Sends `shell:spawn` to Asyar, which answers once the program has started or failed to start. */
 export type InvokeSpawn = (payload: SpawnParams & { spawnId: string }) => Promise<unknown>;

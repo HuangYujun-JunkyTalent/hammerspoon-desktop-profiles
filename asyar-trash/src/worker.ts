@@ -15,13 +15,11 @@ import type {
 
 import manifest from '../manifest.json';
 import {
-  type AppleScriptStarter,
-  type ScriptStart,
   buildFailureNotification,
   buildOsascriptSpawn,
   findTrashCommandScript,
 } from './trash-commands';
-import { startProgramInWorker } from './worker-shell';
+import { type AppleScriptStarter, type ScriptStart, startProgramInWorker } from './worker-shell';
 
 /** Asyar answers `shell:spawn` after the user has chosen whether to trust the program. */
 const SPAWN_ANSWER_TIMEOUT_MS = 120_000;

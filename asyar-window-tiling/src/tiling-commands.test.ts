@@ -11,8 +11,8 @@ describe('findTilingUrl', () => {
   });
 
   it('gives a URL for every command of the manifest', () => {
-    const positions = manifest.commands.map((command) => findTilingUrl(command.id));
-    expect(positions).toEqual(['hammerspoon://window-tiling?position=fill']);
+    const urls = manifest.commands.map((command) => findTilingUrl(command.id));
+    expect(urls).toEqual(['hammerspoon://window-tiling?position=fill']);
   });
 
   it('gives null for an id of another form', () => {
