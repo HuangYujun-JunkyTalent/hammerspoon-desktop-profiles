@@ -98,9 +98,9 @@ class DesktopProfilesExtension implements Extension {
   }
 
   /**
-   * Registers the items again when the active profile or a name changed.
+   * Registers the items again when the active profile, its pause or a name changed.
    * Hammerspoon writes the state file after every change of a window, and most writes change
-   * neither.
+   * none of the three.
    */
   private async registerItems(items: DynamicCommandRegistration[]): Promise<void> {
     const itemsText = JSON.stringify(items);
