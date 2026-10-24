@@ -5,6 +5,7 @@ import { ExtensionContext as WorkerExtensionContext, extensionBridge } from 'asy
 import type { Extension, ExtensionContext, ILogService, IOpenerService } from 'asyar-sdk/contracts';
 
 import manifest from '../manifest.json';
+import settings from './settings.generated.json';
 import { findTilingUrl } from './tiling-commands';
 
 class WindowTilingExtension implements Extension {
@@ -21,7 +22,7 @@ class WindowTilingExtension implements Extension {
   async deactivate(): Promise<void> {}
 
   async executeCommand(commandId: string): Promise<unknown> {
-    const url = findTilingUrl(commandId);
+    const url = findTilingUrl(commandId, settings.urlEventName);
     if (!url) {
       this.log?.warn(`the command ${commandId} is unknown to Window Tiling`);
       return undefined;

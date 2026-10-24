@@ -6,10 +6,12 @@ HAMMERSPOON_LOADER := $(HOME)/.hammerspoon/init.lua
 
 .PHONY: check syntax lint format format-check test launcher-scripts check-launcher-scripts install-loader
 .PHONY: asyar-extension-settings check-asyar-extension-settings check-asyar-extension link-asyar-extension
+.PHONY: asyar-window-tiling-settings check-asyar-window-tiling-settings
 .PHONY: check-asyar-window-tiling link-asyar-window-tiling
 .PHONY: check-asyar-trash link-asyar-trash
 
-check: syntax lint format-check test check-launcher-scripts check-asyar-extension-settings
+check: syntax lint format-check test check-launcher-scripts check-asyar-extension-settings \
+	check-asyar-window-tiling-settings
 
 syntax:
 	@for file in $(LUA_FILES); do $(LUAC) -p "$$file" || exit 1; done
@@ -63,7 +65,21 @@ check-asyar-extension: check-asyar-extension-settings
 link-asyar-extension:
 	cd asyar-extension && npx asyar link
 
-check-asyar-window-tiling:
+asyar-window-tiling-settings:
+	$(LUA) tools/write_asyar_window_tiling_settings.lua asyar-window-tiling/src/settings.generated.json
+
+check-asyar-window-tiling-settings:
+	@scratch=$$(mktemp); \
+	$(LUA) tools/write_asyar_window_tiling_settings.lua "$$scratch" && \
+		diff asyar-window-tiling/src/settings.generated.json "$$scratch"; \
+	status=$$?; rm -f "$$scratch"; \
+	if [ $$status -ne 0 ]; then \
+		echo "asyar-window-tiling/src/settings.generated.json differs from the generator:" \
+			"run make asyar-window-tiling-settings"; \
+		exit 1; \
+	fi
+
+check-asyar-window-tiling: check-asyar-window-tiling-settings
 	cd asyar-window-tiling && npm run typecheck && npm test && npx asyar validate && npm run build
 
 link-asyar-window-tiling:

@@ -1,18 +1,25 @@
-local default_settings = require("desktop_manager.default_settings")
 local expect = require("tests.expect")
 
-local SETTINGS_MODULE_NAME = "desktop_manager.default_settings"
+local DESKTOP_MANAGER_SETTINGS_MODULE_NAME = "desktop_manager.default_settings"
+local WINDOW_TILING_SETTINGS_MODULE_NAME = "window_tiling.default_settings"
 
----Runs a generator of `tools/` from the repository root, with the settings of
----`desktop_manager/default_settings.lua` under another `url_event_name`.
+---Runs a generator of `tools/` from the repository root, with the default settings of the module
+---under another `url_event_name`.
 ---@param generator_path string
 ---@param output_path string the argument of the generator
+---@param settings_module_name string the module of the default settings that the generator reads
 ---@param url_event_name string
-local function run_generator_with_url_event_name(generator_path, output_path, url_event_name)
+local function run_generator_with_url_event_name(
+    generator_path,
+    output_path,
+    settings_module_name,
+    url_event_name
+)
+    local default_settings = require(settings_module_name)
     local command_arguments = arg
-    package.loaded[SETTINGS_MODULE_NAME] = {
-        create = function(state_file_path)
-            local settings = default_settings.create(state_file_path)
+    package.loaded[settings_module_name] = {
+        create = function(...)
+            local settings = default_settings.create(...)
             settings.url_event_name = url_event_name
             return settings
         end,
@@ -20,7 +27,7 @@ local function run_generator_with_url_event_name(generator_path, output_path, ur
     arg = { [0] = generator_path, output_path } -- luacheck: ignore 121
     local is_run, message = pcall(dofile, generator_path)
     arg = command_arguments -- luacheck: ignore 121
-    package.loaded[SETTINGS_MODULE_NAME] = default_settings
+    package.loaded[settings_module_name] = default_settings
     if not is_run then
         error(message, 0)
     end
@@ -60,6 +67,7 @@ return {
             run_generator_with_url_event_name(
                 "tools/write_launcher_scripts.lua",
                 folder,
+                DESKTOP_MANAGER_SETTINGS_MODULE_NAME,
                 "desktops"
             )
             local file_names = read_command_lines(string.format("ls '%s'", folder))
@@ -83,9 +91,27 @@ return {
             run_generator_with_url_event_name(
                 "tools/write_asyar_extension_settings.lua",
                 path,
+                DESKTOP_MANAGER_SETTINGS_MODULE_NAME,
                 "desktops"
             )
             expect.equal(read_file(path):find('"urlEventName": "desktops"', 1, true) ~= nil, true)
+        end)
+        os.remove(path)
+        if not is_checked then
+            error(message, 0)
+        end
+    end,
+
+    the_settings_of_the_asyar_window_tiling_hold_the_setting_url_event_name = function()
+        local path = os.tmpname()
+        local is_checked, message = pcall(function()
+            run_generator_with_url_event_name(
+                "tools/write_asyar_window_tiling_settings.lua",
+                path,
+                WINDOW_TILING_SETTINGS_MODULE_NAME,
+                "tiles"
+            )
+            expect.equal(read_file(path):find('"urlEventName": "tiles"', 1, true) ~= nil, true)
         end)
         os.remove(path)
         if not is_checked then
