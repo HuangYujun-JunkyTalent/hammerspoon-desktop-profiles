@@ -8,10 +8,15 @@ export const REASSIGN_APP_NUMBERS_COMMAND_ID = 'reassign-app-numbers';
 /** What the items show of the state file that the Hammerspoon desktop manager writes. */
 export interface ProfileSummary {
   activeProfileNumber: number | null;
+  isActiveProfilePaused: boolean;
   nameByNumber: Map<number, string>;
 }
 
-const EMPTY_SUMMARY: ProfileSummary = { activeProfileNumber: null, nameByNumber: new Map() };
+const EMPTY_SUMMARY: ProfileSummary = {
+  activeProfileNumber: null,
+  isActiveProfilePaused: false,
+  nameByNumber: new Map(),
+};
 
 function isProfileNumber(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) >= 1;
@@ -34,8 +39,13 @@ export function readProfileSummary(stateText: string | null): ProfileSummary {
   if (typeof state !== 'object' || state === null) {
     return EMPTY_SUMMARY;
   }
-  const { active_profile_number: activeNumber, profiles } = state as {
+  const {
+    active_profile_number: activeNumber,
+    is_active_profile_paused: isPaused,
+    profiles,
+  } = state as {
     active_profile_number?: unknown;
+    is_active_profile_paused?: unknown;
     profiles?: unknown;
   };
   const nameByNumber = new Map<number, string>();
@@ -49,13 +59,32 @@ export function readProfileSummary(stateText: string | null): ProfileSummary {
   }
   return {
     activeProfileNumber: isProfileNumber(activeNumber) ? activeNumber : null,
+    isActiveProfilePaused: isProfileNumber(activeNumber) && isPaused === true,
     nameByNumber,
   };
 }
 
+const ACTIVE_LOOK = {
+  description: 'Active. Enter deactivates it.',
+  icon: '🟢',
+  typeLabel: 'Active profile',
+};
+const PAUSED_LOOK = {
+  description: 'Paused. Enter restores its layout.',
+  icon: '🟡',
+  typeLabel: 'Paused profile',
+};
+const INACTIVE_LOOK = {
+  description: 'Enter activates it.',
+  icon: '⚪',
+  typeLabel: 'Desktop profile',
+};
+
 /**
  * One item per profile, named after its number and the name that the user gave it.
  * The active profile carries a green dot and the label "Active profile", and Enter deactivates it.
+ * While the active profile is paused, it carries a yellow dot and the label "Paused profile", and
+ * Enter restores its layout.
  */
 export function describeProfileCommands(
   summary: ProfileSummary,
@@ -66,12 +95,11 @@ export function describeProfileCommands(
     const defaultName = `Profile ${number}`;
     const name = summary.nameByNumber.get(number);
     const isActive = summary.activeProfileNumber === number;
+    const pausedOrActiveLook = summary.isActiveProfilePaused ? PAUSED_LOOK : ACTIVE_LOOK;
     registrations.push({
       id: `profile-${number}`,
       name: name && name !== defaultName ? `${defaultName} · ${name}` : defaultName,
-      description: isActive ? 'Active. Enter deactivates it.' : 'Enter activates it.',
-      icon: isActive ? '🟢' : '⚪',
-      typeLabel: isActive ? 'Active profile' : 'Desktop profile',
+      ...(isActive ? pausedOrActiveLook : INACTIVE_LOOK),
     });
   }
   return registrations;

@@ -48,6 +48,22 @@ describe('describeProfileCommands', () => {
     expect(commands.filter((command) => command.icon === '🟢')).toHaveLength(1);
   });
 
+  it('marks the paused profile, whose Enter restores its layout', () => {
+    const pausedText = JSON.stringify({
+      ...JSON.parse(STATE_TEXT),
+      is_active_profile_paused: true,
+    });
+    const commands = describeProfileCommands(readProfileSummary(pausedText), 9);
+    expect(commands[1]).toEqual({
+      id: 'profile-2',
+      name: 'Profile 2 · Writing',
+      description: 'Paused. Enter restores its layout.',
+      icon: '🟡',
+      typeLabel: 'Paused profile',
+    });
+    expect(readProfileSummary(STATE_TEXT).isActiveProfilePaused).toBe(false);
+  });
+
   it('marks no profile while none is active', () => {
     const commands = describeProfileCommands(readProfileSummary(null), 9);
     expect(commands.every((command) => command.typeLabel === 'Desktop profile')).toBe(true);
