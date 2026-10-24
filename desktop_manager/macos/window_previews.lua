@@ -76,7 +76,7 @@ end
 ---@class PreviewQueue
 ---@field loading PreviewLoading
 ---@field window_ids integer[] the windows in the order of their snapshots
----@field taken_count integer the windows whose snapshots the queue has taken or skipped
+---@field taken_count integer the windows whose snapshots the queue has taken
 ---@field timer table|nil the one hs.timer of the queue, while a snapshot waits for its time
 local PreviewQueue = {}
 PreviewQueue.__index = PreviewQueue
