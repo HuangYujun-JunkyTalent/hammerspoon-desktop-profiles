@@ -105,7 +105,9 @@ The row "Same monitor configuration by" of [the window "Settings…"](#settings-
 | Number of external monitors, the default | the built-in display alone, the built-in display with one external monitor, two external monitors, and so on |
 | Name of each external monitor | also the built-in display with `LG TV SSCR2` and the built-in display with `DELL U2720Q` |
 
-The menu bar item also has entries that deactivate the active profile, rename it, update its record at once and print diagnostics.
+Below the profiles, the menu bar item groups the entries that deactivate the active profile, rename it, update its record at once and clear a profile.
+The first three name the active profile, such as Deactivate “Writing”, and the first two are dimmed while no profile is active.
+"Application numbers" follows in a group of its own, and the last group opens the windows "Settings…", "Managed applications…" and "Keyboard shortcuts…" and prints diagnostics.
 
 ### The first start of Hammerspoon soon after a login pauses the active profile
 
@@ -129,8 +131,8 @@ The state file keeps the pause, so a reload keeps it, also after `pause_after_lo
 | Command-Option-Shift-2, its URL, its Asyar item or its item in the menu bar item | restores the layout of profile 2 as an activation does, and the updates go on from the end of the restore |
 | Command-Option-Shift with another number | switches to that profile without the update of profile 2 before the switch |
 | Command-Option-Shift-0 | deactivates profile 2 without an update |
-| "Save arrangement now and end the pause" in the menu bar item, or the URL `action=save` | records the windows as they are and ends the pause |
-| "Clear profile" on profile 2 | empties profile 2, which records the windows from its next update on |
+| "Save layout of “Profile 2” and end the pause" in the menu bar item, or the URL `action=save` | records the windows as they are and ends the pause |
+| "Clear a profile" on profile 2 | empties profile 2, which records the windows from its next update on |
 | "Return N to the default" or Control-Option-0 | gives the default numbers of the record of profile 2 for the monitor configuration, and Control-Option-0 keeps the default numbers that profile 2 had |
 
 A rename, a number given by hand, the managed applications and the choice of the same monitor configuration work as usual.
@@ -180,9 +182,9 @@ The desktop manager then removes the desktops left empty on the built-in display
 A window of an application that the desktop manager leaves to macOS stays on its moved desktop, and that desktop stays too, with the desktops below it.
 Before the restore, the desktop manager moves each window of the profile that Hammerspoon has not seen by its id to the desktop in view of its screen, so that such a window moves to the monitor as well.
 
-### "Clear profile" in the menu bar item, or Control-Option-Command with the number, empties a profile
+### "Clear a profile" in the menu bar item, or Control-Option-Command with the number, empties a profile
 
-"Clear profile" lists every profile, and a profile without a saved layout shows dimmed.
+"Clear a profile" lists every profile, and a profile without a saved layout shows dimmed.
 Control-Option-Command with the number of a profile clears that profile, after the same confirmation.
 After you confirm, the profile forgets the desktops and windows it saved for every monitor configuration, and keeps its name and its application numbers.
 A cleared profile acts as a new one: activating it takes the windows that other profiles recorded out of sight, as `concealment_method` sets, and brings back nothing.
@@ -399,8 +401,15 @@ The keys inside the search and the list, such as Escape, Return, Tab and the arr
 ## "Settings…" in the menu bar item changes the behaviour of the desktop manager while it runs
 
 "Settings…" in the menu bar item ◧ opens a window with one row per setting that the column "In Settings…" of [the table of the settings](#settings-of-the-desktop-manager-live-in-desktop_managerdefault_settingslua) marks.
-The section Switches holds the settings of a switch, such as `unmatched_window_action`, which opens a new window for a recorded window that is gone or forgets the window.
-The section List and search holds the settings of the list of Control-Option and of the search.
+The window has four sections.
+
+| Section | Settings |
+|---|---|
+| Switching profiles | `unmatched_window_action`, which opens a new window for a recorded window that is no longer open or removes the window from the profile, `match_windows_by`, `missing_window_policy` and `concealment_method` |
+| Monitors and login | "Same monitor configuration by" and `pause_after_login_seconds` |
+| What the list and the search show | `hidden_application_windows`, `preview_method`, `preview_size` and `preview_blur` |
+| Layout of the list | `list_layout`, `list_sizing`, `list_font_size`, `title_overflow` and `title_line_count` |
+
 A choice offers the values of the setting by name, a number has a slider, and the size of a preview has a slider for its width and one for its height.
 Each change is saved with the profiles in `~/.hammerspoon/desktop-manager-state.json`, over the value of `desktop_manager/default_settings.lua`, and the next switch, list or search uses it without a reload of Hammerspoon.
 `pause_after_login_seconds` counts from the next start of Hammerspoon.
@@ -568,13 +577,13 @@ A script title is fixed, so the titles name the profiles by number.
 | Deactivate profile N while it is active | Command-Option-Shift-N while profile N is not paused | `action=deactivate&profile=N` |
 | Deactivate the active profile | Command-Option-Shift-0 | `action=deactivate` |
 | Activate profile N, or deactivate it while it is active, or restore it while it is paused | Command-Option-Shift-N | `action=toggle&profile=N` |
-| Rename profile N | menu, Rename active profile… | `action=rename&profile=N&name=Writing` |
+| Rename profile N | menu, Rename “Profile N”… while profile N is active | `action=rename&profile=N&name=Writing` |
 | Change when monitor configurations are the same | Settings…, Same monitor configuration by | `action=cycle-monitor-matching` |
-| Update the record of the active profile now, and end a pause | menu, Save arrangement now | `action=save` |
+| Update the record of the active profile now, and end a pause | menu, Save layout of “Profile N” now | `action=save` |
 | Give number N to a running application | menu, Application numbers | `action=number-app&number=N&app=Firefox` |
 | Return number N to the default | menu, Application numbers | `action=release-app-number&number=N` |
 | Return every number to the default | Control-Option-0 | `action=reset-app-numbers` |
-| Clear the saved layouts of profile N, after a confirmation | Control-Option-Command-N, or menu, Clear profile | `action=clear&profile=N` |
+| Clear the saved layouts of profile N, after a confirmation | Control-Option-Command-N, or menu, Clear a profile | `action=clear&profile=N` |
 | Show the search of the windows | Control-Option-Command-Space | `action=search-windows` |
 | Open the window of the settings | menu, Settings… | `action=open-settings` |
 
