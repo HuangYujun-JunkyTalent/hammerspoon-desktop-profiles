@@ -21,7 +21,8 @@ return {
 
     a_color_from_the_window_of_the_colors_shows_in_the_next_search = function()
         local world, controller = controller_world.start_world()
-        controller_world.find_menu_item(world, "Search colors…").fn()
+        controller_world.find_menu_item(world, "Settings…").fn()
+        world.post_to_webview("settings", { kind = "colors" })
         expect.equal(
             controller.color_window.model.colors.selection,
             { hex = "#3373F2", alpha = 0.95 }

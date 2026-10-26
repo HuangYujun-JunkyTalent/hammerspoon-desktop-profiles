@@ -1,5 +1,4 @@
 local app_numbers = require("desktop_manager.core.app_numbers")
-local monitor_matching = require("desktop_manager.core.monitor_matching")
 local profile_state = require("desktop_manager.core.profile_state")
 
 local status_menu = {}
@@ -10,7 +9,6 @@ local MENU_BAR_SYMBOL = "◧"
 ---@field toggle_profile fun(number: integer)
 ---@field deactivate_profile fun()
 ---@field rename_active_profile fun()
----@field set_monitor_matching fun(matching: string)
 ---@field save_arrangement fun()
 ---@field print_diagnostics fun()
 ---@field choose_app_number fun(app_number: integer, bundle_id: string, app_name: string)
@@ -18,7 +16,7 @@ local MENU_BAR_SYMBOL = "◧"
 ---@field clear_profile fun(number: integer)
 ---@field open_app_pool_window fun()
 ---@field open_shortcut_window fun()
----@field open_color_window fun()
+---@field open_settings_window fun()
 
 ---The numbers of the active profile, or of profile 0 while no profile is active, each with a
 ---submenu that gives it to the application that was in front when the menu opened, or returns it to
@@ -106,24 +104,6 @@ local function build_profile_items(state, settings, actions)
     return items
 end
 
----One item per way of matching monitor configurations, with a check mark on the way in use.
----@param state State
----@param actions StatusMenuActions
----@return table[] the items of an hs.menubar submenu
-local function build_monitor_matching_items(state, actions)
-    local items = {}
-    for _, matching in ipairs(monitor_matching.all()) do
-        table.insert(items, {
-            title = monitor_matching.label_of(matching),
-            checked = state.monitor_matching == matching,
-            fn = function()
-                actions.set_monitor_matching(matching)
-            end,
-        })
-    end
-    return items
-end
-
 ---@param state State
 ---@param settings Settings
 ---@param actions StatusMenuActions
@@ -147,11 +127,7 @@ local function build_items(state, settings, actions)
     )
     table.insert(items, { title = "Managed applications…", fn = actions.open_app_pool_window })
     table.insert(items, { title = "Keyboard shortcuts…", fn = actions.open_shortcut_window })
-    table.insert(items, { title = "Search colors…", fn = actions.open_color_window })
-    table.insert(items, {
-        title = "Same monitor configuration by",
-        menu = build_monitor_matching_items(state, actions),
-    })
+    table.insert(items, { title = "Settings…", fn = actions.open_settings_window })
     local numbering_profile =
         profile_state.profile_or_default(state, profile_state.find_numbering_profile_number(state))
     table.insert(items, {

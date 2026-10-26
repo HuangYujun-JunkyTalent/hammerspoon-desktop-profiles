@@ -19,6 +19,7 @@ local function record_handler_calls()
         press_app_number = record("press_app_number"),
         reset_app_numbers = record("reset_app_numbers"),
         toggle_window_search = record("toggle_window_search"),
+        open_settings_window = record("open_settings_window"),
     },
         calls
 end
@@ -40,6 +41,7 @@ return {
             "app_numbers.press.2",
             "app_numbers.reset",
             "window_search.toggle",
+            "settings.open",
         })
     end,
 
@@ -47,9 +49,10 @@ return {
         local handlers, calls = record_handler_calls()
         local defaults = {}
         for _, action in ipairs(shortcut_actions.list(1, 1, handlers)) do
+            local default = action.default
             table.insert(
                 defaults,
-                table.concat(action.default.modifiers, "+") .. " " .. action.default.key
+                default and table.concat(default.modifiers, "+") .. " " .. default.key or "none"
             )
             action.on_press(BINDING)
         end
@@ -60,6 +63,7 @@ return {
             "ctrl+alt 1",
             "ctrl+alt 0",
             "ctrl+alt+cmd space",
+            "none",
         })
         expect.equal(calls, {
             { "toggle_profile", 1 },
@@ -68,6 +72,7 @@ return {
             { "press_app_number", 1, BINDING },
             { "reset_app_numbers" },
             { "toggle_window_search" },
+            { "open_settings_window" },
         })
     end,
 }

@@ -10,6 +10,7 @@ local shortcut_actions = {}
 ---@field press_app_number fun(app_number: integer, binding: ShortcutBinding)
 ---@field reset_app_numbers fun()
 ---@field toggle_window_search fun()
+---@field open_settings_window fun()
 
 ---The actions of the profiles, the application numbers and the search of the windows, with their
 ---default shortcuts.
@@ -91,6 +92,14 @@ function shortcut_actions.list(profile_count, app_number_count, handlers)
         default = { modifiers = { "ctrl", "alt", "cmd" }, key = "space" },
         on_press = function()
             handlers.toggle_window_search()
+        end,
+    })
+    table.insert(actions, {
+        id = "settings.open",
+        group = "Settings",
+        title = "Open the window Settings of the desktop manager",
+        on_press = function()
+            handlers.open_settings_window()
         end,
     })
     return actions

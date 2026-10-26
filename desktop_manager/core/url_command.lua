@@ -13,6 +13,7 @@ local url_command = {
     RESET_APP_NUMBERS = "reset-app-numbers",
     CLEAR = "clear",
     SEARCH_WINDOWS = "search-windows",
+    OPEN_SETTINGS = "open-settings",
 }
 
 ---@class Command
@@ -38,6 +39,7 @@ local ACTIONS_WITHOUT_PROFILE = {
     [url_command.SAVE] = true,
     [url_command.RESET_APP_NUMBERS] = true,
     [url_command.SEARCH_WINDOWS] = true,
+    [url_command.OPEN_SETTINGS] = true,
 }
 
 ---`deactivate` without a profile deactivates the active profile, and with a profile deactivates

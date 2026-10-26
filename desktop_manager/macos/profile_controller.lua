@@ -7,12 +7,14 @@ local busy_message = require("desktop_manager.macos.busy_message")
 local color_window = require("desktop_manager.macos.color_window")
 local concatenate_lists = require("desktop_manager.core.concatenate_lists")
 local conceal_windows = require("desktop_manager.macos.conceal_windows")
+local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local diagnostic_lines = require("desktop_manager.macos.diagnostic_lines")
 local extra_desktops = require("desktop_manager.macos.extra_desktops")
 local hidden_application_filter = require("desktop_manager.macos.hidden_application_filter")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_known_windows = require("desktop_manager.macos.list_known_windows")
+local live_settings = require("desktop_manager.core.live_settings")
 local locate_desktops = require("desktop_manager.core.locate_desktops")
 local missing_window_policy = require("desktop_manager.core.missing_window_policy")
 local mission_control_desktops = require("desktop_manager.macos.mission_control_desktops")
@@ -31,6 +33,7 @@ local restore_windows = require("desktop_manager.macos.restore_windows")
 local retained_timers = require("desktop_manager.macos.retained_timers")
 local search_windows = require("desktop_manager.macos.search_windows")
 local settings_check = require("desktop_manager.core.settings_check")
+local settings_window = require("desktop_manager.macos.settings_window")
 local shortcut_actions = require("desktop_manager.core.shortcut_actions")
 local shortcut_center = require("keyboard_shortcuts.macos.shortcut_center")
 local shortcut_window = require("keyboard_shortcuts.macos.shortcut_window")
@@ -60,7 +63,9 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---`is_press_running` is true while a press of the list or the search shows a desktop through
 ---Mission Control, unhides an application or opens a window, and then no switch starts.
 ---@class ProfileController
----@field settings Settings
+---@field settings Settings the settings of the file with the choices of the window "Settings…",
+---one table that a choice changes in place, so that every part that holds it reads the choice
+---@field base_settings Settings the checked settings of `default_settings.lua`
 ---@field state State
 ---@field log table an hs.logger
 ---@field window_filter table an hs.window.filter
@@ -76,6 +81,8 @@ local MONITORS_CHANGED_MESSAGE = "Monitors changed, waiting for macOS… please 
 ---@field busy_message_text string|nil the text of the message
 ---@field app_pool_window AppPoolWindow|nil the window that chooses the managed applications
 ---@field color_window ColorWindow|nil the window that picks the colors of the search
+---@field settings_window SettingsWindow|nil the window that changes the settings while the desktop
+---manager runs
 ---@field shortcut_window ShortcutWindow|nil the window that changes the shortcuts of every tool
 ---@field are_saves_suspended boolean
 ---@field save_timer table|nil
@@ -131,9 +138,6 @@ function ProfileController:refresh_menu()
         rename_active_profile = function()
             self:prompt_rename_active_profile()
         end,
-        set_monitor_matching = function(matching)
-            self:set_monitor_matching(matching)
-        end,
         save_arrangement = function()
             self:save_arrangement_now()
         end,
@@ -149,8 +153,8 @@ function ProfileController:refresh_menu()
         open_shortcut_window = function()
             self:open_shortcut_window()
         end,
-        open_color_window = function()
-            self:open_color_window()
+        open_settings_window = function()
+            self:open_settings_window()
         end,
         choose_app_number = function(app_number, bundle_id, app_name)
             self:choose_app_number(app_number, bundle_id, app_name)
@@ -1077,6 +1081,91 @@ function ProfileController:open_color_window()
     })
 end
 
+---Puts the overrides of the state over the settings of the file, in the table of the settings.
+---@return table<string, any> kept the overrides that the settings took
+---@return string[] lines one line for each override left out
+function ProfileController:apply_setting_overrides()
+    local settings, kept, lines =
+        live_settings.apply(self.base_settings, self.state.setting_overrides)
+    for name, value in pairs(settings) do
+        self.settings[name] = value
+    end
+    return kept, lines
+end
+
+---@return table<string, any> the value of each setting of the window "Settings…" now
+function ProfileController:read_live_values()
+    local values = {}
+    for _, entry in ipairs(live_settings.ENTRIES) do
+        values[entry.name] = entry.is_kept_in_state and self.state[entry.name]
+            or deep_copy.copy(self.settings[entry.name])
+    end
+    return values
+end
+
+---@return table<string, any> the value of each setting of the window "Settings…" in the file
+function ProfileController:read_live_defaults()
+    local defaults = {}
+    for _, entry in ipairs(live_settings.ENTRIES) do
+        defaults[entry.name] = entry.is_kept_in_state
+                and self.base_settings.initial_monitor_matching
+            or deep_copy.copy(self.base_settings[entry.name])
+    end
+    return defaults
+end
+
+---Saves a choice of the window "Settings…", or returns the setting to the value of the file when
+---the value is nil.
+---A switch, a restore or a press reads the settings at several steps, so a choice waits until it
+---ends, and the alert "Desktop Manager is still switching" says so.
+---@param name string the name of a setting of live_settings
+---@param value any|nil a value that live_settings.read_value gave
+function ProfileController:set_live_setting(name, value)
+    if self:refuse_while_busy() then
+        return
+    end
+    local entry = live_settings.find(name) --[[@as LiveSetting]]
+    if entry.is_kept_in_state then
+        self:set_monitor_matching(value or self.base_settings.initial_monitor_matching)
+        return
+    end
+    local overrides = deep_copy.copy(self.state.setting_overrides)
+    overrides[name] = value
+    local _, kept, lines = live_settings.apply(self.base_settings, overrides)
+    if #lines > 0 then
+        hs.alert.show(lines[1])
+        return
+    end
+    self.state = profile_state.with_setting_overrides(self.state, kept)
+    self:apply_setting_overrides()
+    self:write_state()
+end
+
+---Opens the window "Settings…", or brings it to the front.
+function ProfileController:open_settings_window()
+    if self.settings_window then
+        settings_window.bring_to_front(self.settings_window)
+        return
+    end
+    self.settings_window = settings_window.open({
+        read_values = function()
+            return self:read_live_values()
+        end,
+        read_defaults = function()
+            return self:read_live_defaults()
+        end,
+        set_value = function(name, value)
+            self:set_live_setting(name, value)
+        end,
+        open_color_window = function()
+            self:open_color_window()
+        end,
+        on_closed = function()
+            self.settings_window = nil
+        end,
+    })
+end
+
 ---Opens the window that changes the shortcuts of every tool, or brings it to the front.
 function ProfileController:open_shortcut_window()
     if self.shortcut_window then
@@ -1123,6 +1212,9 @@ function ProfileController:set_monitor_matching(matching)
     self:write_state()
     self:refresh_menu()
     hs.alert.show("Same monitor configuration by " .. monitor_matching.label_of(matching):lower())
+    if self.settings_window then
+        settings_window.redraw(self.settings_window)
+    end
 end
 
 ---@return Profile the active profile, or profile 0 while no profile is active, whose application
@@ -1512,6 +1604,9 @@ local URL_ACTION_HANDLERS = {
     [url_command.SEARCH_WINDOWS] = function(controller)
         controller:open_window_search()
     end,
+    [url_command.OPEN_SETTINGS] = function(controller)
+        controller:open_settings_window()
+    end,
 }
 
 ---@param params table<string, string>
@@ -1769,6 +1864,9 @@ function ProfileController:list_shortcut_actions()
         toggle_window_search = function()
             self:toggle_window_search()
         end,
+        open_settings_window = function()
+            self:open_settings_window()
+        end,
     })
 end
 
@@ -1894,6 +1992,7 @@ function profile_controller.start(unchecked_settings, shortcuts)
     end
     local controller = setmetatable({
         settings = settings,
+        base_settings = deep_copy.copy(settings),
         log = hs.logger.new("desktop_mgr", "info"),
         watchers = {},
         is_switch_or_restore_running = false,
@@ -1916,6 +2015,11 @@ function profile_controller.start(unchecked_settings, shortcuts)
     if warning then
         controller.log.w(warning)
         notify(warning)
+    end
+    local kept_overrides, override_lines = controller:apply_setting_overrides()
+    controller.state = profile_state.with_setting_overrides(controller.state, kept_overrides)
+    for _, line in ipairs(override_lines) do
+        controller.log.w(line)
     end
     controller:pause_at_start(read_start())
     controller.screen_signature = read_screens.read_signature()
