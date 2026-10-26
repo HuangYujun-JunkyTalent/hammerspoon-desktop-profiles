@@ -3,6 +3,7 @@ local app_pool = require("desktop_manager.core.app_pool")
 local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
+local live_settings = require("desktop_manager.core.live_settings")
 local monitor_matching = require("desktop_manager.core.monitor_matching")
 local utf8_text = require("desktop_manager.core.utf8_text")
 
@@ -34,6 +35,8 @@ local profile_state = {}
 ---@field desktop_counts DesktopCounts the number of desktops of each display
 ---@field highlight_colors table<string, table> the colors of the search that the window of the
 ---colors chose, by the names of highlight_colors, over the setting `search_highlight_colors`
+---@field setting_overrides table<string, any> the settings that the window "Settings…" chose, by
+---their names, over the values of `default_settings.lua`
 
 ---Version 2 records the shown desktop of each screen and the screen of the focus, where version 1
 ---recorded the desktop in front, and records the number of desktops that each screen had.
@@ -100,6 +103,7 @@ function profile_state.new_state(matching)
         app_pool = app_pool.new(),
         desktop_counts = desktop_counts.new(),
         highlight_colors = {},
+        setting_overrides = {},
     }
 end
 
@@ -247,6 +251,13 @@ end
 ---@return State
 function profile_state.with_highlight_colors(state, colors)
     return with_field(state, "highlight_colors", colors)
+end
+
+---@param state State
+---@param overrides table<string, any>
+---@return State
+function profile_state.with_setting_overrides(state, overrides)
+    return with_field(state, "setting_overrides", overrides)
 end
 
 ---@param state State
@@ -664,6 +675,7 @@ function profile_state.decode(raw)
     state.last_seen_login_time = to_integer(raw.last_seen_login_time)
     state.app_pool = app_pool.decode(raw.app_pool, raw.managed_applications)
     state.highlight_colors = highlight_colors.decode(raw.highlight_colors)
+    state.setting_overrides = live_settings.decode(raw.setting_overrides)
     return state, nil
 end
 
