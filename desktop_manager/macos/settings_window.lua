@@ -77,7 +77,8 @@ const post = (body) => window.webkit.messageHandlers.settings.postMessage(body);
 let model = initialModel;
 const shown = (value) => Number.isInteger(value) ? String(value)
   : String(Math.round(value * 10000) / 10000);
-const same = (first, second) => JSON.stringify(first) === JSON.stringify(second);
+const same = (first, second) => typeof first === "object"
+  ? first.w === second.w && first.h === second.h : first === second;
 const slider = (id, row, value) => "<input type='range' id='" + id + "' min='" + row.minimum
   + "' max='" + row.maximum + "' step='" + row.step + "' value='" + value + "'>"
   + "<span class='number' id='" + id + "-shown'>" + shown(value) + "</span>";

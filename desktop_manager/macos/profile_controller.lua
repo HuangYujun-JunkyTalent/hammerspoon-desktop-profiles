@@ -1081,16 +1081,12 @@ function ProfileController:open_color_window()
     })
 end
 
----Puts the overrides of the state over the settings of the file, in the table of the settings.
----@return table<string, any> kept the overrides that the settings took
----@return string[] lines one line for each override left out
-function ProfileController:apply_setting_overrides()
-    local settings, kept, lines =
-        live_settings.apply(self.base_settings, self.state.setting_overrides)
+---Copies the settings into the table of the settings that every part of the desktop manager holds.
+---@param settings Settings
+function ProfileController:adopt_settings(settings)
     for name, value in pairs(settings) do
         self.settings[name] = value
     end
-    return kept, lines
 end
 
 ---@return table<string, any> the value of each setting of the window "Settings…" now
@@ -1131,13 +1127,13 @@ function ProfileController:set_live_setting(name, value)
     end
     local overrides = deep_copy.copy(self.state.setting_overrides)
     overrides[name] = value
-    local _, kept, lines = live_settings.apply(self.base_settings, overrides)
+    local settings, kept, lines = live_settings.apply(self.base_settings, overrides)
     if #lines > 0 then
         hs.alert.show(lines[1])
         return
     end
     self.state = profile_state.with_setting_overrides(self.state, kept)
-    self:apply_setting_overrides()
+    self:adopt_settings(settings)
     self:write_state()
 end
 
@@ -2016,7 +2012,9 @@ function profile_controller.start(unchecked_settings, shortcuts)
         controller.log.w(warning)
         notify(warning)
     end
-    local kept_overrides, override_lines = controller:apply_setting_overrides()
+    local live, kept_overrides, override_lines =
+        live_settings.apply(controller.base_settings, controller.state.setting_overrides)
+    controller:adopt_settings(live)
     controller.state = profile_state.with_setting_overrides(controller.state, kept_overrides)
     for _, line in ipairs(override_lines) do
         controller.log.w(line)
