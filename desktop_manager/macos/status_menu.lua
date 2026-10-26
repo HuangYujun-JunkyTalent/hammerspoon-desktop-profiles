@@ -104,42 +104,62 @@ local function build_profile_items(state, settings, actions)
     return items
 end
 
+local SEPARATOR = { title = "-" }
+
+---The items that act on the active profile, each naming it, such as "Deactivate “Writing”", and
+---dimmed while no profile is active, apart from the save, which also updates profile 0.
+---@param state State
+---@param settings Settings
+---@param actions StatusMenuActions
+---@return table[] the items of an hs.menubar menu
+local function build_active_profile_items(state, settings, actions)
+    local number = state.active_profile_number
+    local name = number and profile_state.profile_or_default(state, number).name
+    local save_title = "Save layout now"
+    if name and state.is_active_profile_paused then
+        save_title = string.format("Save layout of “%s” and end the pause", name)
+    elseif name then
+        save_title = string.format("Save layout of “%s” now", name)
+    end
+    return {
+        {
+            title = name and string.format("Deactivate “%s”", name) or "Deactivate profile",
+            disabled = number == nil,
+            fn = actions.deactivate_profile,
+        },
+        {
+            title = name and string.format("Rename “%s”…", name) or "Rename profile…",
+            disabled = number == nil,
+            fn = actions.rename_active_profile,
+        },
+        { title = save_title, fn = actions.save_arrangement },
+        { title = "Clear a profile", menu = build_clear_items(state, settings, actions) },
+    }
+end
+
+---The menu in four groups: the profiles, the actions on the active profile, the application
+---numbers, and the windows of the desktop manager with the diagnostics.
 ---@param state State
 ---@param settings Settings
 ---@param actions StatusMenuActions
 ---@return table[] the items of an hs.menubar menu
 local function build_items(state, settings, actions)
-    local items = build_profile_items(state, settings, actions)
-    table.insert(items, { title = "-" })
-    table.insert(items, {
-        title = "Deactivate profile",
-        disabled = state.active_profile_number == nil,
-        fn = actions.deactivate_profile,
-    })
-    table.insert(items, {
-        title = "Rename active profile…",
-        disabled = state.active_profile_number == nil,
-        fn = actions.rename_active_profile,
-    })
-    table.insert(
-        items,
-        { title = "Clear profile", menu = build_clear_items(state, settings, actions) }
-    )
-    table.insert(items, { title = "Managed applications…", fn = actions.open_app_pool_window })
-    table.insert(items, { title = "Keyboard shortcuts…", fn = actions.open_shortcut_window })
-    table.insert(items, { title = "Settings…", fn = actions.open_settings_window })
     local numbering_profile =
         profile_state.profile_or_default(state, profile_state.find_numbering_profile_number(state))
+    local items = build_profile_items(state, settings, actions)
+    table.insert(items, SEPARATOR)
+    for _, item in ipairs(build_active_profile_items(state, settings, actions)) do
+        table.insert(items, item)
+    end
+    table.insert(items, SEPARATOR)
     table.insert(items, {
         title = "Application numbers",
         menu = build_app_number_items(numbering_profile, settings.app_number_count, actions),
     })
-    table.insert(items, { title = "-" })
-    table.insert(items, {
-        title = state.is_active_profile_paused and "Save arrangement now and end the pause"
-            or "Save arrangement now",
-        fn = actions.save_arrangement,
-    })
+    table.insert(items, SEPARATOR)
+    table.insert(items, { title = "Settings…", fn = actions.open_settings_window })
+    table.insert(items, { title = "Managed applications…", fn = actions.open_app_pool_window })
+    table.insert(items, { title = "Keyboard shortcuts…", fn = actions.open_shortcut_window })
     table.insert(
         items,
         { title = "Print diagnostics to the console", fn = actions.print_diagnostics }

@@ -372,7 +372,7 @@ return {
         local routes = {
             function(world)
                 controller_world
-                    .find_menu_item(world, "Save arrangement now and end the pause")
+                    .find_menu_item(world, "Save layout of “Profile 1” and end the pause")
                     .fn()
             end,
             function(world)
@@ -393,7 +393,9 @@ return {
         world.minimize_window(42)
         world.connect_screen(controller_world.DELL_SCREEN, { 20 })
         world.screen_watchers[1]()
-        controller_world.find_menu_item(world, "Save arrangement now and end the pause").fn()
+        controller_world
+            .find_menu_item(world, "Save layout of “Profile 1” and end the pause")
+            .fn()
         expect.equal(controller.state.is_active_profile_paused, true)
         world.advance(controller_world.SETTLE_SECONDS)
         expect_profile_1_as_saved(controller, saved)

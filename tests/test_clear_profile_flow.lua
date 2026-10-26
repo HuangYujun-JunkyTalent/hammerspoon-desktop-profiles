@@ -7,7 +7,7 @@ return {
         local world = controller_world.start_world()
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
-        local clear_items = controller_world.find_menu_item(world, "Clear profile").menu
+        local clear_items = controller_world.find_menu_item(world, "Clear a profile").menu
         expect.equal(clear_items[1].disabled, false)
         expect.equal(clear_items[2].disabled, true)
     end,
