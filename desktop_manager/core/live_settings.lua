@@ -29,9 +29,12 @@ live_settings.KIND = enumeration.define({
 
 ---@alias LiveSettingKind "choice"|"number"|"size"
 
+---The sections of the window, by their titles, in the order of the window.
 live_settings.SECTION = enumeration.define({
-    SWITCHES = "Switches",
-    LIST_AND_SEARCH = "List and search",
+    SWITCHING = "Switching profiles",
+    MONITORS_AND_LOGIN = "Monitors and login",
+    CONTENT = "What the list and the search show",
+    LAYOUT = "Layout of the list",
 })
 
 ---@class LiveSettingChoice
@@ -51,87 +54,85 @@ live_settings.SECTION = enumeration.define({
 ---@field is_integer boolean|nil whether a number is a whole number
 ---@field is_kept_in_state boolean|nil whether the state holds the value in a field of its own
 
----@type LiveSettingChoice[]
-local MONITOR_MATCHING_CHOICES = {}
-for _, matching in ipairs(monitor_matching.all()) do
-    table.insert(MONITOR_MATCHING_CHOICES, {
-        value = matching,
-        label = monitor_matching.label_of(matching),
-    })
-end
-
 ---The settings of the window, in the order of the window.
 ---@type LiveSetting[]
 live_settings.ENTRIES = {
     {
         name = "unmatched_window_action",
-        section = live_settings.SECTION.SWITCHES,
-        label = "A recorded window that is gone",
-        description = "What a switch does for a recorded window in sight that no open window"
-            .. " matches",
+        section = live_settings.SECTION.SWITCHING,
+        label = "A window that is no longer open",
+        description = "A window that the profile recorded in sight, with no open window to match",
         kind = live_settings.KIND.CHOICE,
         choices = {
             {
                 value = unmatched_window_action.OPEN_NEW_WINDOW,
-                label = "Open a new window of the application at the recorded place",
+                label = "Open a new window of its app in its place",
             },
-            {
-                value = unmatched_window_action.FORGET,
-                label = "Open nothing and remove the window from the profile",
-            },
+            { value = unmatched_window_action.FORGET, label = "Remove it from the profile" },
         },
     },
     {
         name = "match_windows_by",
-        section = live_settings.SECTION.SWITCHES,
-        label = "Pair a record with an open window by",
-        description = "What a switch tries first when it pairs a recorded window with an open one",
+        section = live_settings.SECTION.SWITCHING,
+        label = "Recognize a window by",
+        description = "How a switch finds the open window of each window that the profile recorded",
         kind = live_settings.KIND.CHOICE,
         choices = {
-            { value = match_windows_by.TITLE, label = "Title, then window id" },
-            { value = match_windows_by.ID, label = "Window id" },
+            { value = match_windows_by.TITLE, label = "Its title, then its window id" },
+            { value = match_windows_by.ID, label = "Its window id" },
         },
     },
     {
         name = "missing_window_policy",
-        section = live_settings.SECTION.SWITCHES,
+        section = live_settings.SECTION.SWITCHING,
         label = "A reopened window",
-        description = "Whether a window of the same application with the same title takes the"
-            .. " records of a closed window",
+        description = "A new window with the app and the title of a window that closed",
         kind = live_settings.KIND.CHOICE,
         choices = {
-            { value = missing_window_policy.MATCH_TITLE, label = "Takes the records by its title" },
+            {
+                value = missing_window_policy.MATCH_TITLE,
+                label = "Takes the place of the closed one",
+            },
             { value = missing_window_policy.MATCH_ID_ALONE, label = "Counts as a new window" },
         },
     },
     {
         name = "concealment_method",
-        section = live_settings.SECTION.SWITCHES,
-        label = "Windows of another profile",
-        description = "How a switch takes a window out of sight",
+        section = live_settings.SECTION.SWITCHING,
+        label = "Windows of the other profiles",
+        description = "How a switch puts away the windows that the new profile does not hold",
         kind = live_settings.KIND.CHOICE,
         choices = {
-            { value = concealment_method.MINIMIZE_WINDOWS, label = "Minimize the windows" },
+            { value = concealment_method.MINIMIZE_WINDOWS, label = "Minimize them" },
             {
                 value = concealment_method.HIDE_APPLICATIONS,
-                label = "Hide an application once all its windows go out of sight",
+                label = "Hide their app once all its windows are put away",
             },
         },
     },
     {
         name = "monitor_matching",
-        section = live_settings.SECTION.SWITCHES,
-        label = "Same monitor configuration by",
-        description = "When two monitor configurations share the records of a profile",
+        section = live_settings.SECTION.MONITORS_AND_LOGIN,
+        label = "Same monitor setup when",
+        description = "A profile keeps one layout for each monitor setup",
         kind = live_settings.KIND.CHOICE,
-        choices = MONITOR_MATCHING_CHOICES,
+        choices = {
+            {
+                value = monitor_matching.BY_COUNT,
+                label = "The number of external monitors is the same",
+            },
+            {
+                value = monitor_matching.BY_IDENTITY,
+                label = "Each external monitor has the same name",
+            },
+        },
         is_kept_in_state = true,
     },
     {
         name = "pause_after_login_seconds",
-        section = live_settings.SECTION.SWITCHES,
+        section = live_settings.SECTION.MONITORS_AND_LOGIN,
         label = "Pause after a login, in seconds",
-        description = "A start of Hammerspoon this soon after a login pauses the active profile,"
+        description = "Hammerspoon starting this soon after a login pauses the active profile,"
             .. " and 0 never pauses it",
         kind = live_settings.KIND.NUMBER,
         minimum = 0,
@@ -141,58 +142,35 @@ live_settings.ENTRIES = {
     },
     {
         name = "hidden_application_windows",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
-        label = "Windows of hidden applications",
-        description = "Which windows of a hidden application the list and the search show",
+        section = live_settings.SECTION.CONTENT,
+        label = "Windows of hidden apps",
+        description = "Choosing one of them unhides its app",
         kind = live_settings.KIND.CHOICE,
         choices = {
-            { value = hidden_application_windows.LEAVE_OUT, label = "None" },
+            { value = hidden_application_windows.LEAVE_OUT, label = "Leave them out" },
             {
                 value = hidden_application_windows.LIST_WHERE_FOUND,
-                label = "The standard windows and those on desktops out of view",
+                label = "Show the ones that macOS still lists",
             },
-            { value = hidden_application_windows.LIST_ALL, label = "Every window" },
-        },
-    },
-    {
-        name = "list_layout",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
-        label = "Layout of the list",
-        description = "How the list of Control-Option arranges the applications",
-        kind = live_settings.KIND.CHOICE,
-        choices = {
-            { value = list_layout.COLUMNS, label = "A column per application" },
-            { value = list_layout.COLUMNS_PER_DISPLAY, label = "Columns grouped by display" },
-            { value = list_layout.ROWS, label = "A line per application and per window" },
-        },
-    },
-    {
-        name = "list_sizing",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
-        label = "Size of the list",
-        description = "How the list uses the screen",
-        kind = live_settings.KIND.CHOICE,
-        choices = {
-            { value = list_sizing.FILL_SCREEN, label = "Grow to fill the screen" },
-            { value = list_sizing.FIXED, label = "Keep the sizes below" },
+            { value = hidden_application_windows.LIST_ALL, label = "Show all of them" },
         },
     },
     {
         name = "preview_method",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
-        label = "Beside a title",
-        description = "What the list and the search show for a window",
+        section = live_settings.SECTION.CONTENT,
+        label = "Preview of a window",
+        description = "What shows beside the title of each window",
         kind = live_settings.KIND.CHOICE,
         choices = {
             { value = preview_method.BLURRED_SNAPSHOTS, label = "A blurred image of the window" },
-            { value = preview_method.APP_ICONS, label = "The icon of the application" },
+            { value = preview_method.APP_ICONS, label = "The icon of its app" },
         },
     },
     {
         name = "preview_size",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
+        section = live_settings.SECTION.CONTENT,
         label = "Size of a preview",
-        description = "The width and the height, as fractions of the screen in front",
+        description = "Width and height, as a share of the screen in front",
         kind = live_settings.KIND.SIZE,
         minimum = 0.03,
         maximum = 0.3,
@@ -200,19 +178,42 @@ live_settings.ENTRIES = {
     },
     {
         name = "preview_blur",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
+        section = live_settings.SECTION.CONTENT,
         label = "Blur of a preview",
-        description = "1 keeps full detail, 2 half of it, 4 a quarter",
+        description = "1 is sharp, 2 keeps half of the detail, 4 a quarter",
         kind = live_settings.KIND.NUMBER,
         minimum = 1,
         maximum = 8,
         step = 0.5,
     },
     {
+        name = "list_layout",
+        section = live_settings.SECTION.LAYOUT,
+        label = "Arrangement",
+        description = "How the list of Control-Option places the apps",
+        kind = live_settings.KIND.CHOICE,
+        choices = {
+            { value = list_layout.COLUMNS, label = "One column per app" },
+            { value = list_layout.COLUMNS_PER_DISPLAY, label = "One column per app, by display" },
+            { value = list_layout.ROWS, label = "One row per app, with its windows below" },
+        },
+    },
+    {
+        name = "list_sizing",
+        section = live_settings.SECTION.LAYOUT,
+        label = "Size",
+        description = "Whether the list grows to use the screen",
+        kind = live_settings.KIND.CHOICE,
+        choices = {
+            { value = list_sizing.FILL_SCREEN, label = "Grow to fill the screen" },
+            { value = list_sizing.FIXED, label = "Keep the sizes set here" },
+        },
+    },
+    {
         name = "list_font_size",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
+        section = live_settings.SECTION.LAYOUT,
         label = "Size of the titles",
-        description = "As a fraction of the height of the screen in front",
+        description = "As a share of the height of the screen in front",
         kind = live_settings.KIND.NUMBER,
         minimum = 0.006,
         maximum = 0.03,
@@ -220,21 +221,21 @@ live_settings.ENTRIES = {
     },
     {
         name = "title_overflow",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
+        section = live_settings.SECTION.LAYOUT,
         label = "A long title",
-        description = "What happens to a title longer than its space",
+        description = "A title longer than its space",
         kind = live_settings.KIND.CHOICE,
         choices = {
-            { value = title_overflow.WRAP, label = "Flows over several lines" },
-            { value = title_overflow.TRUNCATE, label = "Ends in an ellipsis" },
+            { value = title_overflow.WRAP, label = "Wraps onto more lines" },
+            { value = title_overflow.TRUNCATE, label = "Ends with an ellipsis" },
             { value = title_overflow.SCROLL, label = "Scrolls while its window is selected" },
         },
     },
     {
         name = "title_line_count",
-        section = live_settings.SECTION.LIST_AND_SEARCH,
-        label = "Lines of a long title",
-        description = "The most lines of a title that flows over several lines",
+        section = live_settings.SECTION.LAYOUT,
+        label = "Lines of a wrapped title",
+        description = "The most lines that a long title wraps onto",
         kind = live_settings.KIND.NUMBER,
         minimum = 1,
         maximum = 6,

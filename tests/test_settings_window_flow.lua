@@ -20,7 +20,7 @@ return {
         expect.equal(model.values.unmatched_window_action, unmatched_window_action.OPEN_NEW_WINDOW)
         expect.equal(model.values.monitor_matching, "by_count")
         expect.equal(model.defaults.preview_size, { w = 0.1, h = 0.1 })
-        expect.equal(model.sections[1].title, "Switches")
+        expect.equal(model.sections[1].title, "Switching profiles")
         world.post_to_webview("settings", { kind = "done" })
         expect.equal(controller.settings_window, nil)
         world.url_handlers["desktop-manager"]("desktop-manager", { action = "open-settings" })

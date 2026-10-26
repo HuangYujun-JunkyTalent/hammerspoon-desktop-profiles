@@ -1,9 +1,17 @@
 local default_settings = require("desktop_manager.default_settings")
 local expect = require("tests.expect")
+local concealment_method = require("desktop_manager.core.concealment_method")
+local hidden_application_windows = require("desktop_manager.core.hidden_application_windows")
 local list_layout = require("desktop_manager.core.list_layout")
+local list_sizing = require("desktop_manager.core.list_sizing")
 local live_settings = require("desktop_manager.core.live_settings")
+local match_windows_by = require("desktop_manager.core.match_windows_by")
+local missing_window_policy = require("desktop_manager.core.missing_window_policy")
+local monitor_matching = require("desktop_manager.core.monitor_matching")
+local preview_method = require("desktop_manager.core.preview_method")
 local profile_state = require("desktop_manager.core.profile_state")
 local settings_check = require("desktop_manager.core.settings_check")
+local title_overflow = require("desktop_manager.core.title_overflow")
 local unmatched_window_action = require("desktop_manager.core.unmatched_window_action")
 
 ---@return Settings the checked default settings
@@ -12,7 +20,50 @@ local function check_defaults()
     return checked --[[@as Settings]]
 end
 
+---The current values of each closed set that a choice of the window offers, by the name of the
+---setting.
+local VALUES_BY_CHOICE = {
+    concealment_method = {
+        concealment_method.MINIMIZE_WINDOWS,
+        concealment_method.HIDE_APPLICATIONS,
+    },
+    hidden_application_windows = {
+        hidden_application_windows.LEAVE_OUT,
+        hidden_application_windows.LIST_WHERE_FOUND,
+        hidden_application_windows.LIST_ALL,
+    },
+    list_layout = { list_layout.COLUMNS, list_layout.COLUMNS_PER_DISPLAY, list_layout.ROWS },
+    list_sizing = { list_sizing.FILL_SCREEN, list_sizing.FIXED },
+    match_windows_by = { match_windows_by.TITLE, match_windows_by.ID },
+    missing_window_policy = {
+        missing_window_policy.MATCH_TITLE,
+        missing_window_policy.MATCH_ID_ALONE,
+    },
+    monitor_matching = monitor_matching.all(),
+    preview_method = { preview_method.BLURRED_SNAPSHOTS, preview_method.APP_ICONS },
+    title_overflow = { title_overflow.WRAP, title_overflow.TRUNCATE, title_overflow.SCROLL },
+    unmatched_window_action = {
+        unmatched_window_action.OPEN_NEW_WINDOW,
+        unmatched_window_action.FORGET,
+    },
+}
+
 return {
+    each_choice_offers_every_value_of_its_setting_once = function()
+        for _, entry in ipairs(live_settings.ENTRIES) do
+            if entry.kind == live_settings.KIND.CHOICE then
+                local offered = {}
+                for _, choice in ipairs(entry.choices) do
+                    table.insert(offered, choice.value)
+                end
+                table.sort(offered)
+                local expected = { table.unpack(VALUES_BY_CHOICE[entry.name]) }
+                table.sort(expected)
+                expect.equal(offered, expected)
+            end
+        end
+    end,
+
     each_entry_names_a_setting_of_the_file_or_the_monitor_matching = function()
         local defaults = check_defaults()
         for _, entry in ipairs(live_settings.ENTRIES) do

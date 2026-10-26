@@ -34,14 +34,11 @@ return {
         world.hotkeys["1"]()
         world.advance(controller_world.SETTLE_SECONDS)
         local titles = read_titles_after_profiles(world)
-        expect.equal(
-            { titles[2], titles[3], titles[4] },
-            {
-                "Deactivate “Profile 1”",
-                "Rename “Profile 1”…",
-                "Save layout of “Profile 1” now",
-            }
-        )
+        expect.equal({ titles[2], titles[3], titles[4] }, {
+            "Deactivate “Profile 1”",
+            "Rename “Profile 1”…",
+            "Save layout of “Profile 1” now",
+        })
         expect.equal(
             controller_world.find_menu_item(world, "Deactivate “Profile 1”").disabled,
             false
