@@ -98,9 +98,9 @@ A change during the restore of an earlier change starts the wait again as well, 
 - When the new configuration is new to the profile, an alert says that the windows stay where macOS put them, and the profile starts recording the new configuration.
   The desktop manager then removes the empty desktops that macOS left, as the next section says.
 
-A choice in the menu bar item sets when two monitor configurations count as the same.
+The row "Same monitor configuration by" of [the window "Settings…"](#settings-in-the-menu-bar-item-changes-the-behaviour-of-the-desktop-manager-while-it-runs) sets when two monitor configurations count as the same.
 
-| Choice under "Same monitor configuration by" | Configurations that count as different |
+| Choice of "Same monitor configuration by" | Configurations that count as different |
 |---|---|
 | Number of external monitors, the default | the built-in display alone, the built-in display with one external monitor, two external monitors, and so on |
 | Name of each external monitor | also the built-in display with `LG TV SSCR2` and the built-in display with `DELL U2720Q` |
@@ -396,9 +396,22 @@ The module leaves out a shortcut in two cases, and a notification and the consol
 The list of application numbers stays open while you hold the modifiers of the shortcut that opened it.
 The keys inside the search and the list, such as Escape, Return, Tab and the arrows, are fixed.
 
-## "Search colors…" in the menu bar item picks the colors of the search of the windows
+## "Settings…" in the menu bar item changes the behaviour of the desktop manager while it runs
 
-"Search colors…" in the menu bar item ◧ opens a window that picks the five colors.
+"Settings…" in the menu bar item ◧ opens a window with one row per setting that the column "In Settings…" of [the table of the settings](#settings-of-the-desktop-manager-live-in-desktop_managerdefault_settingslua) marks.
+The section Switches holds the settings of a switch, such as `unmatched_window_action`, which opens a new window for a recorded window that is gone or forgets the window.
+The section List and search holds the settings of the list of Control-Option and of the search.
+A choice offers the values of the setting by name, a number has a slider, and the size of a preview has a slider for its width and one for its height.
+Each change is saved with the profiles in `~/.hammerspoon/desktop-manager-state.json`, over the value of `desktop_manager/default_settings.lua`, and the next switch, list or search uses it without a reload of Hammerspoon.
+`pause_after_login_seconds` counts from the next start of Hammerspoon.
+↺ on a row returns the setting to the value of the file, and a later edit of the file then changes it.
+A change during a switch, a restore or a press of the list or the search gives "Desktop Manager is still switching" and does nothing, because the work reads the settings at several of its steps.
+A saved choice that the checks of the settings refuse, such as after an edit of the file, is left out at the start, with a line in the console of Hammerspoon.
+The URL `action=open-settings` and the action "Open the window Settings of the desktop manager" in "Keyboard shortcuts…", which has no default shortcut, open the window as well.
+
+## "Search colors…" in the window "Settings…" picks the colors of the search of the windows
+
+The button "Search colors…" of the window "Settings…" opens a window that picks the five colors.
 A preview in the style of the search panel follows each move of a color picker or an opacity slider.
 Four presets set all five colors with one click: Blue and amber, the default, Green and gold, Violet and teal, and High contrast.
 ↺ gives one color its default again, and Restore Defaults gives all five theirs.
@@ -421,29 +434,30 @@ A name or a color that the setting cannot use stops the start of the desktop man
 ## Settings of the desktop manager live in `desktop_manager/default_settings.lua`
 
 To change a setting, edit the file and choose Reload Config.
+The window "Settings…" changes the settings that the column "In Settings…" marks while the desktop manager runs, over the values of the file, as [its section](#settings-in-the-menu-bar-item-changes-the-behaviour-of-the-desktop-manager-while-it-runs) explains.
 The file writes each choice through its module, such as `list_layout.ROWS` for `rows`.
 
-| Setting | Default | What it sets |
-|---|---|---|
-| `profile_count` | 9 | the number of profiles |
-| `app_number_count` | 9 | the number of application numbers |
-| `search_highlight_colors` | blue for the selection, orange for the matches | the default colors behind the selected, hovered and matching items of the search of the windows, under the colors of the window "Search colors…", as [the section on the colors of the search](#search-colors-in-the-menu-bar-item-picks-the-colors-of-the-search-of-the-windows) explains |
-| `concealment_method` | `minimize_windows` | how a window goes out of sight: `minimize_windows` minimizes it, and `hide_applications` hides its application once all the windows of the application go out of sight |
-| `match_windows_by` | `title` | how a switch pairs a record with an open window: `title` by the title and then the window id, and `id` by the window id, as [the section on switches](#a-switch-changes-only-the-windows-that-differ-from-the-record) explains |
-| `missing_window_policy` | `match_title` | whether a window of the same application with the same title takes the records of a recorded window that no longer exists, as the same section explains |
-| `unmatched_window_action` | `open_new_window` | what a switch does for a record in sight that no open window matches: `open_new_window` opens a new window of the same application, and `forget` opens none and drops the record from the profile, as the same section explains |
-| `hidden_application_windows` | `leave_out` | which windows of hidden applications the list of Control-Option and the search show |
-| `list_layout` | `columns` | how the list arranges the applications |
-| `list_sizing` | `fill_screen` | how the list uses the screen |
-| `preview_method` | `blurred_snapshots` | what the list shows beside a title: `blurred_snapshots` a blurred image of the window, or the icon for a window without an image, and `app_icons` the icon of the application |
-| `preview_blur` | 1 | how blurred a preview is: 1 keeps full detail, 2 half of it, 4 a quarter |
-| `preview_size` | 0.1 by 0.1 | the width and height of a preview, as fractions of the screen in front |
-| `list_font_size` | 0.012 | the size of the titles, as a fraction of the height of the screen in front |
-| `title_overflow` | `wrap` | what happens to a title longer than its space |
-| `title_line_count` | 2 | the most lines of a title under `wrap` |
-| `url_event_name` | `desktop-manager` | the host of the URLs, as [the section on URLs](#a-url-reaches-every-action-of-the-desktop-manager) explains |
-| `pause_after_login_seconds` | 300 | the time after a login within which the first start of Hammerspoon pauses the active profile, and 0 turns the pause off, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-a-login-pauses-the-active-profile) explains |
-| `timing` | | the waits and time limits of a switch, in seconds |
+| Setting | Default | In Settings… | What it sets |
+|---|---|---|---|
+| `profile_count` | 9 | no | the number of profiles |
+| `app_number_count` | 9 | no | the number of application numbers |
+| `search_highlight_colors` | blue for the selection, orange for the matches | no | the default colors behind the selected, hovered and matching items of the search of the windows, under the colors of the window "Search colors…", as [the section on the colors of the search](#search-colors-in-the-window-settings-picks-the-colors-of-the-search-of-the-windows) explains |
+| `concealment_method` | `minimize_windows` | yes | how a window goes out of sight: `minimize_windows` minimizes it, and `hide_applications` hides its application once all the windows of the application go out of sight |
+| `match_windows_by` | `title` | yes | how a switch pairs a record with an open window: `title` by the title and then the window id, and `id` by the window id, as [the section on switches](#a-switch-changes-only-the-windows-that-differ-from-the-record) explains |
+| `missing_window_policy` | `match_title` | yes | whether a window of the same application with the same title takes the records of a recorded window that no longer exists, as the same section explains |
+| `unmatched_window_action` | `open_new_window` | yes | what a switch does for a record in sight that no open window matches: `open_new_window` opens a new window of the same application, and `forget` opens none and drops the record from the profile, as the same section explains |
+| `hidden_application_windows` | `leave_out` | yes | which windows of hidden applications the list of Control-Option and the search show |
+| `list_layout` | `columns` | yes | how the list arranges the applications |
+| `list_sizing` | `fill_screen` | yes | how the list uses the screen |
+| `preview_method` | `blurred_snapshots` | yes | what the list shows beside a title: `blurred_snapshots` a blurred image of the window, or the icon for a window without an image, and `app_icons` the icon of the application |
+| `preview_blur` | 1 | yes | how blurred a preview is: 1 keeps full detail, 2 half of it, 4 a quarter |
+| `preview_size` | 0.1 by 0.1 | yes | the width and height of a preview, as fractions of the screen in front |
+| `list_font_size` | 0.012 | yes | the size of the titles, as a fraction of the height of the screen in front |
+| `title_overflow` | `wrap` | yes | what happens to a title longer than its space |
+| `title_line_count` | 2 | yes | the most lines of a title under `wrap` |
+| `url_event_name` | `desktop-manager` | no | the host of the URLs, as [the section on URLs](#a-url-reaches-every-action-of-the-desktop-manager) explains |
+| `pause_after_login_seconds` | 300 | yes | the time after a login within which the first start of Hammerspoon pauses the active profile, and 0 turns the pause off, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-a-login-pauses-the-active-profile) explains |
+| `timing` | | no | the waits and time limits of a switch, in seconds |
 
 The shortcuts are no settings of this file, as [the section on keyboard shortcuts](#keyboard-shortcuts-in-the-menu-bar-item-changes-the-shortcut-of-every-action) explains.
 
@@ -555,13 +569,14 @@ A script title is fixed, so the titles name the profiles by number.
 | Deactivate the active profile | Command-Option-Shift-0 | `action=deactivate` |
 | Activate profile N, or deactivate it while it is active, or restore it while it is paused | Command-Option-Shift-N | `action=toggle&profile=N` |
 | Rename profile N | menu, Rename active profile… | `action=rename&profile=N&name=Writing` |
-| Change when monitor configurations are the same | menu, Same monitor configuration by | `action=cycle-monitor-matching` |
+| Change when monitor configurations are the same | Settings…, Same monitor configuration by | `action=cycle-monitor-matching` |
 | Update the record of the active profile now, and end a pause | menu, Save arrangement now | `action=save` |
 | Give number N to a running application | menu, Application numbers | `action=number-app&number=N&app=Firefox` |
 | Return number N to the default | menu, Application numbers | `action=release-app-number&number=N` |
 | Return every number to the default | Control-Option-0 | `action=reset-app-numbers` |
 | Clear the saved layouts of profile N, after a confirmation | Control-Option-Command-N, or menu, Clear profile | `action=clear&profile=N` |
 | Show the search of the windows | Control-Option-Command-Space | `action=search-windows` |
+| Open the window of the settings | menu, Settings… | `action=open-settings` |
 
 The numbers belong to the active profile, or to profile 0 while no profile is active.
 In a terminal, `open -g "hammerspoon://desktop-manager?action=activate&profile=2"` activates profile 2.
@@ -957,8 +972,8 @@ Quit Asyar and start it again, so that it loads the extension.
 | `init.lua` | the file that Hammerspoon loads, which starts the center of the shortcuts and the two tools |
 | `keyboard_shortcuts/core/` | the registry of the shortcuts of every tool, with the defaults, the overrides and the shortcuts left out, the shortcuts of macOS that a shortcut collides with, and the content of the window "Keyboard shortcuts…" |
 | `keyboard_shortcuts/macos/` | the center that binds the shortcuts and saves the overrides, the reading and turning off of macOS shortcuts, the window "Keyboard shortcuts…", and the frame of the web windows of both tools |
-| `desktop_manager/core/` | the decisions of the desktop manager: the checks of the settings, the actions with their default shortcuts, monitor configurations, the desktops of each screen, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers and the view of their list, the search of the windows and its scores, the pacing of the previews, the output of the helper of the previews, the windows of macOS that accessibility does not reach and the ones to bring into view, the text of the log of a press in Mission Control, the text of the console line of an opening of the search, the pause of the active profile after a login, URL commands, and the closed sets of the settings |
-| `desktop_manager/macos/` | the calls of the desktop manager to Hammerspoon: reading screens, desktops and windows, the windows that Hammerspoon knows, the list of all windows of macOS and its script, the helper script that takes the previews, showing, adding and removing desktops through Mission Control, bringing windows into view and moving them by their ids, opening new windows, the watchdog of a switch, switching to the application of a number, the list of the numbered applications and the panel of the search with the elements they share, the windows of hidden applications in them, the menu bar item, the message during a switch, the window of the managed applications, the diagnostics and the controller |
+| `desktop_manager/core/` | the decisions of the desktop manager: the checks of the settings, the settings that the window "Settings…" changes, the actions with their default shortcuts, monitor configurations, the desktops of each screen, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers and the view of their list, the search of the windows and its scores, the pacing of the previews, the output of the helper of the previews, the windows of macOS that accessibility does not reach and the ones to bring into view, the text of the log of a press in Mission Control, the text of the console line of an opening of the search, the pause of the active profile after a login, URL commands, and the closed sets of the settings |
+| `desktop_manager/macos/` | the calls of the desktop manager to Hammerspoon: reading screens, desktops and windows, the windows that Hammerspoon knows, the list of all windows of macOS and its script, the helper script that takes the previews, showing, adding and removing desktops through Mission Control, bringing windows into view and moving them by their ids, opening new windows, the watchdog of a switch, switching to the application of a number, the list of the numbered applications and the panel of the search with the elements they share, the windows of hidden applications in them, the menu bar item, the message during a switch, the window of the managed applications, the window of the settings, the diagnostics and the controller |
 | `window_tiling/core/` | the positions of the window tiling and the frame of each position on a screen |
 | `window_tiling/macos/` | the controller of the window tiling, which hands its actions to the center of the shortcuts, binds its URLs and sets the frame of the focused window |
 | `tests/` | unit tests of the cores, and tests of the flows of the desktop manager, one file per subject, and of the tiling controller against `tests/fake_hammerspoon.lua`, with the world of the controller in `tests/controller_world.lua` and the fixtures that several files share in `tests/fake_worlds.lua` |
