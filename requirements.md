@@ -78,6 +78,8 @@ A third setting chooses, under both ways of pairing, what a record in sight gets
 By default the tool opens a new window, as above.
 The other choice opens no window, and the profile forgets the record.
 
+The options of behaviour, such as what a switch does for a recorded window that is gone, change in a settings window while the tool runs, and the menu bar item keeps the quick actions.
+
 ## Multiple monitor behavior
 
 Each profile manages the desktops and windows on all monitor setups that have been seen.
