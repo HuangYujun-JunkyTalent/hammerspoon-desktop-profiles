@@ -15,8 +15,24 @@ local WINDOW_SIZE = { w = 680, h = 780 }
 ---@field read_defaults fun(): table<string, any> the value of each setting in the file
 ---@field set_value fun(name: string, value: any|nil) saves the value, or returns the setting to
 ---the value of the file when the value is nil
+---@field read_profile_choices fun(): ProfileConfigurationChoices
+---@field set_configuration_managed fun(number: integer, configuration_key: string,
+---is_managed: boolean) saves whether the profile arranges the monitor configuration
 ---@field open_color_window fun()
 ---@field on_closed fun()
+
+---The monitor configurations that the section of the profiles offers, and the choices of each
+---profile.
+---@class ProfileConfigurationChoices
+---@field configuration_keys string[] the configurations that a profile recorded or left to macOS,
+---and the configuration now
+---@field current_key string the configuration now
+---@field profiles ProfileConfigurationChoice[]
+
+---@class ProfileConfigurationChoice
+---@field number integer
+---@field name string
+---@field unmanaged_keys table<string, boolean> the configurations that the profile leaves to macOS
 
 ---@class SettingsWindow
 ---@field web_window WebWindow
@@ -50,6 +66,7 @@ local function build_model(actions)
         sections = sections,
         values = actions.read_values(),
         defaults = actions.read_defaults(),
+        profile_choices = actions.read_profile_choices(),
     }
 end
 
@@ -70,6 +87,11 @@ input[type=range] { width: 120px; }
 .reset[disabled] { visibility: hidden; }
 .link { font: inherit; padding: 3px 12px; border-radius: 6px; border: 1px solid var(--line);
   background: Canvas; cursor: pointer; }
+table.profiles { border-collapse: collapse; width: 100%; }
+table.profiles th, table.profiles td { padding: 7px 12px; border-top: 1px solid var(--line);
+  text-align: center; font-weight: normal; }
+table.profiles th:first-child, table.profiles td:first-child { text-align: left; }
+table.profiles thead th { border-top: none; color: GrayText; font-size: 11px; }
 ]]
 
 local SCRIPT = [[
@@ -123,9 +145,29 @@ const render = (next) => {
     }
   }
 };
+const renderProfiles = () => {
+  const choices = model.profile_choices;
+  const escape = (text) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const keyLabel = (key) => escape(key) + (key === choices.current_key ? " (now)" : "");
+  document.getElementById("profiles").innerHTML = "<table class='profiles'><thead><tr><th></th>"
+    + choices.configuration_keys.map((key) => "<th>" + keyLabel(key) + "</th>").join("")
+    + "</tr></thead><tbody>" + choices.profiles.map((profile) => "<tr><td>" + escape(profile.name)
+    + "</td>" + choices.configuration_keys.map((key, index) => "<td><input type='checkbox'"
+    + " id='manage-" + profile.number + "-" + index + "'"
+    + (profile.unmanaged_keys[key] ? "" : " checked")
+    + "></td>").join("") + "</tr>").join("") + "</tbody></table>";
+  for (const profile of choices.profiles) {
+    choices.configuration_keys.forEach((key, index) => {
+      const box = document.getElementById("manage-" + profile.number + "-" + index);
+      box.addEventListener("change", () => post({ kind: "manage", number: profile.number,
+        configuration_key: key, is_managed: box.checked }));
+    });
+  }
+};
+const renderAll = (next) => { render(next); renderProfiles(); };
 document.getElementById("colors").addEventListener("click", () => post({ kind: "colors" }));
 document.getElementById("done").addEventListener("click", () => post({ kind: "done" }));
-render(model);
+renderAll(model);
 ]]
 
 ---@param model table
@@ -139,6 +181,10 @@ local function build_page(model)
         "<p class='lead'>A change applies at once and is saved with the profiles.",
         " ↺ brings back the value of default_settings.lua.</p>",
         "<div id='sections'></div>",
+        "<h2>Monitor configurations that each profile arranges</h2>",
+        "<p class='lead'>Without a tick, the profile leaves the windows and the desktops of that",
+        " configuration to macOS while it is active, as while no profile is active.</p>",
+        "<div class='card' id='profiles'></div>",
         "<h2>Colors</h2><button class='link' id='colors'>Search colors…</button>",
         "<footer><span class='hint'>Saved with the profiles</span>",
         "<button id='done' class='primary'>Done</button></footer>",
@@ -154,7 +200,14 @@ end
 ---@param window SettingsWindow
 function settings_window.redraw(window)
     window.model = build_model(window.actions)
-    window.web_window.view:evaluateJavaScript("render(" .. hs.json.encode(window.model) .. ")")
+    window.web_window.view:evaluateJavaScript("renderAll(" .. hs.json.encode(window.model) .. ")")
+end
+
+---A number from the page may arrive as a float, such as 2.0.
+---@param value any
+---@return integer|nil
+local function read_profile_number(value)
+    return type(value) == "number" and math.tointeger(value) or nil
 end
 
 ---@param window SettingsWindow
@@ -169,6 +222,20 @@ local function handle_message(window, body)
         settings_window.redraw(window)
     elseif body.kind == "reset" and entry then
         window.actions.set_value(entry.name, nil)
+        settings_window.redraw(window)
+    elseif body.kind == "manage" then
+        local number = read_profile_number(body.number)
+        if
+            number
+            and type(body.configuration_key) == "string"
+            and type(body.is_managed) == "boolean"
+        then
+            window.actions.set_configuration_managed(
+                number,
+                body.configuration_key,
+                body.is_managed
+            )
+        end
         settings_window.redraw(window)
     elseif body.kind == "colors" then
         window.actions.open_color_window()

@@ -257,4 +257,35 @@ return {
         expect.equal(record.slot_key, nil)
         expect.equal(record.desktop_number, nil)
     end,
+
+    a_change_of_desktop_records_the_desktops_and_keeps_the_windows = function()
+        local arrangement = arrangement_capture.capture(CONFIGURATION, LAYOUT, {}, nil)
+        arrangement.windows = { INBOX_RECORD }
+        expect.equal(
+            arrangement_capture.with_desktops_in_view(arrangement, CONFIGURATION, LAYOUT),
+            nil
+        )
+        local layout = {
+            screens = {
+                {
+                    screen_uuid = "BUILTIN-UUID",
+                    screen_frame = BUILTIN_FRAME,
+                    space_ids = { 3, 14, 64, 65 },
+                    active_space_id = 14,
+                },
+                LAYOUT.screens[2],
+            },
+            focused_space_id = 14,
+        }
+        local updated = expect.present(
+            arrangement_capture.with_desktops_in_view(arrangement, CONFIGURATION, layout),
+            "the arrangement of the new desktops"
+        )
+        expect.equal(updated.monitors[1].shown_desktop_number, 2)
+        expect.equal(updated.monitors[1].desktop_count, 4)
+        expect.equal(updated.monitors[2], arrangement.monitors[2])
+        expect.equal(updated.focused_slot_key, CONFIGURATION.slots[1].slot_key)
+        expect.equal(updated.windows, { INBOX_RECORD })
+        expect.equal(arrangement.monitors[1].shown_desktop_number, 1)
+    end,
 }

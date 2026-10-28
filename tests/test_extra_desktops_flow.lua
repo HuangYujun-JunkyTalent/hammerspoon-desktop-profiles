@@ -513,9 +513,19 @@ return {
         local second = world.add_window_of("com.microsoft.Word", "Second.docx", 64)
         world.applications["com.microsoft.Word"].is_dropped_by_filter_while_hidden = true
         world.applications["com.microsoft.Word"].is_hidden = true
-        local calls_before = world.all_windows_calls
+        local reads_before, running_count = {}, 0
+        for bundle_id, application in pairs(world.applications) do
+            reads_before[bundle_id] = world.application_window_reads[bundle_id] or 0
+            running_count = running_count + (application.is_running and 1 or 0)
+        end
         expect.equal(controller:find_window_that_keeps_desktop({ 42, first.id, second.id }), 42)
-        expect.equal(world.all_windows_calls - calls_before, 1)
+        local read_count = 0
+        for bundle_id, count in pairs(reads_before) do
+            local reads = (world.application_window_reads[bundle_id] or 0) - count
+            expect.equal(reads <= 1, true)
+            read_count = read_count + reads
+        end
+        expect.equal(read_count, running_count)
     end,
 
     the_console_names_the_empty_desktops_that_stay_and_the_desktops_removed = function()

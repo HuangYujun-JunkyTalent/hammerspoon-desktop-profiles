@@ -515,15 +515,18 @@ return {
         for _, number in ipairs({ 1, 2 }) do
             local switched = profile_state.with_active_profile_number(paused, number)
             expect.equal(switched.is_active_profile_paused, false)
-            expect.equal(profile_state.find_profile_number_to_update(switched), number)
+            expect.equal(profile_state.find_profile_number_to_update(switched, "built-in"), number)
         end
         expect.equal(
             profile_state.with_active_profile_number(paused, nil).is_active_profile_paused,
             false
         )
-        expect.equal(profile_state.find_profile_number_to_update(paused), nil)
+        expect.equal(profile_state.find_profile_number_to_update(paused, "built-in"), nil)
         expect.equal(
-            profile_state.find_profile_number_to_update(profile_state.with_pause_ended(paused)),
+            profile_state.find_profile_number_to_update(
+                profile_state.with_pause_ended(paused),
+                "built-in"
+            ),
             1
         )
     end,
@@ -534,5 +537,84 @@ return {
                 profile_state.new_state(monitor_matching.BY_COUNT)
             )
         end, "no profile is active")
+    end,
+
+    a_profile_arranges_every_configuration_until_it_leaves_one_to_macos = function()
+        local state = profile_state.with_active_profile_number(
+            profile_state.new_state(monitor_matching.BY_COUNT),
+            1
+        )
+        expect.equal(profile_state.manages_configuration(state, 1, "built-in"), true)
+        local left = profile_state.with_configuration_left_to_macos(state, 1, "built-in")
+        left = profile_state.with_configuration_left_to_macos(left, 1, "built-in")
+        expect.equal(profile_state.profile_or_default(left, 1).unmanaged_configuration_keys, {
+            "built-in",
+        })
+        expect.equal(profile_state.manages_configuration(left, 1, "built-in"), false)
+        expect.equal(profile_state.manages_configuration(left, 1, "built-in + 1 external"), true)
+        expect.equal(profile_state.manages_configuration(left, 2, "built-in"), true)
+        expect.equal(profile_state.find_profile_number_to_update(left, "built-in"), nil)
+        expect.equal(profile_state.find_profile_number_to_update(left, "built-in + 1 external"), 1)
+        local managed = profile_state.with_configuration_managed(left, 1, "built-in")
+        expect.equal(profile_state.manages_configuration(managed, 1, "built-in"), true)
+        expect.equal(profile_state.find_profile_number_to_update(managed, "built-in"), 1)
+    end,
+
+    profile_0_leaves_no_configuration_to_macos = function()
+        expect.raises(function()
+            profile_state.with_configuration_left_to_macos(
+                profile_state.new_state(monitor_matching.BY_COUNT),
+                profile_state.NO_PROFILE_NUMBER,
+                "built-in"
+            )
+        end, "profile 0 arranges no monitor configuration")
+    end,
+
+    the_configurations_left_to_macos_survive_the_state_file = function()
+        local state = profile_state.with_configuration_left_to_macos(
+            profile_state.with_configuration_left_to_macos(
+                profile_state.new_state(monitor_matching.BY_COUNT),
+                2,
+                "built-in"
+            ),
+            2,
+            "1 external"
+        )
+        local decoded = expect.present(profile_state.decode(state), "the decoded state")
+        expect.equal(
+            profile_state.profile_or_default(decoded, 2).unmanaged_configuration_keys,
+            { "1 external", "built-in" }
+        )
+        local raw = profile_state.new_state(monitor_matching.BY_COUNT) --[[@as table]]
+        raw.profiles["1"] = { number = 1, name = "Writing", arrangements = {}, app_numbers = {} }
+        raw.profiles["3"] = {
+            number = 3,
+            name = "Reading",
+            arrangements = {},
+            app_numbers = {},
+            unmanaged_configuration_keys = { "built-in", 4, "built-in" },
+        }
+        local older = expect.present(profile_state.decode(raw), "the decoded older state")
+        expect.equal(profile_state.profile_or_default(older, 1).unmanaged_configuration_keys, {})
+        expect.equal(profile_state.profile_or_default(older, 3).unmanaged_configuration_keys, {
+            "built-in",
+        })
+    end,
+
+    the_named_bundle_ids_come_from_the_records_the_numbers_and_the_pool = function()
+        local state = profile_state.new_state(monitor_matching.BY_COUNT)
+        state = profile_state.with_arrangement(state, 3, ARRANGEMENT)
+        state = profile_state.with_app_numbers(state, profile_state.NO_PROFILE_NUMBER, {
+            { number = 2, bundle_id = "org.asyar", app_name = "asyar", is_chosen_by_user = true },
+        })
+        state = profile_state.with_app_pool(
+            state,
+            app_pool.with_listed(app_pool.new(), "pro.betterdisplay.BetterDisplay", "BD", true)
+        )
+        local expected = { ["org.asyar"] = true, ["pro.betterdisplay.BetterDisplay"] = true }
+        for _, record in ipairs(ARRANGEMENT.windows) do
+            expected[record.bundle_id] = true
+        end
+        expect.equal(profile_state.list_named_bundle_ids(state), expected)
     end,
 }

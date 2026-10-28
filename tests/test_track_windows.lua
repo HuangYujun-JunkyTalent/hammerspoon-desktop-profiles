@@ -116,4 +116,67 @@ return {
         expect.equal(track_windows.describe(without_application), 'a window "Window 1"')
         expect.equal(track_windows.describe(of_word), 'Microsoft Word window "Window 2"')
     end,
+
+    the_filter_follows_the_applications_with_a_dock_icon_and_those_the_profiles_name = function()
+        -- Siri goes from no Dock icon to one, back to none while it runs, and then quits and
+        -- starts again without one.
+        local world = fake_hammerspoon.install({
+            screens = { fake_worlds.build_builtin_screen() },
+            displays = { { uuid = "BUILTIN-UUID", space_ids = { 3, 14 }, active_space_id = 3 } },
+            applications = {
+                { bundle_id = "com.apple.Safari", name = "Safari", is_running = true },
+                { bundle_id = "com.apple.MenuBarAgent", name = "MenuBarAgent", is_running = true },
+                { bundle_id = "org.asyar", name = "asyar", is_running = true },
+                { bundle_id = "com.apple.campo", name = "Siri", is_running = false },
+            },
+            windows = {
+                {
+                    id = 41,
+                    bundle_id = "com.apple.Safari",
+                    title = "Inbox",
+                    space_id = 3,
+                    frame = { x = 0, y = 25, w = 720, h = 875 },
+                },
+                {
+                    id = 42,
+                    bundle_id = "com.apple.MenuBarAgent",
+                    title = "",
+                    space_id = 3,
+                    frame = { x = 0, y = 0, w = 30, h = 24 },
+                },
+                {
+                    id = 43,
+                    bundle_id = "org.asyar",
+                    title = "asyar",
+                    space_id = 3,
+                    frame = { x = 0, y = 25, w = 600, h = 400 },
+                },
+            },
+        })
+        for _, bundle_id in ipairs({ "com.apple.MenuBarAgent", "org.asyar", "com.apple.campo" }) do
+            world.applications[bundle_id].kind = 0
+        end
+        local filter = track_windows.new_filter({ ["org.asyar"] = true })
+        local ignored = _G.hs.window.filter.ignoreAlways
+        expect.equal(ignored["Safari"], false)
+        expect.equal(ignored["MenuBarAgent"], true)
+        expect.equal(ignored["asyar"], false)
+        expect.equal(ignored["Siri"], false)
+        local siri = world.applications["com.apple.campo"]
+        siri.is_running = true
+        expect.equal(ignored["Siri"], true)
+        siri.kind = 1
+        expect.equal(ignored["Siri"], false)
+        siri.kind = 0
+        expect.equal(ignored["Siri"], false)
+        siri.is_running = false
+        expect.equal(ignored["Siri"], false)
+        siri.is_running = true
+        expect.equal(ignored["Siri"], true)
+        expect.equal(track_windows.index_ids(filter:getWindows()), { [41] = true, [43] = true })
+        expect.equal(
+            track_windows.index_ids(track_windows.list_followed_windows()),
+            { [41] = true, [43] = true }
+        )
+    end,
 }

@@ -340,4 +340,40 @@ return {
         expect.equal(world.windows[41].space_id, space_ids[4])
         expect.equal(world.windows[43].space_id, space_ids[5])
     end,
+
+    a_change_of_desktop_records_the_shown_desktop_and_reads_no_window = function()
+        local world, controller = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        local runs_before, filter_reads_before = world.server_list_run_count, world.filter_reads
+        local window_reads_before = 0
+        for _, count in pairs(world.application_window_reads) do
+            window_reads_before = window_reads_before + count
+        end
+        world.displays[1].active_space_id = 14
+        for _, callback in ipairs(world.space_watchers) do
+            callback()
+        end
+        local arrangement = expect.present(
+            profile_state.find_arrangement(
+                controller.state,
+                1,
+                controller_world.MONITOR_CONFIGURATION_KEY
+            ),
+            "the record of profile 1"
+        )
+        expect.equal(arrangement.monitors[1].shown_desktop_number, 2)
+        local saved_arrangements = world.saved_json.profiles["1"].arrangements
+        local saved = saved_arrangements[controller_world.MONITOR_CONFIGURATION_KEY]
+        expect.equal(saved.monitors[1].shown_desktop_number, 2)
+        world.advance(5)
+        local window_reads = 0
+        for _, count in pairs(world.application_window_reads) do
+            window_reads = window_reads + count
+        end
+        expect.equal(world.server_list_run_count, runs_before)
+        expect.equal(world.filter_reads, filter_reads_before)
+        expect.equal(window_reads, window_reads_before)
+    end,
 }

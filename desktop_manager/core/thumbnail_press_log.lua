@@ -28,6 +28,11 @@ local thumbnail_press_log = {}
 ---@field second_press_error string|nil the error of the second press, the error of the read of the
 ---desktops at the second check, why the second check found no thumbnail while the group of the
 ---screen showed, or why the second opening failed
+---@field longest_block_seconds number|nil the longest delay of a check beyond the interval of the
+---checks, as when another call blocked Hammerspoon
+
+---A delay of a check from this many seconds on goes into the log line of the press.
+local BLOCK_LOG_SECONDS = 0.5
 
 ---@param focus PressFocus|nil
 ---@return string such as 'Code window "future-work.tex" focused before the press, frontmost after
@@ -111,6 +116,15 @@ function thumbnail_press_log.describe_press(press, waited_seconds)
         )
     end
     table.insert(parts, describe_second_check(press))
+    if (press.longest_block_seconds or 0) >= BLOCK_LOG_SECONDS then
+        table.insert(
+            parts,
+            string.format(
+                "Hammerspoon was blocked for up to %.2f seconds between two checks",
+                press.longest_block_seconds
+            )
+        )
+    end
     return table.concat(parts, ", ")
 end
 

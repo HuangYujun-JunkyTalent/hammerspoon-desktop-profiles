@@ -171,6 +171,15 @@ function ProfileController:read_monitor_configuration()
     return monitor_configuration.describe(screens, self.state.monitor_matching)
 end
 
+---@return integer|nil the active profile when the updates write its records under the monitor
+---configuration now, as `profile_state.find_profile_number_to_update` says
+function ProfileController:find_profile_number_to_update()
+    return profile_state.find_profile_number_to_update(
+        self.state,
+        self:read_monitor_configuration().key
+    )
+end
+
 ---@param windows table[] hs.window objects
 ---@return OpenWindow[]
 local function describe_open_windows(windows)
@@ -269,20 +278,21 @@ end
 ---its previous record with its current desktop.
 ---While a switch or a restore runs, or while the monitors settle, nothing is recorded, because the
 ---windows and the desktops are on their way, and the end of that work schedules a save.
----Nothing is recorded while the active profile is paused either.
+---Nothing is recorded while the active profile is paused or leaves the monitor configuration to
+---macOS either.
 function ProfileController:capture_active_arrangement()
-    local number = profile_state.find_profile_number_to_update(self.state)
-    if not number or self.is_switch_or_restore_running or self.are_saves_suspended then
+    if self.is_switch_or_restore_running or self.are_saves_suspended then
         return
     end
     local configuration = self:read_monitor_configuration()
-    local managed_windows = self.known_windows:list_managed(
-        profile_state.list_recorded_window_ids(
-            profile_state.find_arrangement(self.state, number, configuration.key)
-        )
-    )
-    self:rename_reopened_windows(managed_windows)
+    local number = profile_state.find_profile_number_to_update(self.state, configuration.key)
+    if not number then
+        return
+    end
     local previous = profile_state.find_arrangement(self.state, number, configuration.key)
+    local managed_windows =
+        self.known_windows:list_managed(profile_state.list_recorded_window_ids(previous))
+    self:rename_reopened_windows(managed_windows)
     local observations, observed_ids = observe_windows(managed_windows)
     local previous_records =
         app_pool.keep_managed(self.state.app_pool, previous and previous.windows or {})
@@ -341,7 +351,23 @@ function ProfileController:save_arrangement_now()
         self.state = profile_state.with_pause_ended(self.state)
         self:refresh_menu()
     end
+    if self:alert_configuration_left_to_macos(self:read_monitor_configuration().key) then
+        return
+    end
     self:capture_active_arrangement()
+end
+
+---Says in an alert that the active profile leaves the monitor configuration to macOS, when it does.
+---@param key string the monitor configuration now
+---@return boolean whether the active profile leaves the monitor configuration to macOS
+function ProfileController:alert_configuration_left_to_macos(key)
+    local number = self.state.active_profile_number
+    if not number or profile_state.manages_configuration(self.state, number, key) then
+        return false
+    end
+    local name = profile_state.profile_or_default(self.state, number).name
+    hs.alert.show(string.format("%s leaves %s to macOS", name, key))
+    return true
 end
 
 ---Gives profile 0 its default numbers from the windows open now, because it records no windows.
@@ -422,7 +448,7 @@ end
 ---Closes the message at the end of a switch, a restore or a press, or shows the message of a change
 ---of monitors in its place while the restore after that change waits.
 function ProfileController:end_busy_message()
-    if self.screen_timer and profile_state.find_profile_number_to_update(self.state) then
+    if self.screen_timer and self:find_profile_number_to_update() then
         self:show_busy_message(MONITORS_CHANGED_MESSAGE)
         return
     end
@@ -684,6 +710,8 @@ function ProfileController:stop_unfinished_work()
 end
 
 ---Switches to the profile, or restores the layout of the active profile while it is paused.
+---A profile that leaves the monitor configuration to macOS becomes active and changes no window
+---and no desktop.
 ---@param number integer
 function ProfileController:activate_profile(number)
     if self:refuse_while_busy() then
@@ -694,6 +722,14 @@ function ProfileController:activate_profile(number)
     end
     local started_at = hs.timer.secondsSinceEpoch()
     self:capture_active_arrangement()
+    local configuration_key = self:read_monitor_configuration().key
+    if not profile_state.manages_configuration(self.state, number, configuration_key) then
+        self.state = profile_state.with_active_profile_number(self.state, number)
+        self:write_state()
+        self:refresh_menu()
+        self:alert_configuration_left_to_macos(configuration_key)
+        return
+    end
     self.is_switch_or_restore_running = true
     local work_number = self.watchdog:start()
     retained_timers.stop(self.save_timer)
@@ -1137,6 +1173,70 @@ function ProfileController:set_live_setting(name, value)
     self:write_state()
 end
 
+---@return ProfileConfigurationChoices the configurations that some profile recorded or left to
+---macOS, and the configuration now, with the choices of each profile of the menu
+function ProfileController:read_profile_configuration_choices()
+    local current_key = self:read_monitor_configuration().key
+    local is_listed, configuration_keys = {}, {}
+    local function list_key(key)
+        if not is_listed[key] then
+            is_listed[key] = true
+            table.insert(configuration_keys, key)
+        end
+    end
+    list_key(current_key)
+    local profiles = {}
+    for number = 1, self.settings.profile_count do
+        local profile = profile_state.profile_or_default(self.state, number)
+        local unmanaged_keys = {}
+        for _, key in ipairs(profile.unmanaged_configuration_keys) do
+            unmanaged_keys[key] = true
+            list_key(key)
+        end
+        for key in pairs(profile.arrangements) do
+            list_key(key)
+        end
+        table.insert(
+            profiles,
+            { number = number, name = profile.name, unmanaged_keys = unmanaged_keys }
+        )
+    end
+    table.sort(configuration_keys)
+    return {
+        configuration_keys = configuration_keys,
+        current_key = current_key,
+        profiles = profiles,
+    }
+end
+
+---Saves whether the profile arranges the monitor configuration.
+---A tick for the active profile under the configuration now starts its records from the windows as
+---they are, at the next update.
+---@param number integer
+---@param configuration_key string
+---@param is_managed boolean
+function ProfileController:set_configuration_managed(number, configuration_key, is_managed)
+    if self:refuse_while_busy() then
+        return
+    end
+    if number < 1 or number > self.settings.profile_count then
+        return
+    end
+    self.state = is_managed
+            and profile_state.with_configuration_managed(self.state, number, configuration_key)
+        or profile_state.with_configuration_left_to_macos(self.state, number, configuration_key)
+    self:write_state()
+    self:refresh_menu()
+    self:schedule_save()
+end
+
+---Draws the window "Settings…" again from the state, when it is open.
+function ProfileController:redraw_settings_window()
+    if self.settings_window then
+        settings_window.redraw(self.settings_window)
+    end
+end
+
 ---Opens the window "Settings…", or brings it to the front.
 function ProfileController:open_settings_window()
     if self.settings_window then
@@ -1152,6 +1252,12 @@ function ProfileController:open_settings_window()
         end,
         set_value = function(name, value)
             self:set_live_setting(name, value)
+        end,
+        read_profile_choices = function()
+            return self:read_profile_configuration_choices()
+        end,
+        set_configuration_managed = function(number, configuration_key, is_managed)
+            self:set_configuration_managed(number, configuration_key, is_managed)
         end,
         open_color_window = function()
             self:open_color_window()
@@ -1208,9 +1314,7 @@ function ProfileController:set_monitor_matching(matching)
     self:write_state()
     self:refresh_menu()
     hs.alert.show("Same monitor configuration by " .. monitor_matching.label_of(matching):lower())
-    if self.settings_window then
-        settings_window.redraw(self.settings_window)
-    end
+    self:redraw_settings_window()
 end
 
 ---@return Profile the active profile, or profile 0 while no profile is active, whose application
@@ -1375,6 +1479,32 @@ function ProfileController:refuse_while_busy()
     return false
 end
 
+---Records the desktops that the screens show and count after a change of desktop, and the screen of
+---the focus, in the arrangement of the active profile for the monitor configuration now.
+---A change of desktop moves no window, so no window is read: the window filter, the saves after the
+---events of windows and the save once a minute keep the records of the windows.
+---A profile without an arrangement for the configuration waits for its first save.
+function ProfileController:record_desktops_in_view()
+    if self.is_switch_or_restore_running or self.are_saves_suspended then
+        return
+    end
+    local configuration = self:read_monitor_configuration()
+    local number = profile_state.find_profile_number_to_update(self.state, configuration.key)
+    local arrangement = number
+        and profile_state.find_arrangement(self.state, number, configuration.key)
+    local updated = arrangement
+        and arrangement_capture.with_desktops_in_view(
+            arrangement,
+            configuration,
+            read_desktops.read_desktop_layout()
+        )
+    if not number or not updated then
+        return
+    end
+    self.state = profile_state.with_arrangement(self.state, number, updated)
+    self:write_state()
+end
+
 ---Records the desktop that a press showed as the desktop that its screen shows and as the screen of
 ---the focus, in the arrangement of the active profile for the monitor configuration of the press.
 ---A change of monitors during the press, or before the next save, then restores that desktop.
@@ -1382,7 +1512,7 @@ end
 ---@param slot_key string
 ---@param desktop_number integer
 function ProfileController:record_shown_desktop(configuration_key, slot_key, desktop_number)
-    local number = profile_state.find_profile_number_to_update(self.state)
+    local number = profile_state.find_profile_number_to_update(self.state, configuration_key)
     local state = number
         and profile_state.with_shown_desktop(
             self.state,
@@ -1703,11 +1833,12 @@ function ProfileController:handle_screens_changed()
     end
     if self.screen_timer == nil and not self.state.active_profile_number then
         self.screen_signature = read_screens.read_signature()
+        self:redraw_settings_window()
         return
     end
     self.are_saves_suspended = true
     retained_timers.stop(self.save_timer)
-    if profile_state.find_profile_number_to_update(self.state) and not self:is_work_running() then
+    if self:find_profile_number_to_update() and not self:is_work_running() then
         self:show_busy_message(MONITORS_CHANGED_MESSAGE)
     end
     self:start_screen_timer()
@@ -1715,18 +1846,24 @@ end
 
 ---Restores the arrangement of the active profile for the monitor configuration after a change, or
 ---removes the empty desktops beyond the kept numbers when the profile has no layout for it.
----A profile deactivated while the monitors settled leaves everything to macOS.
+---A profile deactivated while the monitors settled leaves everything to macOS, as a profile that
+---leaves the new configuration to macOS does.
+---An open window "Settings…" draws again, so that it marks the new configuration.
 ---The restore conceals no window and opens no new window, because the layout predates the windows
 ---that the user opened under the old configuration.
 function ProfileController:restore_after_screens_changed()
-    local number = profile_state.find_profile_number_to_update(self.state)
+    local configuration = self:read_monitor_configuration()
+    self:redraw_settings_window()
+    local number = profile_state.find_profile_number_to_update(self.state, configuration.key)
     if not number then
         self.are_saves_suspended = false
         self:close_busy_message()
+        if not self.state.is_active_profile_paused then
+            self:alert_configuration_left_to_macos(configuration.key)
+        end
         self:schedule_save()
         return
     end
-    local configuration = self:read_monitor_configuration()
     local saved_arrangement = profile_state.find_arrangement(self.state, number, configuration.key)
     self.is_switch_or_restore_running = true
     local work_number = self.watchdog:start()
@@ -1817,7 +1954,8 @@ function ProfileController:print_diagnostics()
     local active_number = self.state.active_profile_number
     local active_arrangement = active_number
         and profile_state.find_arrangement(self.state, active_number, configuration.key)
-    local profile_lines = diagnostic_lines.describe_profile(self.state, active_arrangement)
+    local profile_lines =
+        diagnostic_lines.describe_profile(self.state, configuration.key, active_arrangement)
     local app_number_lines = diagnostic_lines.describe_app_numbers(self:read_numbering_profile())
     local window_lines = diagnostic_lines.describe_windows(
         self.state,
@@ -1900,8 +2038,7 @@ function ProfileController:start_watchers()
         self.watchers,
         hs.spaces.watcher
             .new(function()
-                self:schedule_save()
-                self:refresh_window_inventory(nil)
+                self:record_desktops_in_view()
             end)
             :start()
     )
@@ -2021,7 +2158,8 @@ function profile_controller.start(unchecked_settings, shortcuts)
     end
     controller:pause_at_start(read_start())
     controller.screen_signature = read_screens.read_signature()
-    controller.window_filter = track_windows.new_filter()
+    controller.window_filter =
+        track_windows.new_filter(profile_state.list_named_bundle_ids(controller.state))
     controller.known_windows = list_known_windows.new(
         controller.window_filter,
         controller.window_inventory,

@@ -73,8 +73,8 @@ end
 ---A window that macOS shows on every desktop keeps none of them.
 ---A window that Hammerspoon has not seen counts in the plan of the removal alone, through the
 ---inventory, which also leaves out the small windows and the windows without a Dock icon.
----The windows that the window filter leaves out come from one walk of every window of every
----application, instead of one walk for each window as `hs.window.get` does.
+---The windows that the window filter leaves out come from one walk of every window of the
+---applications that it follows, instead of one walk for each window as `hs.window.get` does.
 ---@param window_ids integer[]
 ---@param context ExtraDesktopsContext
 ---@return integer|nil
@@ -85,7 +85,8 @@ function extra_desktops.find_window_that_keeps_desktop(window_ids, context)
         if #read_desktops.list_window_space_ids(window_id) == 1 then
             local window = known_by_id[window_id]
             if not window then
-                all_by_id = all_by_id or track_windows.index_by_id(hs.window.allWindows())
+                all_by_id = all_by_id
+                    or track_windows.index_by_id(track_windows.list_followed_windows())
                 window = all_by_id[window_id]
             end
             if window and does_known_window_keep_desktop(window, context) then

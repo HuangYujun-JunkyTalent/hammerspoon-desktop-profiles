@@ -152,24 +152,15 @@ local function record_window(configuration, desktop_layout, observation, previou
     return record
 end
 
----Builds the arrangement of the observed windows.
----A window whose desktop or frame cannot be read keeps the location of its previous record.
----A frame without area counts as unread.
----A screen that shows a space in full screen keeps the shown desktop of its previous record, and so
----does the focus on a screen of no slot.
+---The desktops of each screen of the configuration, as a capture records them.
+---A screen that shows a space in full screen keeps the shown desktop of its previous record.
 ---A screen whose desktops macOS does not list keeps the record of its previous arrangement, and has
 ---no record without one, because a number of 0 would remove its desktops at the next restore.
 ---@param configuration MonitorConfiguration
 ---@param desktop_layout DesktopLayout
----@param observations WindowObservation[]
 ---@param previous_arrangement Arrangement|nil
----@return Arrangement
-function arrangement_capture.capture(
-    configuration,
-    desktop_layout,
-    observations,
-    previous_arrangement
-)
+---@return MonitorDesktops[]
+local function describe_monitors(configuration, desktop_layout, previous_arrangement)
     local monitors = {}
     for _, slot in ipairs(configuration.slots) do
         local screen = locate_desktops.find_screen(desktop_layout, slot.screen_uuid)
@@ -187,6 +178,77 @@ function arrangement_capture.capture(
             table.insert(monitors, deep_copy.copy(previous_monitor))
         end
     end
+    return monitors
+end
+
+---@param configuration MonitorConfiguration
+---@param desktop_layout DesktopLayout
+---@param previous_arrangement Arrangement|nil
+---@return string|nil the screen of the focus now, or of the previous record when the focus is on a
+---screen of no slot
+local function describe_focused_slot_key(configuration, desktop_layout, previous_arrangement)
+    return find_focused_slot_key(configuration, desktop_layout)
+        or previous_arrangement and previous_arrangement.focused_slot_key
+        or nil
+end
+
+---@param monitors MonitorDesktops[]
+---@param recorded MonitorDesktops[]
+---@return boolean
+local function are_same_monitors(monitors, recorded)
+    if #monitors ~= #recorded then
+        return false
+    end
+    for index, monitor in ipairs(monitors) do
+        local other = recorded[index]
+        if
+            monitor.slot_key ~= other.slot_key
+            or monitor.desktop_count ~= other.desktop_count
+            or monitor.shown_desktop_number ~= other.shown_desktop_number
+        then
+            return false
+        end
+    end
+    return true
+end
+
+---The arrangement with the desktops that the screens show and count now and the screen of the
+---focus now, as a capture records them, and with its windows as they are, because a change of
+---desktop moves no window.
+---@param arrangement Arrangement
+---@param configuration MonitorConfiguration
+---@param desktop_layout DesktopLayout
+---@return Arrangement|nil the new arrangement, or nil when the arrangement records these already
+function arrangement_capture.with_desktops_in_view(arrangement, configuration, desktop_layout)
+    local monitors = describe_monitors(configuration, desktop_layout, arrangement)
+    local focused_slot_key = describe_focused_slot_key(configuration, desktop_layout, arrangement)
+    if
+        focused_slot_key == arrangement.focused_slot_key
+        and are_same_monitors(monitors, arrangement.monitors)
+    then
+        return nil
+    end
+    local updated = deep_copy.copy(arrangement)
+    updated.monitors = monitors
+    updated.focused_slot_key = focused_slot_key
+    return updated
+end
+
+---Builds the arrangement of the observed windows, with the desktops of `describe_monitors`.
+---A window whose desktop or frame cannot be read keeps the location of its previous record.
+---A frame without area counts as unread.
+---The focus on a screen of no slot keeps the screen of the focus of the previous record.
+---@param configuration MonitorConfiguration
+---@param desktop_layout DesktopLayout
+---@param observations WindowObservation[]
+---@param previous_arrangement Arrangement|nil
+---@return Arrangement
+function arrangement_capture.capture(
+    configuration,
+    desktop_layout,
+    observations,
+    previous_arrangement
+)
     local previous_records = index_records_by_window_id(previous_arrangement)
     local windows = {}
     for _, observation in ipairs(observations) do
@@ -198,10 +260,12 @@ function arrangement_capture.capture(
     end
     return {
         monitor_configuration_key = configuration.key,
-        monitors = monitors,
-        focused_slot_key = find_focused_slot_key(configuration, desktop_layout)
-            or previous_arrangement and previous_arrangement.focused_slot_key
-            or nil,
+        monitors = describe_monitors(configuration, desktop_layout, previous_arrangement),
+        focused_slot_key = describe_focused_slot_key(
+            configuration,
+            desktop_layout,
+            previous_arrangement
+        ),
         windows = windows,
     }
 end

@@ -109,7 +109,8 @@ end
 KEY_CODES.space = 49
 local CHARACTER_KEY_CODE = 1000
 ---The output of the fake of `list_server_windows.js`, which the fake of hs.json.decode reads.
-local SERVER_WINDOWS_OUTPUT = "server windows"
+---It ends with a newline, as osascript ends the result that it prints.
+local SERVER_WINDOWS_OUTPUT = "server windows\n"
 local OSASCRIPT_PATH = "/usr/bin/osascript"
 ---The status with which a task that Hammerspoon terminated ends, the number of SIGTERM.
 local TERMINATED_STATUS = 15
@@ -231,6 +232,10 @@ local current_world = nil
 ---`decode_seconds`, 0 by default, is the time that `hs.image.imageFromURL` takes.
 ---`is_server_list_above_64_kib` makes the list of the window server too long for a task without a
 ---streaming callback, which then never ends, as a task of Hammerspoon on macOS 27.0.1 did.
+---`is_server_list_after_exit` gives the list of the window server through the streaming callback
+---after the exit, and `empty_server_list_count` is the number of the next runs of
+---`list_server_windows.js` that end with status 0 and no output, as runs on macOS 27.0.1 did.
+---`server_list_run_count` counts the runs of `list_server_windows.js`.
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
 ---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
 ---`type_keys` and `release_modifiers` was made, as `timestamp()` of the event gives it.
@@ -278,6 +283,10 @@ function fake_hammerspoon.install(spec)
         execute_calls = 0,
         tasks = {},
         task_exit_code = 0,
+        space_watchers = {},
+        server_list_run_count = 0,
+        empty_server_list_count = 0,
+        is_server_list_after_exit = false,
         alerts = {},
         notifications = {},
         hotkeys = {},
@@ -732,6 +741,9 @@ function fake_hammerspoon.install(spec)
         end
         function object:kind()
             return application.kind or 1
+        end
+        function object:isRunning()
+            return application.is_running == true
         end
         function object:isHidden()
             world.hidden_reads[bundle_id] = (world.hidden_reads[bundle_id] or 0) + 1
@@ -1450,18 +1462,6 @@ function fake_hammerspoon.install(spec)
         return displays
     end
 
-    local function watcher_factory()
-        return {
-            new = function()
-                return {
-                    start = function(self)
-                        return self
-                    end,
-                }
-            end,
-        }
-    end
-
     local application_watcher = {
         hidden = "hidden",
         unhidden = "unhidden",
@@ -1504,6 +1504,7 @@ function fake_hammerspoon.install(spec)
                 and not window.is_missed_by_filter
                 and (window.role or "AXWindow") == "AXWindow"
                 and not reports_other_subrole(application)
+                and not _G.hs.window.filter.ignoreAlways[application.name]
             then
                 table.insert(windows, window.object)
             end
@@ -1728,7 +1729,17 @@ function fake_hammerspoon.install(spec)
                     end
                 end
             end,
-            watcher = watcher_factory(),
+            ---A test calls each callback of `world.space_watchers` for a change of desktop.
+            watcher = {
+                new = function(callback)
+                    table.insert(world.space_watchers, callback)
+                    return {
+                        start = function(self)
+                            return self
+                        end,
+                    }
+                end,
+            },
         },
         execute = function(command)
             local answer = COMMAND_ANSWERS[command]
@@ -1802,6 +1813,9 @@ function fake_hammerspoon.install(spec)
             ---callback and the rest with the exit, when the task has a streaming callback.
             ---Without one, the task gives the whole list with the exit, and never ends under
             ---`is_server_list_above_64_kib`.
+            ---Under `is_server_list_after_exit`, the whole list comes through the streaming
+            ---callback after the exit, and each of the next `empty_server_list_count` runs ends
+            ---with no output.
             new = function(path, callback, stream_callback_or_arguments, arguments)
                 local stream_callback = stream_callback_or_arguments
                 if type(stream_callback_or_arguments) == "table" then
@@ -1817,8 +1831,15 @@ function fake_hammerspoon.install(spec)
                         if not script:match("list_server_windows%.js$") then
                             error("the fake runs no script of osascript but two: " .. script)
                         end
+                        world.server_list_run_count = world.server_list_run_count + 1
                         new_timer(0.2, function()
-                            if stream_callback then
+                            if world.empty_server_list_count > 0 then
+                                world.empty_server_list_count = world.empty_server_list_count - 1
+                                callback(0, "", "")
+                            elseif stream_callback and world.is_server_list_after_exit then
+                                callback(0, "", "")
+                                stream_callback(nil, SERVER_WINDOWS_OUTPUT, "")
+                            elseif stream_callback then
                                 local split = math.floor(#SERVER_WINDOWS_OUTPUT / 2)
                                 stream_callback(task, SERVER_WINDOWS_OUTPUT:sub(1, split), "")
                                 callback(0, SERVER_WINDOWS_OUTPUT:sub(split + 1), "")
@@ -2004,10 +2025,13 @@ function fake_hammerspoon.install(spec)
                 local window = world.windows[window_id]
                 return window and not window.is_unseen and window.object or nil
             end,
+            ---The filter leaves out the windows of the applications whose names `ignoreAlways`
+            ---holds, as Hammerspoon leaves out those applications.
             filter = {
                 new = function()
                     return filter_object
                 end,
+                ignoreAlways = {},
                 windowCreated = "windowCreated",
                 windowDestroyed = "windowDestroyed",
                 windowMoved = "windowMoved",

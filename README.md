@@ -109,6 +109,22 @@ Below the profiles, the menu bar item groups the entries that deactivate the act
 The first three name the active profile, such as Deactivate “Writing”, and the first two are dimmed while no profile is active.
 "Application numbers" follows in a group of its own, and the last group opens the windows "Settings…", "Managed applications…" and "Keyboard shortcuts…" and prints diagnostics.
 
+### A profile can leave a monitor configuration to macOS
+
+Each profile arranges every monitor configuration until you untick the configuration for it in [the window "Settings…"](#settings-in-the-menu-bar-item-changes-the-behaviour-of-the-desktop-manager-while-it-runs).
+For example, profile 1 may arrange the built-in display with one external monitor and leave the built-in display alone to macOS.
+While the active profile leaves the configuration of the monitors to macOS, the desktop manager acts as while no profile is active.
+Its records stay as they are, a change of the monitors leaves the windows where macOS puts them, and every desktop stays.
+A change of the monitors into such a configuration shows an alert, such as "Profile 1 leaves built-in to macOS".
+A change back to a configuration that the profile arranges restores the record of that configuration, as the section above says.
+
+A switch to a profile that leaves the configuration to macOS makes the profile active, shows the same alert, and leaves every window and every desktop where it is.
+A switch away from such a profile records nothing for it.
+A switch to a profile that arranges the configuration restores its record as usual, and a profile without a record of the configuration starts recording it.
+"Update the record now" in a configuration that the active profile leaves to macOS records nothing and shows the alert.
+A tick for the active profile under the configuration now starts its records from the windows as they are.
+The application numbers of Control-Option and the search of the windows keep working in every configuration.
+
 ### The first start of Hammerspoon soon after a login pauses the active profile
 
 After a restart of the Mac or a logout, macOS reopens the windows at the next login with new window ids and at places of its own.
@@ -411,6 +427,8 @@ The window has four sections.
 | Layout of the list | `list_layout`, `list_sizing`, `list_font_size`, `title_overflow` and `title_line_count` |
 
 A choice offers the values of the setting by name, a number has a slider, and the size of a preview has a slider for its width and one for its height.
+Below the four sections, the table "Monitor configurations that each profile arranges" has one row per profile and one column per monitor configuration that a profile recorded or left to macOS, with the configuration now marked "(now)".
+A tick arranges the configuration for the profile, and no tick leaves it to macOS, as [the section on such a configuration](#a-profile-can-leave-a-monitor-configuration-to-macos) says.
 Each change is saved with the profiles in `~/.hammerspoon/desktop-manager-state.json`, over the value of `desktop_manager/default_settings.lua`, and the next switch, list or search uses it without a reload of Hammerspoon.
 `pause_after_login_seconds` counts from the next start of Hammerspoon.
 ↺ on a row returns the setting to the value of the file, and a later edit of the file then changes it.
@@ -723,7 +741,12 @@ The desktop manager works around them as follows.
 - Accessibility reaches a window once its desktop has shown after Hammerspoon started, and it always reaches the minimized windows and the windows of hidden applications.
   The records, the search and the list of Control-Option find the other windows in the list of all windows of macOS, which `desktop_manager/macos/list_server_windows.js` prints through `osascript`.
   A switch moves those that it acts on into view by their ids first, as [the section on switches](#a-switch-changes-only-the-windows-that-differ-from-the-record) says.
-  The desktop manager runs the script at the start, at each change of desktop, once a minute and when the search opens, in about 0.2 seconds each time.
+  The desktop manager runs the script at the start, once a minute and when the search or the list of Control-Option opens, in about 0.2 seconds each time.
+  It also runs the script before a switch, a restore or a removal of desktops acts on the list.
+  At a change of desktop, the desktop manager records the desktop that each screen shows and the screen of the focus, and leaves the script and the windows alone.
+- Hammerspoon follows the windows of the applications with a Dock icon and of the applications that a profile names, and leaves out the agents of the menu bar and the helpers without a Dock icon, such as MenuBarAgent or BetterDisplay.
+  An application that gains a Dock icon is followed from the next time it comes to the front, and an application that Hammerspoon follows stays followed until it quits.
+  Hammerspoon's window filter still asks every application that it follows for its windows after each change of desktop.
   Such a window counts when it lies on a desktop out of view, belongs to an application with a Dock icon, and measures at least 100 by 50 points, which leaves out most of the hidden windows that applications keep.
   An application may keep a window that it closed, such as a window of Tailscale or the "New Event" window of Calendar, and macOS lists such a window on its desktop while it shows nowhere.
   The script therefore also reads the tags and the attributes of each window through the private functions of SkyLight, and a window counts only when yabai would list it on its desktop by the same values.
@@ -874,7 +897,7 @@ The rule that a minimized window keeps no desktop holds when `minimized_after` i
 "Print diagnostics to the console" in the menu bar item prints the same into the Hammerspoon console.
 The diagnostics start with the version of Hammerspoon, and give the desktop that each screen shows and the numbers of desktops that the desktop manager tracks.
 They also give the number of desktops and the desktop shown of each screen in the record of the active profile.
-The diagnostics also give whether the active profile is paused.
+The diagnostics also give whether the active profile is paused, and whether it leaves the monitor configuration to macOS.
 Each switch writes its plan and its duration to the console.
 Each opening of Mission Control also writes how long it waited for the release of the modifiers and until Mission Control showed.
 The log line of each press on a thumbnail names the window that it focused before the press and when its application became the frontmost application, or says that it focused none.

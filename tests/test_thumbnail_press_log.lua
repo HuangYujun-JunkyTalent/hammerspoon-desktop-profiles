@@ -138,4 +138,17 @@ return {
                 .. " which failed: Mission Control showed no group for display 2"
         )
     end,
+
+    a_block_of_half_a_second_or_more_reads_in_the_log_line = function()
+        local blocked = make_press({ active_after = 2.1, closed_after = 2.1 })
+        blocked.longest_block_seconds = 1.5
+        expect.equal(
+            thumbnail_press_log.describe_press(blocked, 2.1),
+            "no focus before the press, active after 2.10 seconds,"
+                .. " Mission Control closed after 2.10 seconds, one press,"
+                .. " Hammerspoon was blocked for up to 1.50 seconds between two checks"
+        )
+        blocked.longest_block_seconds = 0.4
+        expect.equal(thumbnail_press_log.describe_press(blocked, 2.1):find("blocked"), nil)
+    end,
 }

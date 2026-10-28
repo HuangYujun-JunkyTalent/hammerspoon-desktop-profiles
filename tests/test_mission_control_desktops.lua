@@ -1051,4 +1051,52 @@ return {
         expect.equal(world.is_mission_control_open, false)
         expect.equal(retained_timers.count_running(), timers_before)
     end,
+
+    a_block_of_hammerspoon_past_the_deadline_still_gets_the_second_press = function()
+        local world = start_world({ 3, 14 }, { 7 })
+        world.ignored_desktop_press_count = 1
+        local state = start_press(world)
+        local first_press_at = world.desktop_presses[1].at
+        world.schedule(0.02, function()
+            world.clock = world.clock + 6
+        end)
+        advance_until(world, function()
+            return state.result ~= "pending"
+        end)
+        expect.equal(state.result, "shown")
+        expect.equal(world.displays[1].active_space_id, 14)
+        expect_between(measure_second_press(world), 6, 6.1)
+        expect.equal(world.desktop_presses[2].at - first_press_at > 5, true)
+        expect.present(
+            world.log_lines[#world.log_lines]:find(
+                "a second press after 6.02 seconds, Hammerspoon was blocked for up to 5.97 seconds"
+                    .. " between two checks",
+                1,
+                true
+            ),
+            "the block in the log line of the press"
+        )
+    end,
+
+    the_wait_after_a_second_check_that_a_block_delayed_lasts_3_seconds = function()
+        local world = start_world({ 3, 14 }, { 7 })
+        world.ignores_desktop_presses = true
+        local state = start_press(world)
+        world.schedule(0.02, function()
+            world.clock = world.clock + 6
+        end)
+        advance_until(world, function()
+            return #world.desktop_presses == 2
+        end)
+        local second_press_at = world.desktop_presses[2].at
+        advance_until(world, function()
+            return state.result ~= "pending"
+        end)
+        expect_between(world.clock - second_press_at, 3, 3.6)
+        expect.equal(
+            state.result,
+            "Mission Control did not show desktop 2 of Built-in Retina Display within 5 seconds,"
+                .. " after one opening and two presses"
+        )
+    end,
 }

@@ -16,18 +16,82 @@ track_windows.REGULAR_APPLICATION_KIND = 1
 ---What `bundle_id_of` gives for an application without a bundle id and a name.
 track_windows.UNKNOWN_BUNDLE_ID = "unknown"
 
----A window filter that sees the standard windows of every desktop.
+---@param application table an hs.application
+---@param named_bundle_ids table<string, boolean>
+---@return boolean whether the desktop manager follows the windows of the application: it has a
+---Dock icon, or the profiles name it
+function track_windows.is_followed(application, named_bundle_ids)
+    return application:kind() == track_windows.REGULAR_APPLICATION_KIND
+        or named_bundle_ids[track_windows.bundle_id_of(application)] == true
+end
+
+---Leaves the applications that the desktop manager does not follow out of every window filter.
+---The window filter asks each application that it follows for its windows at each change of
+---desktop, and reacts to its accessibility notifications.
+---During the switches of 2026-10-28 on macOS 27, applications without a Dock icon, such as
+---MenuBarAgent, BetterDisplay, Siri and GlobalProtect, took up to 1.5 seconds for one answer, and
+---the answers together blocked Hammerspoon for up to 5 seconds at a time.
+---The window filter reads `hs.window.filter.ignoreAlways` by the name of an application before it
+---follows the application: at its own start, at each launch, and at each activation of an
+---application that it does not follow yet, so an index function there decides at each read.
+---An application that gains a Dock icon is therefore followed from its next activation on.
+---An application that the filter follows stays followed until it quits, because the filter keeps
+---following it, and leaving it out then would only reject its windows with a warning each time.
+---@param named_bundle_ids table<string, boolean>
+local function follow_only_dock_applications(named_bundle_ids)
+    ---@type table<string, table> an hs.application of each name that the filter follows
+    local followed_by_name = {}
+    setmetatable(hs.window.filter.ignoreAlways, {
+        __index = function(_, app_name)
+            local followed = followed_by_name[app_name]
+            if followed and followed:isRunning() then
+                return false
+            end
+            followed_by_name[app_name] = nil
+            local is_running = false
+            for _, application in ipairs(hs.application.runningApplications()) do
+                if application:name() == app_name then
+                    if track_windows.is_followed(application, named_bundle_ids) then
+                        followed_by_name[app_name] = application
+                        return false
+                    end
+                    is_running = true
+                end
+            end
+            return is_running
+        end,
+    })
+end
+
+---A window filter that sees the standard windows of every desktop, of the applications that the
+---desktop manager follows, as `track_windows.is_followed` says.
 ---Minimized windows and the windows of hidden applications count as well.
+---@param named_bundle_ids table<string, boolean> the applications that the profiles name, which
+---the filter follows also without a Dock icon
 ---@return table filter an hs.window.filter
-function track_windows.new_filter()
-    -- Hammerspoon documents that the field makes every window filter ask the applications for
-    -- their windows again at each change of desktop, so that the windows of a desktop that shows
-    -- for the first time join the filter at once.
-    -- The source of `hs.window.filter` in the build with pull request #3889 asks again at each
-    -- change that `hs.spaces.watcher` reports also while the field is false, so the field keeps
-    -- the documented refresh on a version whose source differs.
-    hs.window.filter.forceRefreshOnSpaceChange = true -- luacheck: ignore 122
+function track_windows.new_filter(named_bundle_ids)
+    follow_only_dock_applications(named_bundle_ids)
+    -- `hs.window.filter.forceRefreshOnSpaceChange` keeps its default, false, so that a version of
+    -- Hammerspoon that honours it asks no application for its windows at a change of desktop.
+    -- The windows that the filter has not seen yet reach the desktop manager through the list of
+    -- the window server, as `window_inventory` says.
+    -- The installed `window_filter.lua` asks the applications that it follows at each change that
+    -- `hs.spaces.watcher` reports, whatever the field says.
     return hs.window.filter.new():setDefaultFilter({ allowRoles = "AXStandardWindow" })
+end
+
+---@return table[] the hs.window objects of every application that the window filter follows, as
+---`hs.window.allWindows` gives them for every application with a Dock icon or without one
+function track_windows.list_followed_windows()
+    local windows = {}
+    for _, application in ipairs(hs.application.runningApplications()) do
+        if
+            application:kind() >= 0 and not hs.window.filter.ignoreAlways[application:name() or ""]
+        then
+            windows = concatenate_lists.concatenate(windows, application:allWindows())
+        end
+    end
+    return windows
 end
 
 ---@param application table|nil an hs.application

@@ -1,5 +1,6 @@
 local javascript_tasks = require("desktop_manager.macos.javascript_tasks")
 local read_desktops = require("desktop_manager.macos.read_desktops")
+local retained_timers = require("desktop_manager.macos.retained_timers")
 local server_windows = require("desktop_manager.core.server_windows")
 local track_windows = require("desktop_manager.macos.track_windows")
 
@@ -75,6 +76,45 @@ local function map_applications(pids)
     return application_by_pid
 end
 
+---How long a run waits after its exit for the rest of its output, because Hammerspoon may give
+---the output of a task through the streaming callback after the exit callback.
+local LATE_OUTPUT_SECONDS = 0.3
+---The runs of the script for one refresh, the first included, before the refresh keeps the
+---windows of the last one.
+local MAX_RUNS = 3
+
+---@param output string
+---@return table[]|nil rows the list of the output, or nil when the output holds no whole list
+local function decode_rows(output)
+    -- osascript ends the result with a newline, so an output without one is empty or cut short,
+    -- and the decoder, which logs an error on such an output, does not run.
+    if output:sub(-1) ~= "\n" then
+        return nil
+    end
+    local is_decoded, rows = pcall(hs.json.decode, output)
+    if is_decoded and type(rows) == "table" then
+        return rows
+    end
+    return nil
+end
+
+---@param inventory WindowInventory
+---@param rows table[]
+---@param list_known_window_ids fun(): table<integer, boolean>
+local function take_rows(inventory, rows, list_known_window_ids)
+    local hidden_space_lists = map_hidden_space_lists()
+    local hidden_spaces = pick_last_spaces(hidden_space_lists)
+    local application_by_pid = map_applications(server_windows.list_owner_pids(rows, hidden_spaces))
+    inventory.windows = server_windows.select_unreached_windows(
+        rows,
+        hidden_spaces,
+        application_by_pid,
+        list_known_window_ids()
+    )
+    inventory.occupying_windows =
+        server_windows.map_occupying_windows(rows, hidden_space_lists, application_by_pid)
+end
+
 ---@param callbacks fun()[]
 local function call_all(callbacks)
     for _, callback in ipairs(callbacks) do
@@ -82,58 +122,96 @@ local function call_all(callbacks)
     end
 end
 
----Runs the script once, and then once more when calls wait for a list that starts later.
+local start_run
+
+---Ends the refresh, calls the calls that waited for it, and starts the next refresh when calls
+---wait for one.
+---@param inventory WindowInventory
+---@param list_known_window_ids fun(): table<integer, boolean>
+---@param listed_at number when the list was taken, in seconds since the epoch
+local function finish_refresh(inventory, list_known_window_ids, listed_at)
+    inventory.last_update_started_at = listed_at
+    inventory.is_refreshing = false
+    local finished = inventory.waiting
+    inventory.waiting, inventory.next_waiting = inventory.next_waiting, {}
+    call_all(finished)
+    if #inventory.waiting > 0 and not inventory.is_refreshing then
+        inventory.is_refreshing = true
+        start_run(inventory, list_known_window_ids, 1)
+    end
+end
+
+---Ends the refresh when the script cannot start, together with the calls that wait for a later
+---refresh, because that one could not start either.
+---@param inventory WindowInventory
+local function give_up_refresh(inventory)
+    inventory.last_update_started_at = hs.timer.secondsSinceEpoch()
+    inventory.is_refreshing = false
+    local finished = inventory.waiting
+    for _, callback in ipairs(inventory.next_waiting) do
+        table.insert(finished, callback)
+    end
+    inventory.waiting, inventory.next_waiting = {}, {}
+    call_all(finished)
+end
+
+---Runs the script once for the refresh that runs, and again when the run gives no whole list.
 ---The task collects the output through a streaming callback, because a list above 64 KiB blocks a
 ---task without one, as `javascript_tasks.new` says.
 ---@param inventory WindowInventory
 ---@param list_known_window_ids fun(): table<integer, boolean>
-local function start_refresh(inventory, list_known_window_ids)
-    inventory.is_refreshing = true
+---@param run_number integer
+function start_run(inventory, list_known_window_ids, run_number)
     local chunks = {}
-    local task = javascript_tasks.new("list_server_windows.js", {}, function(exit_code, stdout)
-        inventory.last_update_started_at = hs.timer.secondsSinceEpoch()
-        inventory.is_refreshing = false
-        table.insert(chunks, stdout or "")
-        local is_decoded, rows = pcall(hs.json.decode, table.concat(chunks))
-        if exit_code == 0 and is_decoded and type(rows) == "table" then
-            local hidden_space_lists = map_hidden_space_lists()
-            local hidden_spaces = pick_last_spaces(hidden_space_lists)
-            local application_by_pid =
-                map_applications(server_windows.list_owner_pids(rows, hidden_spaces))
-            inventory.windows = server_windows.select_unreached_windows(
-                rows,
-                hidden_spaces,
-                application_by_pid,
-                list_known_window_ids()
-            )
-            inventory.occupying_windows =
-                server_windows.map_occupying_windows(rows, hidden_space_lists, application_by_pid)
+    local exit_code, exited_at, late_output_timer
+    local is_over = false
+    ---@param is_last_chance boolean whether no more output may come
+    local function try_to_end(is_last_chance)
+        if is_over or not exit_code then
+            return
         end
-        local finished = inventory.waiting
-        inventory.waiting, inventory.next_waiting = inventory.next_waiting, {}
-        call_all(finished)
-        if #inventory.waiting > 0 and not inventory.is_refreshing then
-            start_refresh(inventory, list_known_window_ids)
+        local rows = exit_code == 0 and decode_rows(table.concat(chunks)) or nil
+        if not rows and not is_last_chance then
+            return
+        end
+        is_over = true
+        retained_timers.stop(late_output_timer)
+        if rows then
+            take_rows(inventory, rows, list_known_window_ids)
+        elseif run_number < MAX_RUNS then
+            -- The next run starts after the calls that wait for a later refresh, so it serves them.
+            for _, callback in ipairs(inventory.next_waiting) do
+                table.insert(inventory.waiting, callback)
+            end
+            inventory.next_waiting = {}
+            start_run(inventory, list_known_window_ids, run_number + 1)
+            return
+        end
+        finish_refresh(inventory, list_known_window_ids, exited_at)
+    end
+    local task = javascript_tasks.new("list_server_windows.js", {}, function(code, stdout)
+        exit_code, exited_at = code, hs.timer.secondsSinceEpoch()
+        table.insert(chunks, stdout or "")
+        try_to_end(code ~= 0)
+        if not is_over then
+            late_output_timer = retained_timers.after(LATE_OUTPUT_SECONDS, function()
+                try_to_end(true)
+            end)
         end
     end, function(_, stdout)
         table.insert(chunks, stdout or "")
+        try_to_end(false)
         return true
     end)
     if not task or not task:start() then
-        inventory.last_update_started_at = hs.timer.secondsSinceEpoch()
-        inventory.is_refreshing = false
-        local finished = inventory.waiting
-        for _, callback in ipairs(inventory.next_waiting) do
-            table.insert(finished, callback)
-        end
-        inventory.waiting, inventory.next_waiting = {}, {}
-        call_all(finished)
+        give_up_refresh(inventory)
     end
 end
 
 ---Lists the windows of the window server again, and calls `on_done` when the list is new.
 ---A refresh that runs already takes the call, so the script runs once at a time.
----A script that fails keeps the windows of the last refresh.
+---A script that gives no list runs again, up to three runs, and then the refresh keeps the windows
+---of the last one.
 ---@param inventory WindowInventory
 ---@param list_known_window_ids fun(): table<integer, boolean> the windows that accessibility
 ---reaches when the script ends
@@ -145,7 +223,8 @@ function window_inventory.refresh(inventory, list_known_window_ids, on_done)
     if inventory.is_refreshing then
         return
     end
-    start_refresh(inventory, list_known_window_ids)
+    inventory.is_refreshing = true
+    start_run(inventory, list_known_window_ids, 1)
 end
 
 ---Lists the windows of the window server again, and calls `on_done` with a list that started after

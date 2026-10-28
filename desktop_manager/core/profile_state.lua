@@ -15,6 +15,8 @@ local profile_state = {}
 ---@field name string
 ---@field arrangements table<string, Arrangement> keyed by monitor configuration key
 ---@field app_numbers AppNumber[] the applications that shortcuts such as Control-Option-3 reach
+---@field unmanaged_configuration_keys string[] the monitor configurations whose windows and
+---desktops the profile leaves to macOS while it is active, in sorted order
 
 ---The state that the tool keeps between runs of Hammerspoon.
 ---Profiles are keyed by their number written as a string, because JSON objects have string keys.
@@ -77,6 +79,7 @@ local function new_profile(number)
         name = string.format("Profile %d", number),
         arrangements = {},
         app_numbers = {},
+        unmanaged_configuration_keys = {},
     }
 end
 
@@ -173,13 +176,74 @@ function profile_state.with_last_seen_login_time(state, login_time)
 end
 
 ---@param state State
+---@param number integer
+---@param monitor_configuration_key string
+---@return boolean whether the profile arranges the windows and the desktops of the configuration
+function profile_state.manages_configuration(state, number, monitor_configuration_key)
+    local profile = state.profiles[key_of(number)]
+    for _, key in ipairs(profile and profile.unmanaged_configuration_keys or {}) do
+        if key == monitor_configuration_key then
+            return false
+        end
+    end
+    return true
+end
+
+---@param profile Profile
+---@param monitor_configuration_key string
+---@return string[] the unmanaged keys of the profile without the configuration
+local function list_other_unmanaged_keys(profile, monitor_configuration_key)
+    local keys = {}
+    for _, key in ipairs(profile.unmanaged_configuration_keys) do
+        if key ~= monitor_configuration_key then
+            table.insert(keys, key)
+        end
+    end
+    return keys
+end
+
+---@param state State
+---@param number integer
+---@param monitor_configuration_key string
+---@return State a copy of the state in which the profile arranges the configuration
+function profile_state.with_configuration_managed(state, number, monitor_configuration_key)
+    local profile = profile_state.profile_or_default(state, number)
+    profile.unmanaged_configuration_keys =
+        list_other_unmanaged_keys(profile, monitor_configuration_key)
+    return profile_state.with_profile(state, profile)
+end
+
+---@param state State
+---@param number integer
+---@param monitor_configuration_key string
+---@return State a copy of the state in which the profile leaves the configuration to macOS
+function profile_state.with_configuration_left_to_macos(state, number, monitor_configuration_key)
+    if number == profile_state.NO_PROFILE_NUMBER then
+        error("profile 0 arranges no monitor configuration", 2)
+    end
+    local profile = profile_state.profile_or_default(state, number)
+    local keys = list_other_unmanaged_keys(profile, monitor_configuration_key)
+    table.insert(keys, monitor_configuration_key)
+    table.sort(keys)
+    profile.unmanaged_configuration_keys = keys
+    return profile_state.with_profile(state, profile)
+end
+
+---@param state State
+---@param monitor_configuration_key string the configuration of the monitors now
 ---@return integer|nil the profile whose records and numbers the updates write: the active profile,
----or nil while it is paused or no profile is active
-function profile_state.find_profile_number_to_update(state)
-    if state.is_active_profile_paused then
+---or nil while it is paused, while it leaves the configuration to macOS, or while no profile is
+---active
+function profile_state.find_profile_number_to_update(state, monitor_configuration_key)
+    local number = state.active_profile_number
+    if
+        not number
+        or state.is_active_profile_paused
+        or not profile_state.manages_configuration(state, number, monitor_configuration_key)
+    then
         return nil
     end
-    return state.active_profile_number
+    return number
 end
 
 ---@param state State
@@ -295,6 +359,28 @@ function profile_state.index_recorded_windows(state)
         end
     end
     return recorded
+end
+
+---@param state State
+---@return table<string, boolean> the applications that some record, some application number or the
+---pool of applications names, by bundle id
+function profile_state.list_named_bundle_ids(state)
+    local bundle_ids = {}
+    for _, record in ipairs(list_records_of_state(state)) do
+        bundle_ids[record.bundle_id] = true
+    end
+    for _, profile in pairs(state.profiles) do
+        for _, entry in ipairs(profile.app_numbers) do
+            bundle_ids[entry.bundle_id] = true
+        end
+    end
+    for _, listed in ipairs(state.app_pool.skip_listed) do
+        bundle_ids[listed.bundle_id] = true
+    end
+    for _, listed in ipairs(state.app_pool.manage_listed) do
+        bundle_ids[listed.bundle_id] = true
+    end
+    return bundle_ids
 end
 
 ---@param state State
@@ -571,6 +657,20 @@ local function decode_app_numbers(raw_entries)
     return entries
 end
 
+---@param raw_keys any
+---@return string[] the keys that are strings, each once, in sorted order
+local function decode_configuration_keys(raw_keys)
+    local keys, is_seen = {}, {}
+    for _, key in ipairs(type(raw_keys) == "table" and raw_keys or {}) do
+        if type(key) == "string" and not is_seen[key] then
+            is_seen[key] = true
+            table.insert(keys, key)
+        end
+    end
+    table.sort(keys)
+    return keys
+end
+
 ---@param raw any
 ---@param format_version integer
 ---@param kept_counts table<string, integer>
@@ -588,6 +688,8 @@ local function decode_profile(raw, format_version, kept_counts)
     if number == profile_state.NO_PROFILE_NUMBER then
         return profile
     end
+    profile.unmanaged_configuration_keys =
+        decode_configuration_keys(raw.unmanaged_configuration_keys)
     local raw_arrangements = type(raw.arrangements) == "table" and raw.arrangements or {}
     for key, raw_arrangement in pairs(raw_arrangements) do
         local arrangement = decode_arrangement(raw_arrangement, format_version, kept_counts)

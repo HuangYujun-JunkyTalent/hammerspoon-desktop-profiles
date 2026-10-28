@@ -516,7 +516,11 @@ end
 ---@field timing Timing
 ---@field on_done fun(error_message: string|nil)
 ---@field pressed_at number the time of the first press, in seconds since the epoch
----@field last_pressed_at number the time of the last press, in seconds since the epoch
+---@field wait_started_at number when the wait of `desktop_show_timeout_seconds` began, in seconds
+---since the epoch: the first press, the press of the second opening, or a second check that a block
+---of Hammerspoon delayed, less `desktop_press_retry_seconds`
+---@field last_polled_at number|nil when the last check ran, or nil before the first check of an
+---opening, in seconds since the epoch
 ---@field press ThumbnailPress what happened after the first press, for the log
 
 ---Finds the thumbnail again and presses it a second time in the same opening, or notes that the
@@ -580,9 +584,9 @@ local function press_in_second_opening(running_press)
         end)
         return
     end
-    running_press.last_pressed_at = hs.timer.secondsSinceEpoch()
+    running_press.wait_started_at = hs.timer.secondsSinceEpoch()
     running_press.press.is_second_press_made = true
-    running_press.press.second_opening_press_after = running_press.last_pressed_at
+    running_press.press.second_opening_press_after = running_press.wait_started_at
         - running_press.pressed_at
     poll_press(running_press)
 end
@@ -591,6 +595,8 @@ end
 ---@param running_press RunningPress
 local function open_again(running_press)
     running_press.press.is_opened_again = true
+    -- The opening is a wait of its own, which the measure of the blocks leaves out.
+    running_press.last_polled_at = nil
     open_mission_control(running_press.screen_id, running_press.timing, function()
         press_in_second_opening(running_press)
     end, function(failure)
@@ -650,11 +656,20 @@ end
 
 ---Checks whether the desktop is active and Mission Control has closed, ends the press then or at
 ---the deadline, makes the second check once, and otherwise polls again.
+---The second check comes before the deadline also when a block of Hammerspoon delayed the checks
+---past it, and the wait after a delayed second check lasts as long as after a check on time.
 ---@param running_press RunningPress
 poll_press = function(running_press)
     local press, timing = running_press.press, running_press.timing
     local now = hs.timer.secondsSinceEpoch()
     local waited_seconds = now - running_press.pressed_at
+    if running_press.last_polled_at then
+        press.longest_block_seconds = math.max(
+            press.longest_block_seconds or 0,
+            now - running_press.last_polled_at - timing.poll_interval_seconds
+        )
+    end
+    running_press.last_polled_at = now
     if not press.active_after and is_space_active_safely(running_press.space_id) then
         press.active_after = waited_seconds
     end
@@ -673,10 +688,6 @@ poll_press = function(running_press)
         )
         return
     end
-    if now - running_press.last_pressed_at >= timing.desktop_show_timeout_seconds then
-        finish_at_deadline(running_press, waited_seconds)
-        return
-    end
     if
         not press.active_after
         and not press.second_press_after
@@ -689,6 +700,11 @@ poll_press = function(running_press)
             open_again(running_press)
             return
         end
+        running_press.wait_started_at =
+            math.max(running_press.wait_started_at, now - timing.desktop_press_retry_seconds)
+    elseif now - running_press.wait_started_at >= timing.desktop_show_timeout_seconds then
+        finish_at_deadline(running_press, waited_seconds)
+        return
     end
     retained_timers.after(
         timing.poll_interval_seconds,
@@ -748,7 +764,7 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
         timing = timing,
         on_done = on_done,
         pressed_at = pressed_at,
-        last_pressed_at = pressed_at,
+        wait_started_at = pressed_at,
         press = { focus = focus, is_second_press_made = false, is_opened_again = false },
     })
 end

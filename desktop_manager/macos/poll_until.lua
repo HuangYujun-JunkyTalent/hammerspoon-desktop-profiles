@@ -10,6 +10,11 @@ local function check_safely(is_met)
 end
 
 ---Calls `on_done(true)` once `is_met` returns true, or `on_done(false)` after the timeout.
+---A delay of a check beyond the interval, as when another call or a slow check blocked Hammerspoon,
+---moves the deadline on by the delay, so that the wait checks as often as it would without the
+---block.
+---On 2026-10-28, under a load of about 23 on 8 cores, such blocks of up to a second took the whole
+---wait for a window of Activity Monitor to come in reach, which then went back to its desktop.
 ---@param is_met fun(): boolean
 ---@param timeout_seconds number
 ---@param interval_seconds number
@@ -19,9 +24,13 @@ function poll_until.wait(is_met, timeout_seconds, interval_seconds, on_done)
         on_done(true)
         return
     end
-    local deadline = hs.timer.secondsSinceEpoch() + timeout_seconds
+    local last_check_at = hs.timer.secondsSinceEpoch()
+    local deadline = last_check_at + timeout_seconds
     local timer
     timer = retained_timers.every(interval_seconds, function()
+        local checked_at = hs.timer.secondsSinceEpoch()
+        deadline = deadline + math.max(0, checked_at - last_check_at - interval_seconds)
+        last_check_at = checked_at
         local has_met = check_safely(is_met)
         if has_met or hs.timer.secondsSinceEpoch() >= deadline then
             retained_timers.stop(timer)

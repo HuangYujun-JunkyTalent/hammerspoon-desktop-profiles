@@ -108,10 +108,12 @@ function diagnostic_lines.describe_desktops(configuration, kept_desktop_counts)
 end
 
 ---@param state State
+---@param configuration_key string the monitor configuration now
 ---@param active_arrangement Arrangement|nil the arrangement of the active profile for the monitor
 ---configuration
----@return string[] the active profile, and the desktops and the focus that its arrangement records
-function diagnostic_lines.describe_profile(state, active_arrangement)
+---@return string[] the active profile, whether it arranges the configuration, and the desktops and
+---the focus that its arrangement records
+function diagnostic_lines.describe_profile(state, configuration_key, active_arrangement)
     local lines = {}
     add(
         lines,
@@ -119,6 +121,12 @@ function diagnostic_lines.describe_profile(state, active_arrangement)
         tostring(state.active_profile_number)
     )
     local active_number = state.active_profile_number
+    if
+        active_number
+        and not profile_state.manages_configuration(state, active_number, configuration_key)
+    then
+        add(lines, "profile %d leaves %s to macOS", active_number, configuration_key)
+    end
     for _, monitor in ipairs(active_arrangement and active_arrangement.monitors or {}) do
         add(
             lines,
