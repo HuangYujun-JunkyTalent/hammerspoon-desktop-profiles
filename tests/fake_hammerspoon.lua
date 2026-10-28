@@ -201,6 +201,7 @@ local current_world = nil
 ---`hs.application.get` that finds no running application and then searches every window, as
 ---Hammerspoon does, and
 ---`application_window_reads[bundle_id]` the calls of `allWindows` of each application.
+---`running_application_reads` counts the calls of `hs.application.runningApplications`.
 ---`hidden_reads[bundle_id]` counts the calls of `isHidden` of each application, and
 ---`focused_window_reads[bundle_id]` the calls of `focusedWindow` and `mainWindow`.
 ---`icon_reads[bundle_id]` counts the calls of `hs.image.imageFromAppBundle` for each application.
@@ -236,6 +237,8 @@ local current_world = nil
 ---after the exit, and `empty_server_list_count` is the number of the next runs of
 ---`list_server_windows.js` that end with status 0 and no output, as runs on macOS 27.0.1 did.
 ---`server_list_run_count` counts the runs of `list_server_windows.js`.
+---`server_list_late_seconds`, 0 by default, is the time from the exit to the list that comes after
+---it under `is_server_list_after_exit`.
 ---`on_mission_control_open` is called each time a toggle opens Mission Control.
 ---`key_wait_seconds`, 0 by default, is how long before its handling each key of `press_key`,
 ---`type_keys` and `release_modifiers` was made, as `timestamp()` of the event gives it.
@@ -284,6 +287,8 @@ function fake_hammerspoon.install(spec)
         tasks = {},
         task_exit_code = 0,
         space_watchers = {},
+        running_application_reads = 0,
+        server_list_late_seconds = 0,
         server_list_run_count = 0,
         empty_server_list_count = 0,
         is_server_list_after_exit = false,
@@ -1838,7 +1843,9 @@ function fake_hammerspoon.install(spec)
                                 callback(0, "", "")
                             elseif stream_callback and world.is_server_list_after_exit then
                                 callback(0, "", "")
-                                stream_callback(nil, SERVER_WINDOWS_OUTPUT, "")
+                                new_timer(world.server_list_late_seconds, function()
+                                    stream_callback(nil, SERVER_WINDOWS_OUTPUT, "")
+                                end, false)
                             elseif stream_callback then
                                 local split = math.floor(#SERVER_WINDOWS_OUTPUT / 2)
                                 stream_callback(task, SERVER_WINDOWS_OUTPUT:sub(1, split), "")
@@ -2043,6 +2050,7 @@ function fake_hammerspoon.install(spec)
         application = {
             watcher = application_watcher,
             runningApplications = function()
+                world.running_application_reads = world.running_application_reads + 1
                 local bundle_ids = {}
                 for bundle_id, application in pairs(world.applications) do
                     if application.is_running then

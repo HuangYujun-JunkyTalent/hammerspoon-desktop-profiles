@@ -363,7 +363,8 @@ end
 
 ---@param state State
 ---@return table<string, boolean> the applications that some record, some application number or the
----pool of applications names, by bundle id
+---list of the managed applications of the pool names in its mode `MANAGE_LISTED`, by bundle id, and
+---not the ticks of the other mode, which no profile follows
 function profile_state.list_named_bundle_ids(state)
     local bundle_ids = {}
     for _, record in ipairs(list_records_of_state(state)) do
@@ -374,11 +375,10 @@ function profile_state.list_named_bundle_ids(state)
             bundle_ids[entry.bundle_id] = true
         end
     end
-    for _, listed in ipairs(state.app_pool.skip_listed) do
-        bundle_ids[listed.bundle_id] = true
-    end
-    for _, listed in ipairs(state.app_pool.manage_listed) do
-        bundle_ids[listed.bundle_id] = true
+    if state.app_pool.mode == app_pool.MANAGE_LISTED then
+        for _, listed in ipairs(state.app_pool.manage_listed) do
+            bundle_ids[listed.bundle_id] = true
+        end
     end
     return bundle_ids
 end

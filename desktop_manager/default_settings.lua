@@ -18,9 +18,9 @@ local default_settings = {}
 ---@field modifier_release_timeout_seconds number the longest wait for the release of the modifier
 ---keys before Mission Control opens, after which Mission Control stays closed and the alert after
 ---the switch says so
----@field desktop_show_timeout_seconds number the wait after the last press on the thumbnail of a
----desktop in Mission Control, the first press or the press of the second opening, until its screen
----reports the desktop and Mission Control has closed
+---@field desktop_show_timeout_seconds number the wait after the first press on the thumbnail of a
+---desktop in Mission Control, or after the press of the second opening, until its screen reports
+---the desktop and Mission Control has closed
 ---@field desktop_press_retry_seconds number the time after the first press on a thumbnail at which
 ---the thumbnail is pressed a second time when the desktop is not active and Mission Control shows,
 ---or Mission Control opens a second time when it has closed
@@ -48,8 +48,9 @@ local default_settings = {}
 ---list or the search until the application of the chosen window is the frontmost application
 ---@field save_delay_seconds number the wait from a request of an update of the records and the
 ---numbers until the update, such as after a window opens, closes, moves, minimizes or changes its
----title, after a change of desktop, after a switch or a restore, and at each tick of
----periodic_save_seconds, and a request within the wait starts the wait again
+---title, after a switch or a restore, and at each tick of periodic_save_seconds, and a request
+---within the wait starts the wait again, and the same wait runs from a change of desktop until the
+---record of the desktops in view
 ---@field periodic_save_seconds number the time between two requests of an update of the records
 ---and the numbers and two readings of the list of all windows of macOS that no event starts
 ---@field screen_settle_seconds number the wait after a change of the monitors for macOS to move

@@ -237,6 +237,23 @@ return {
         expect.equal(world.windows_moved_by_removal, {})
     end,
 
+    a_window_of_an_application_without_a_dock_icon_keeps_its_desktop = function()
+        local world, controller = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.hotkeys["2"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.applications["com.apple.Notes"].kind = 0
+        world.displays[1].space_ids = { 3, 14, 64, 99 }
+        local settings = world.add_window_of("com.apple.Notes", "Display settings", 99)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        expect.equal(controller:does_window_keep_desktop(settings.id), true)
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(world.mission_control_actions, {})
+        expect.equal(world.displays[1].space_ids, { 3, 14, 64, 99 })
+    end,
+
     a_window_on_every_desktop_keeps_none_of_them = function()
         local world = controller_world.start_world()
         world.hotkeys["1"]()

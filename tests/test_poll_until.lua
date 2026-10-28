@@ -59,4 +59,23 @@ return {
         expect.equal(result, false)
         expect.equal(seconds >= 3.9 and seconds < 4.3, true)
     end,
+
+    a_check_that_stays_slow_ends_the_wait_after_the_timeout_and_one_check = function()
+        local world = start_world()
+        local started_at, result, ended_at = world.clock, nil, nil
+        poll_until.wait(
+            function()
+                world.clock = world.clock + 0.5
+                return false
+            end,
+            1,
+            0.2,
+            function(is_met)
+                result, ended_at = is_met, world.clock
+            end
+        )
+        world.advance(10)
+        expect.equal(result, false)
+        expect.equal(ended_at - started_at <= 2, true)
+    end,
 }

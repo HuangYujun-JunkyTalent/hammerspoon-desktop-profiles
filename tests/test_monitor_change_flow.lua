@@ -3,6 +3,48 @@ local expect = require("tests.expect")
 local fake_worlds = require("tests.fake_worlds")
 local profile_state = require("desktop_manager.core.profile_state")
 
+---A world in which profile 1 is active and has recorded the built-in display.
+---@return table world
+---@return ProfileController controller
+local function start_world_with_a_record()
+    local world, controller = controller_world.start_world()
+    world.hotkeys["1"]()
+    world.advance(controller_world.SETTLE_SECONDS)
+    world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+    return world, controller
+end
+
+---@param world table
+local function report_change_of_desktop(world)
+    for _, callback in ipairs(world.space_watchers) do
+        callback()
+    end
+end
+
+---@param world table
+---@return integer the calls of `allWindows` of every application so far
+local function count_window_reads(world)
+    local count = 0
+    for _, reads in pairs(world.application_window_reads) do
+        count = count + reads
+    end
+    return count
+end
+
+---@param controller ProfileController
+---@return integer|nil the desktop that the record of profile 1 has the built-in display show
+local function read_shown_desktop_number(controller)
+    local arrangement = expect.present(
+        profile_state.find_arrangement(
+            controller.state,
+            1,
+            controller_world.MONITOR_CONFIGURATION_KEY
+        ),
+        "the record of profile 1"
+    )
+    return arrangement.monitors[1].shown_desktop_number
+end
+
 return {
     the_empty_desktops_that_macos_leaves_after_a_monitor_returns_are_removed = function()
         local world, controller = controller_world.start_two_screen_world(
@@ -342,38 +384,66 @@ return {
     end,
 
     a_change_of_desktop_records_the_shown_desktop_and_reads_no_window = function()
-        local world, controller = controller_world.start_world()
-        world.hotkeys["1"]()
-        world.advance(controller_world.SETTLE_SECONDS)
-        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        local world, controller = start_world_with_a_record()
         local runs_before, filter_reads_before = world.server_list_run_count, world.filter_reads
-        local window_reads_before = 0
-        for _, count in pairs(world.application_window_reads) do
-            window_reads_before = window_reads_before + count
-        end
+        local window_reads_before = count_window_reads(world)
         world.displays[1].active_space_id = 14
-        for _, callback in ipairs(world.space_watchers) do
-            callback()
-        end
-        local arrangement = expect.present(
-            profile_state.find_arrangement(
-                controller.state,
-                1,
-                controller_world.MONITOR_CONFIGURATION_KEY
-            ),
-            "the record of profile 1"
-        )
-        expect.equal(arrangement.monitors[1].shown_desktop_number, 2)
+        report_change_of_desktop(world)
+        world.advance(1)
+        expect.equal(read_shown_desktop_number(controller), 1)
+        world.advance(2)
+        expect.equal(read_shown_desktop_number(controller), 2)
         local saved_arrangements = world.saved_json.profiles["1"].arrangements
         local saved = saved_arrangements[controller_world.MONITOR_CONFIGURATION_KEY]
         expect.equal(saved.monitors[1].shown_desktop_number, 2)
         world.advance(5)
-        local window_reads = 0
-        for _, count in pairs(world.application_window_reads) do
-            window_reads = window_reads + count
-        end
         expect.equal(world.server_list_run_count, runs_before)
         expect.equal(world.filter_reads, filter_reads_before)
-        expect.equal(window_reads, window_reads_before)
+        expect.equal(count_window_reads(world), window_reads_before)
+    end,
+
+    a_change_of_the_monitors_right_after_a_change_of_desktop_stops_its_record = function()
+        local world, controller = controller_world.start_two_screen_world(
+            { 3, 14, 64 },
+            { 7, 8, 9, 10 }
+        )
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        world.displays[2].active_space_id = 9
+        report_change_of_desktop(world)
+        world.disconnect_screen(controller_world.DELL_SCREEN.uuid)
+        world.screen_watchers[1]()
+        expect.equal(controller.desktops_timer, nil)
+    end,
+
+    a_change_of_desktop_that_removes_a_desktop_updates_the_whole_record = function()
+        local world, controller = start_world_with_a_record()
+        local filter_reads_before = world.filter_reads
+        world.displays[1].space_ids = { 3, 14 }
+        report_change_of_desktop(world)
+        world.advance(3)
+        expect.equal(controller.state.desktop_counts.last_reading.counts["built-in"], 2)
+        expect.equal(controller.state.desktop_counts.kept["built-in"], 2)
+        expect.equal(world.filter_reads > filter_reads_before, true)
+    end,
+
+    a_change_of_desktop_without_an_active_profile_counts_a_new_desktop = function()
+        local world = controller_world.start_world()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.displays[1].space_ids = { 3, 14, 64, 65 }
+        report_change_of_desktop(world)
+        world.advance(3)
+        expect.equal(world.saved_json.desktop_counts.kept["built-in"], 4)
+    end,
+
+    a_change_of_desktop_while_a_save_waits_leaves_the_record_to_the_save = function()
+        local world, controller = start_world_with_a_record()
+        controller:schedule_save()
+        world.displays[1].active_space_id = 14
+        report_change_of_desktop(world)
+        expect.equal(controller.desktops_timer, nil)
+        world.advance(3)
+        expect.equal(read_shown_desktop_number(controller), 2)
     end,
 }

@@ -601,20 +601,26 @@ return {
         })
     end,
 
-    the_named_bundle_ids_come_from_the_records_the_numbers_and_the_pool = function()
+    the_named_bundle_ids_come_from_the_records_the_numbers_and_the_managed_list = function()
         local state = profile_state.new_state(monitor_matching.BY_COUNT)
         state = profile_state.with_arrangement(state, 3, ARRANGEMENT)
         state = profile_state.with_app_numbers(state, profile_state.NO_PROFILE_NUMBER, {
             { number = 2, bundle_id = "org.asyar", app_name = "asyar", is_chosen_by_user = true },
         })
+        local skipping = app_pool.with_listed(app_pool.new(), "com.apple.Siri", "Siri", true)
+        local managing = app_pool.with_mode(skipping, app_pool.MANAGE_LISTED)
         state = profile_state.with_app_pool(
             state,
-            app_pool.with_listed(app_pool.new(), "pro.betterdisplay.BetterDisplay", "BD", true)
+            app_pool.with_listed(managing, "pro.betterdisplay.BetterDisplay", "BD", true)
         )
         local expected = { ["org.asyar"] = true, ["pro.betterdisplay.BetterDisplay"] = true }
         for _, record in ipairs(ARRANGEMENT.windows) do
             expected[record.bundle_id] = true
         end
+        expect.equal(profile_state.list_named_bundle_ids(state), expected)
+        local back_to_skipping = app_pool.with_mode(state.app_pool, app_pool.SKIP_LISTED)
+        state = profile_state.with_app_pool(state, back_to_skipping)
+        expected["pro.betterdisplay.BetterDisplay"] = nil
         expect.equal(profile_state.list_named_bundle_ids(state), expected)
     end,
 }

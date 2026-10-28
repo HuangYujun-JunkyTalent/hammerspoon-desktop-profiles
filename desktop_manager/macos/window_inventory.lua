@@ -13,7 +13,8 @@ local window_inventory = {}
 ---@class WindowInventory
 ---@field windows ServerWindow[] the windows out of reach at the last refresh
 ---@field occupying_windows table<integer, integer> the desktop out of view of each window of an
----application with a Dock icon at the last refresh, which may keep the desktop from a removal
+---application with windows of its own at the last refresh, with a Dock icon or without one, which
+---may keep the desktop from a removal
 ---@field is_refreshing boolean
 ---@field waiting fun()[] the calls that wait for the refresh that runs
 ---@field next_waiting fun()[] the calls that wait for a refresh that starts after the one that runs
@@ -63,17 +64,23 @@ local function map_hidden_spaces()
 end
 
 ---@param pids integer[]
----@return table<integer, ServerApplication> the applications with a Dock icon among the processes
+---@return table<integer, ServerApplication> dock_application_by_pid the applications with a Dock
+---icon among the processes
+---@return table<integer, ServerApplication> application_by_pid the applications with windows of
+---their own among the processes, with a Dock icon or without one, as the agents of the menu bar
 local function map_applications(pids)
-    local application_by_pid = {}
+    local dock_application_by_pid, application_by_pid = {}, {}
     for _, pid in ipairs(pids) do
         local application = hs.application.applicationForPID(pid)
-        if application and application:kind() == track_windows.REGULAR_APPLICATION_KIND then
+        if application and track_windows.may_own_windows(application) then
             local bundle_id, app_name = track_windows.identify_application(application)
             application_by_pid[pid] = { bundle_id = bundle_id, app_name = app_name }
+            if application:kind() == track_windows.REGULAR_APPLICATION_KIND then
+                dock_application_by_pid[pid] = application_by_pid[pid]
+            end
         end
     end
-    return application_by_pid
+    return dock_application_by_pid, application_by_pid
 end
 
 ---How long a run waits after its exit for the rest of its output, because Hammerspoon may give
@@ -104,11 +111,14 @@ end
 local function take_rows(inventory, rows, list_known_window_ids)
     local hidden_space_lists = map_hidden_space_lists()
     local hidden_spaces = pick_last_spaces(hidden_space_lists)
-    local application_by_pid = map_applications(server_windows.list_owner_pids(rows, hidden_spaces))
+    -- The window filter follows no application without a Dock icon that the profiles do not name,
+    -- so the windows of such an application keep their desktops through this list alone.
+    local dock_application_by_pid, application_by_pid =
+        map_applications(server_windows.list_owner_pids(rows, hidden_spaces))
     inventory.windows = server_windows.select_unreached_windows(
         rows,
         hidden_spaces,
-        application_by_pid,
+        dock_application_by_pid,
         list_known_window_ids()
     )
     inventory.occupying_windows =
@@ -128,9 +138,10 @@ local start_run
 ---wait for one.
 ---@param inventory WindowInventory
 ---@param list_known_window_ids fun(): table<integer, boolean>
----@param listed_at number when the list was taken, in seconds since the epoch
-local function finish_refresh(inventory, list_known_window_ids, listed_at)
-    inventory.last_update_started_at = listed_at
+---@param taken_at number when the refresh began to take its list or gave up, in seconds since the
+---epoch
+local function finish_refresh(inventory, list_known_window_ids, taken_at)
+    inventory.last_update_started_at = taken_at
     inventory.is_refreshing = false
     local finished = inventory.waiting
     inventory.waiting, inventory.next_waiting = inventory.next_waiting, {}
@@ -163,13 +174,16 @@ end
 ---@param run_number integer
 function start_run(inventory, list_known_window_ids, run_number)
     local chunks = {}
-    local exit_code, exited_at, late_output_timer
+    local exit_code, late_output_timer
     local is_over = false
     ---@param is_last_chance boolean whether no more output may come
     local function try_to_end(is_last_chance)
         if is_over or not exit_code then
             return
         end
+        -- The time leaves out the wait for late output, during which Hammerspoon is free, so that
+        -- the log of the search measures the time that the list held Hammerspoon.
+        local tried_at = hs.timer.secondsSinceEpoch()
         local rows = exit_code == 0 and decode_rows(table.concat(chunks)) or nil
         if not rows and not is_last_chance then
             return
@@ -187,10 +201,10 @@ function start_run(inventory, list_known_window_ids, run_number)
             start_run(inventory, list_known_window_ids, run_number + 1)
             return
         end
-        finish_refresh(inventory, list_known_window_ids, exited_at)
+        finish_refresh(inventory, list_known_window_ids, tried_at)
     end
     local task = javascript_tasks.new("list_server_windows.js", {}, function(code, stdout)
-        exit_code, exited_at = code, hs.timer.secondsSinceEpoch()
+        exit_code = code
         table.insert(chunks, stdout or "")
         try_to_end(code ~= 0)
         if not is_over then

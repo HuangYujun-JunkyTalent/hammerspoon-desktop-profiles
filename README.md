@@ -113,7 +113,7 @@ The first three name the active profile, such as Deactivate “Writing”, and t
 
 Each profile arranges every monitor configuration until you untick the configuration for it in [the window "Settings…"](#settings-in-the-menu-bar-item-changes-the-behaviour-of-the-desktop-manager-while-it-runs).
 For example, profile 1 may arrange the built-in display with one external monitor and leave the built-in display alone to macOS.
-While the active profile leaves the configuration of the monitors to macOS, the desktop manager acts as while no profile is active.
+While the active profile leaves the configuration of the monitors to macOS, the desktop manager leaves the windows and the desktops alone, as while no profile is active.
 Its records stay as they are, a change of the monitors leaves the windows where macOS puts them, and every desktop stays.
 A change of the monitors into such a configuration shows an alert, such as "Profile 1 leaves built-in to macOS".
 A change back to a configuration that the profile arranges restores the record of that configuration, as the section above says.
@@ -124,6 +124,8 @@ A switch to a profile that arranges the configuration restores its record as usu
 "Update the record now" in a configuration that the active profile leaves to macOS records nothing and shows the alert.
 A tick for the active profile under the configuration now starts its records from the windows as they are.
 The application numbers of Control-Option and the search of the windows keep working in every configuration.
+In a configuration that the active profile leaves to macOS, the numbers of the profile stay as they are, and an application that opens there gets no new default number.
+A release of a number or Control-Option-0 there gives the default numbers of the record of the profile for the configuration, and keeps the default numbers as they are when the profile has no such record.
 
 ### The first start of Hammerspoon soon after a login pauses the active profile
 
@@ -148,7 +150,7 @@ The state file keeps the pause, so a reload keeps it, also after `pause_after_lo
 | Command-Option-Shift with another number | switches to that profile without the update of profile 2 before the switch |
 | Command-Option-Shift-0 | deactivates profile 2 without an update |
 | "Save layout of “Profile 2” and end the pause" in the menu bar item, or the URL `action=save` | records the windows as they are and ends the pause |
-| "Clear a profile" on profile 2 | empties profile 2, which records the windows from its next update on |
+| "Clear a profile" on profile 2 | empties profile 2, which records the windows from its next update on in a configuration that it arranges |
 | "Return N to the default" or Control-Option-0 | gives the default numbers of the record of profile 2 for the monitor configuration, and Control-Option-0 keeps the default numbers that profile 2 had |
 
 A rename, a number given by hand, the managed applications and the choice of the same monitor configuration work as usual.
@@ -174,7 +176,8 @@ A window of a managed application keeps its desktop only while it is in sight, b
 No test on macOS 27.0.1 has confirmed that move yet, and check 4 of [the checks of the build](#four-commands-check-what-the-desktop-manager-assumes-of-the-build-and-of-macos-2701) tests it.
 A window that Hammerspoon has not seen keeps its desktop when the list of all windows of macOS places it there, as [the section on the limits of macOS](#hammerspoon-and-macos-2701-limit-what-the-desktop-manager-can-do) says of such windows.
 A window that macOS shows on every desktop keeps none of them.
-Right before it removes a desktop, the desktop manager checks again that the desktop is out of view and that no window that Hammerspoon knows keeps it.
+Right before it removes a desktop, the desktop manager checks again that the desktop is out of view and that no window keeps it.
+That check reads the windows that Hammerspoon knows and the windows that the list of all windows of macOS places on the desktop.
 A desktop that fails the check stays, with a line in the console.
 
 The removals on every screen go in one opening of Mission Control, which ends with the press on the recorded desktop of the screen that has the focus.
@@ -206,7 +209,7 @@ After you confirm, the profile forgets the desktops and windows it saved for eve
 A cleared profile acts as a new one: activating it takes the windows that other profiles recorded out of sight, as `concealment_method` sets, and brings back nothing.
 The windows that no profile recorded stay in sight, and the profile records them at its next update.
 A profile with a layout for the monitors instead takes every window of a managed application out of sight that it did not record in sight.
-A cleared active profile stays active and records the windows from its next update on.
+A cleared active profile stays active and records the windows from its next update on, in a configuration that it arranges.
 A cleared paused profile ends its pause.
 
 ### "Managed applications…" in the menu bar item leaves some applications to macOS
@@ -743,19 +746,22 @@ The desktop manager works around them as follows.
   A switch moves those that it acts on into view by their ids first, as [the section on switches](#a-switch-changes-only-the-windows-that-differ-from-the-record) says.
   The desktop manager runs the script at the start, once a minute and when the search or the list of Control-Option opens, in about 0.2 seconds each time.
   It also runs the script before a switch, a restore or a removal of desktops acts on the list.
-  At a change of desktop, the desktop manager records the desktop that each screen shows and the screen of the focus, and leaves the script and the windows alone.
-- Hammerspoon follows the windows of the applications with a Dock icon and of the applications that a profile names, and leaves out the agents of the menu bar and the helpers without a Dock icon, such as MenuBarAgent or BetterDisplay.
-  An application that gains a Dock icon is followed from the next time it comes to the front, and an application that Hammerspoon follows stays followed until it quits.
-  Hammerspoon's window filter still asks every application that it follows for its windows after each change of desktop.
-  Such a window counts when it lies on a desktop out of view, belongs to an application with a Dock icon, and measures at least 100 by 50 points, which leaves out most of the hidden windows that applications keep.
+  A change of desktop that only shows another desktop leaves the script and the windows alone.
+  After `save_delay_seconds`, the desktop manager records the desktop that each screen shows and the screen of the focus, and a change of the monitors during the wait stops the record.
+  A change of desktop that adds or removes a desktop updates the whole record instead, because the windows of the later desktops change their numbers.
+  Such a window counts in the list and the search when it lies on a desktop out of view, belongs to an application with a Dock icon, and measures at least 100 by 50 points, which leaves out most of the hidden windows that applications keep.
+  A window of the same size of an application without a Dock icon, such as a window of the settings of BetterDisplay, keeps its desktop from a removal, though the list and the search leave it out.
   An application may keep a window that it closed, such as a window of Tailscale or the "New Event" window of Calendar, and macOS lists such a window on its desktop while it shows nowhere.
   The script therefore also reads the tags and the attributes of each window through the private functions of SkyLight, and a window counts only when yabai would list it on its desktop by the same values.
   A window of a hidden application follows the same rule, and on 2026-10-17 the window server marked a window of the hidden Activity Monitor as yabai would list it.
   Its title needs the permission for Screen Recording, and without it the window shows as "untitled window".
   Choosing such a window in the list or the search shows its desktop through Mission Control, and the desktop manager then waits up to `window_reach_timeout_seconds` of `timing`, 1 second by default, for accessibility to reach it.
   The message at the top of every screen stays during the wait.
+- Hammerspoon follows the windows of the applications with a Dock icon and of the applications that a profile names, and leaves out the agents of the menu bar and the helpers without a Dock icon, such as MenuBarAgent or BetterDisplay.
+  An application that gains a Dock icon, or that a profile starts to name, is followed from the next time it comes to the front, and an application that Hammerspoon follows stays followed until it quits.
+  Hammerspoon's window filter still asks every application that it follows for its windows after each change of desktop.
 - The window filter of Hammerspoon drops a window whose subrole changes while its application is hidden, as the windows of Calendar and of Activity Monitor do, which report `AXDialog` then.
-  A switch looks the recorded windows up among all windows of macOS.
+  A switch looks the recorded windows up among all windows of the applications that Hammerspoon follows.
   Under the setting `hidden_application_windows` `list_where_found`, the list of Control-Option and the search take only standard windows.
   The list and the search therefore leave out such a window while its desktop shows, and list it from the window server while its desktop is out of view.
   Under `list_all`, they take the window whatever its subrole, and under the default `leave_out` they show no window of a hidden application, as [the section on the settings](#settings-of-the-desktop-manager-live-in-desktop_managerdefault_settingslua) explains.

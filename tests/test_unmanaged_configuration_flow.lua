@@ -173,4 +173,89 @@ return {
         end
         expect.equal(is_named, true)
     end,
+
+    the_numbers_of_a_profile_that_leaves_the_configuration_to_macos_keep_their_defaults = function()
+        local world, controller = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        local defaults = profile_state.profile_or_default(controller.state, 1).app_numbers
+        expect.equal(#defaults > 0, true)
+        tick_in_settings(world, 1, controller_world.MONITOR_CONFIGURATION_KEY, false)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "3", app = "Microsoft Word" }
+        )
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "release-app-number", number = "3" }
+        )
+        expect.equal(profile_state.profile_or_default(controller.state, 1).app_numbers, defaults)
+        expect.equal(world.saved_json.profiles["1"].app_numbers, defaults)
+        world.app_hotkeys["0"]()
+        expect.equal(profile_state.profile_or_default(controller.state, 1).app_numbers, defaults)
+        expect.equal(world.saved_json.profiles["1"].app_numbers, defaults)
+    end,
+
+    an_update_now_that_ends_a_pause_writes_it_in_a_configuration_left_to_macos = function()
+        local world, controller = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        tick_in_settings(world, 1, controller_world.MONITOR_CONFIGURATION_KEY, false)
+        controller.state = profile_state.with_active_profile_paused(controller.state)
+        controller:write_state()
+        expect.equal(world.saved_json.is_active_profile_paused, true)
+        controller:save_arrangement_now()
+        expect.equal(controller.state.is_active_profile_paused, false)
+        expect.equal(world.saved_json.is_active_profile_paused, false)
+        expect.equal(has_alert(world, "Profile 1 leaves built-in to macOS"), true)
+    end,
+
+    clearing_the_active_profile_in_a_configuration_left_to_macos_says_so = function()
+        local world = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        tick_in_settings(world, 1, controller_world.MONITOR_CONFIGURATION_KEY, false)
+        world.alert_button = "Clear"
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "clear", profile = "1" }
+        )
+        expect.equal(
+            world.alerts[#world.alerts],
+            "Profile 1 is cleared and leaves built-in to macOS"
+        )
+    end,
+
+    a_reset_without_a_record_of_a_configuration_left_to_macos_keeps_the_defaults = function()
+        local world, controller = controller_world.start_world()
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        local defaults = profile_state.profile_or_default(controller.state, 1).app_numbers
+        expect.equal(#defaults > 0, true)
+        tick_in_settings(world, 1, controller_world.MONITOR_CONFIGURATION_KEY, false)
+        world.alert_button = "Clear"
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "clear", profile = "1" }
+        )
+        world.app_hotkeys["0"]()
+        expect.equal(profile_state.profile_or_default(controller.state, 1).app_numbers, defaults)
+        expect.equal(world.saved_json.profiles["1"].app_numbers, defaults)
+    end,
+
+    a_number_for_an_application_without_a_dock_icon_lets_hammerspoon_follow_it = function()
+        local world = controller_world.start_world()
+        local notes = world.applications["com.apple.Notes"]
+        notes.is_running, notes.kind = true, 0
+        local ignored = _G.hs.window.filter.ignoreAlways
+        expect.equal(ignored["Notes"], true)
+        world.url_handlers["desktop-manager"](
+            "desktop-manager",
+            { action = "number-app", number = "4", app = "Notes" }
+        )
+        expect.equal(ignored["Notes"], false)
+    end,
 }

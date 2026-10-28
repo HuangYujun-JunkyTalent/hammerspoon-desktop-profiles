@@ -156,7 +156,8 @@ return {
         for _, bundle_id in ipairs({ "com.apple.MenuBarAgent", "org.asyar", "com.apple.campo" }) do
             world.applications[bundle_id].kind = 0
         end
-        local filter = track_windows.new_filter({ ["org.asyar"] = true })
+        local named_bundle_ids = { ["org.asyar"] = true }
+        local filter = track_windows.new_filter(named_bundle_ids)
         local ignored = _G.hs.window.filter.ignoreAlways
         expect.equal(ignored["Safari"], false)
         expect.equal(ignored["MenuBarAgent"], true)
@@ -173,10 +174,43 @@ return {
         expect.equal(ignored["Siri"], false)
         siri.is_running = true
         expect.equal(ignored["Siri"], true)
-        expect.equal(track_windows.index_ids(filter:getWindows()), { [41] = true, [43] = true })
+        local reads_before = world.running_application_reads
         expect.equal(
             track_windows.index_ids(track_windows.list_followed_windows()),
             { [41] = true, [43] = true }
         )
+        expect.equal(world.running_application_reads, reads_before + 1)
+        expect.equal(ignored["Safari"], false)
+        expect.equal(world.running_application_reads, reads_before + 1)
+        named_bundle_ids["com.apple.MenuBarAgent"] = true
+        expect.equal(ignored["MenuBarAgent"], false)
+        named_bundle_ids["com.apple.MenuBarAgent"] = nil
+        -- MenuBarAgent stays followed while it runs, also after the state no longer names it.
+        expect.equal(
+            track_windows.index_ids(filter:getWindows()),
+            { [41] = true, [42] = true, [43] = true }
+        )
+        expect.equal(
+            track_windows.index_ids(track_windows.list_followed_windows()),
+            { [41] = true, [42] = true, [43] = true }
+        )
+    end,
+
+    an_application_with_a_dock_icon_wins_over_a_helper_of_the_same_name = function()
+        local world = fake_hammerspoon.install({
+            screens = { fake_worlds.build_builtin_screen() },
+            displays = { { uuid = "BUILTIN-UUID", space_ids = { 3 }, active_space_id = 3 } },
+            applications = {
+                { bundle_id = "com.example.foo.helper", name = "Foo", is_running = true },
+                { bundle_id = "com.example.foo", name = "Foo", is_running = false },
+            },
+            windows = {},
+        })
+        world.applications["com.example.foo.helper"].kind = 0
+        track_windows.new_filter({})
+        local ignored = _G.hs.window.filter.ignoreAlways
+        expect.equal(ignored["Foo"], true)
+        world.applications["com.example.foo"].is_running = true
+        expect.equal(ignored["Foo"], false)
     end,
 }

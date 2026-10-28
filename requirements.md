@@ -97,11 +97,12 @@ After a change of monitors to such a configuration, the tool removes the desktop
 While no profile is active, a change of monitors leaves the desktops and the windows to macOS: the tool moves no window and removes no desktop.
 
 Each profile can leave some monitor configurations to macOS, such as the built-in display alone, and arrange the others, such as the built-in display with one external monitor.
-While the active profile leaves the configuration of the monitors to macOS, the tool acts as while no profile is active.
+While the active profile leaves the configuration of the monitors to macOS, the tool leaves the windows and the desktops alone, as while no profile is active.
 The records of the profile stay as they are, a change of monitors leaves the windows where macOS puts them, and every desktop stays.
 A switch to a profile that leaves the configuration to macOS makes the profile active and leaves every window where it is.
 A switch to a profile that arranges the configuration restores its record of the configuration, or records the configuration as new when the profile has no record of it.
 The application numbers and the search of the windows keep working in a configuration that the active profile leaves to macOS.
+There, the numbers of the active profile stay as they are, and a release of a number or a reset of the numbers gives the default numbers of its record of the configuration, when it has one.
 The window "Settings…" chooses, for each profile, the configurations that it arranges.
 
 The user should be able to switch between level of definitions of "the same monitor configuration".

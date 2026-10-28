@@ -50,6 +50,26 @@ function desktop_counts.read(configuration, desktop_layout)
     return { displays_key = table.concat(uuids, ";"), counts = counts }
 end
 
+---@param reading DesktopReading
+---@param other DesktopReading|nil
+---@return boolean whether both readings saw the same displays with the same desktops of each slot
+function desktop_counts.is_same_reading(reading, other)
+    if not other or reading.displays_key ~= other.displays_key then
+        return false
+    end
+    for slot_key, count in pairs(reading.counts) do
+        if other.counts[slot_key] ~= count then
+            return false
+        end
+    end
+    for slot_key in pairs(other.counts) do
+        if reading.counts[slot_key] == nil then
+            return false
+        end
+    end
+    return true
+end
+
 ---Takes the user's changes of the desktops into the counts, and leaves out the moves of macOS.
 ---Between two readings of the same displays, a display that gains desktops keeps them all, and a
 ---display that loses desktops keeps at most the desktops it has left.

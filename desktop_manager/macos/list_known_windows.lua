@@ -5,8 +5,8 @@ local window_inventory = require("desktop_manager.macos.window_inventory")
 local list_known_windows = {}
 
 ---The windows that Hammerspoon knows: the windows of the window filter, the windows that a reach
----moved into view until the filter lists them, and the windows of `hs.window.allWindows` that a
----caller asks for by their ids.
+---moved into view until the filter lists them, and the windows of the applications that the filter
+---follows that a caller asks for by their ids.
 ---@class KnownWindows
 ---@field window_filter table an hs.window.filter
 ---@field window_inventory WindowInventory the windows that accessibility does not reach
@@ -74,8 +74,8 @@ end
 
 ---@param window_ids integer[]
 ---@param listed table<integer, table> the hs.window of each window id that is known already
----@return table[] the hs.window objects of `hs.window.allWindows` among `window_ids` that `listed`
----lacks, in the order of `hs.window.allWindows`
+---@return table[] the hs.window objects of the applications that the window filter follows among
+---`window_ids` that `listed` lacks, in the order of `track_windows.list_followed_windows`
 local function find_unlisted_windows(window_ids, listed)
     local missing = {}
     for _, window_id in ipairs(window_ids) do
@@ -87,7 +87,7 @@ local function find_unlisted_windows(window_ids, listed)
         return {}
     end
     local found = {}
-    for _, window in ipairs(hs.window.allWindows()) do
+    for _, window in ipairs(track_windows.list_followed_windows()) do
         local window_id = window:id()
         if window_id and missing[window_id] then
             missing[window_id] = nil

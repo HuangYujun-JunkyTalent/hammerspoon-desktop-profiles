@@ -559,6 +559,32 @@ return {
         expect.equal(world.log_lines[#world.log_lines], WARNING_OF_NO_SECOND_PRESS)
     end,
 
+    a_slow_second_opening_reads_as_no_block_of_hammerspoon = function()
+        local world = start_world({ 3, 14 }, { 7 })
+        world.ignores_desktop_presses = true
+        local openings = 0
+        world.on_mission_control_open = function()
+            openings = openings + 1
+            if openings == 1 then
+                world.schedule(1.5, function()
+                    world.is_mission_control_open = false
+                end)
+            end
+        end
+        local state = start_press(world)
+        world.schedule(1.9, function()
+            world.held_modifiers = { cmd = true }
+        end)
+        world.schedule(3, world.release_modifiers)
+        advance_until(world, function()
+            return state.result ~= "pending"
+        end)
+        expect.equal(world.mission_control_openings, 2)
+        local press_line = world.log_lines[#world.log_lines - 1]
+        expect.equal(press_line:find("a second opening after 2.00 seconds", 1, true) ~= nil, true)
+        expect.equal(press_line:find("blocked", 1, true), nil)
+    end,
+
     the_desktop_that_became_active_right_before_the_second_opening_opens_nothing = function()
         local world = start_world({ 3, 14 }, { 7 })
         world.ignores_desktop_presses = true

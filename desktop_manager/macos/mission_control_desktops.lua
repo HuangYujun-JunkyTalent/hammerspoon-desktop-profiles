@@ -519,7 +519,7 @@ end
 ---@field wait_started_at number when the wait of `desktop_show_timeout_seconds` began, in seconds
 ---since the epoch: the first press, the press of the second opening, or a second check that a block
 ---of Hammerspoon delayed, less `desktop_press_retry_seconds`
----@field last_polled_at number|nil when the last check ran, or nil before the first check of an
+---@field last_polled_at number|nil when the last check ended, or nil before the first check of an
 ---opening, in seconds since the epoch
 ---@field press ThumbnailPress what happened after the first press, for the log
 
@@ -669,7 +669,6 @@ poll_press = function(running_press)
             now - running_press.last_polled_at - timing.poll_interval_seconds
         )
     end
-    running_press.last_polled_at = now
     if not press.active_after and is_space_active_safely(running_press.space_id) then
         press.active_after = waited_seconds
     end
@@ -706,6 +705,9 @@ poll_press = function(running_press)
         finish_at_deadline(running_press, waited_seconds)
         return
     end
+    -- The measure of the blocks starts at the end of the check, as in `poll_until.wait`, so that a
+    -- slow check, as a second press, reads as no block.
+    running_press.last_polled_at = hs.timer.secondsSinceEpoch()
     retained_timers.after(
         timing.poll_interval_seconds,
         continue_opening(function()
@@ -715,8 +717,10 @@ poll_press = function(running_press)
 end
 
 ---Presses the thumbnail of the desktop, which shows it and closes Mission Control, and waits up
----to `desktop_show_timeout_seconds` after the last press until macOS reports the desktop and
----Mission Control has closed.
+---to `desktop_show_timeout_seconds` after the first press, or after the press of a second opening,
+---until macOS reports the desktop and Mission Control has closed.
+---A second press in the same opening keeps the wait of the first press, and a second check that a
+---block of Hammerspoon delayed leaves after it the time that a check on time leaves.
 ---When the desktop is not active `desktop_press_retry_seconds` after the first press and Mission
 ---Control still shows, the thumbnail is found again and pressed a second time, because Mission
 ---Control may ignore a press, and a toggle would undo a press that is still taking effect.

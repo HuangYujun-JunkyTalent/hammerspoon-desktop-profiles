@@ -71,8 +71,10 @@ end
 ---The window among those that macOS lists on a desktop that keeps the desktop, at the check right
 ---before the removal of the desktop, as `does_known_window_keep_desktop` says.
 ---A window that macOS shows on every desktop keeps none of them.
----A window that Hammerspoon has not seen counts in the plan of the removal alone, through the
----inventory, which also leaves out the small windows and the windows without a Dock icon.
+---A window that Hammerspoon does not reach keeps its desktop when the inventory lists it on a
+---desktop out of view, as in the plan of the removal, which leaves out the small windows.
+---The inventory runs right before the removal, and it alone holds the windows of the applications
+---without a Dock icon that the profiles do not name, which the window filter does not follow.
 ---The windows that the window filter leaves out come from one walk of every window of the
 ---applications that it follows, instead of one walk for each window as `hs.window.get` does.
 ---@param window_ids integer[]
@@ -90,6 +92,9 @@ function extra_desktops.find_window_that_keeps_desktop(window_ids, context)
                 window = all_by_id[window_id]
             end
             if window and does_known_window_keep_desktop(window, context) then
+                return window_id
+            end
+            if not window and context.window_inventory.occupying_windows[window_id] then
                 return window_id
             end
         end

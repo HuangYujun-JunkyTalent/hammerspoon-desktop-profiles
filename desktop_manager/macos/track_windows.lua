@@ -20,9 +20,16 @@ track_windows.UNKNOWN_BUNDLE_ID = "unknown"
 ---@param named_bundle_ids table<string, boolean>
 ---@return boolean whether the desktop manager follows the windows of the application: it has a
 ---Dock icon, or the profiles name it
-function track_windows.is_followed(application, named_bundle_ids)
+local function is_followed(application, named_bundle_ids)
     return application:kind() == track_windows.REGULAR_APPLICATION_KIND
         or named_bundle_ids[track_windows.bundle_id_of(application)] == true
+end
+
+---Whether the window filter leaves the application out, as `follow_only_dock_applications` decides
+---once `new_filter` ran, and as the names of `hs.window.filter.ignoreAlways` say before.
+---@type fun(application: table): boolean
+local is_left_out = function(application)
+    return hs.window.filter.ignoreAlways[application:name() or ""] == true
 end
 
 ---Leaves the applications that the desktop manager does not follow out of every window filter.
@@ -34,25 +41,47 @@ end
 ---The window filter reads `hs.window.filter.ignoreAlways` by the name of an application before it
 ---follows the application: at its own start, at each launch, and at each activation of an
 ---application that it does not follow yet, so an index function there decides at each read.
----An application that gains a Dock icon is therefore followed from its next activation on.
+---An application that gains a Dock icon, or that a change of the state names, is therefore followed
+---from its next activation on.
 ---An application that the filter follows stays followed until it quits, because the filter keeps
 ---following it, and leaving it out then would only reject its windows with a warning each time.
----@param named_bundle_ids table<string, boolean>
+---A read for a name that the filter does not follow looks through the running applications, so that
+---an application with a Dock icon wins over a helper of the same name; such reads come at a launch
+---or an activation alone, and `list_followed_windows` decides for the application in hand.
+---@param named_bundle_ids table<string, boolean> the table that the controller refills in place
 local function follow_only_dock_applications(named_bundle_ids)
     ---@type table<string, table> an hs.application of each name that the filter follows
     local followed_by_name = {}
-    setmetatable(hs.window.filter.ignoreAlways, {
+    ---@param app_name string
+    ---@param application table
+    ---@return boolean whether the filter follows the application, which it then keeps
+    local function follow(app_name, application)
+        if not is_followed(application, named_bundle_ids) then
+            return false
+        end
+        followed_by_name[app_name] = application
+        return true
+    end
+    ---@param app_name string
+    ---@return boolean whether the filter follows an application of the name that runs
+    local function has_running_followed(app_name)
+        local followed = followed_by_name[app_name]
+        if followed and followed:isRunning() then
+            return true
+        end
+        followed_by_name[app_name] = nil
+        return false
+    end
+    local ignore_always = hs.window.filter.ignoreAlways
+    setmetatable(ignore_always, {
         __index = function(_, app_name)
-            local followed = followed_by_name[app_name]
-            if followed and followed:isRunning() then
+            if has_running_followed(app_name) then
                 return false
             end
-            followed_by_name[app_name] = nil
             local is_running = false
             for _, application in ipairs(hs.application.runningApplications()) do
                 if application:name() == app_name then
-                    if track_windows.is_followed(application, named_bundle_ids) then
-                        followed_by_name[app_name] = application
+                    if follow(app_name, application) then
                         return false
                     end
                     is_running = true
@@ -61,13 +90,21 @@ local function follow_only_dock_applications(named_bundle_ids)
             return is_running
         end,
     })
+    is_left_out = function(application)
+        local app_name = application:name() or ""
+        if rawget(ignore_always, app_name) then
+            return true
+        end
+        return not has_running_followed(app_name) and not follow(app_name, application)
+    end
 end
 
----A window filter that sees the standard windows of every desktop, of the applications that the
----desktop manager follows, as `track_windows.is_followed` says.
+---A window filter that sees the standard windows of every desktop, of the applications with a Dock
+---icon and of those that the profiles name, and each application that it follows stays followed
+---until it quits.
 ---Minimized windows and the windows of hidden applications count as well.
 ---@param named_bundle_ids table<string, boolean> the applications that the profiles name, which
----the filter follows also without a Dock icon
+---the filter follows also without a Dock icon, in a table that the caller keeps up to date
 ---@return table filter an hs.window.filter
 function track_windows.new_filter(named_bundle_ids)
     follow_only_dock_applications(named_bundle_ids)
@@ -80,14 +117,19 @@ function track_windows.new_filter(named_bundle_ids)
     return hs.window.filter.new():setDefaultFilter({ allowRoles = "AXStandardWindow" })
 end
 
+---@param application table|nil an hs.application
+---@return boolean whether the application may own windows: it has a Dock icon or is an agent, such
+---as one of the menu bar, and no process in the background alone
+function track_windows.may_own_windows(application)
+    return application ~= nil and application:kind() >= 0
+end
+
 ---@return table[] the hs.window objects of every application that the window filter follows, as
 ---`hs.window.allWindows` gives them for every application with a Dock icon or without one
 function track_windows.list_followed_windows()
     local windows = {}
     for _, application in ipairs(hs.application.runningApplications()) do
-        if
-            application:kind() >= 0 and not hs.window.filter.ignoreAlways[application:name() or ""]
-        then
+        if track_windows.may_own_windows(application) and not is_left_out(application) then
             windows = concatenate_lists.concatenate(windows, application:allWindows())
         end
     end

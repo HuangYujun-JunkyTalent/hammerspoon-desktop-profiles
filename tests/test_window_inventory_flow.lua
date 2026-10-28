@@ -54,6 +54,18 @@ return {
         expect.equal(list_inventory_ids(inventory), { reading.id })
     end,
 
+    the_time_of_a_list_that_comes_late_leaves_out_the_wait_for_it = function()
+        local world, _, list_known_window_ids = start_world_with_unseen_window()
+        world.is_server_list_after_exit = true
+        world.server_list_late_seconds = 0.2
+        local inventory = window_inventory.new()
+        local started_at = world.clock
+        refresh_and_count(world, inventory, list_known_window_ids)
+        local taken_after = expect.present(inventory.last_update_started_at, "the time of the list")
+            - started_at
+        expect.equal(taken_after >= 0.39 and taken_after < 0.5, true)
+    end,
+
     an_empty_list_runs_the_script_again_before_the_waiting_call = function()
         local world, reading, list_known_window_ids = start_world_with_unseen_window()
         world.empty_server_list_count = 2

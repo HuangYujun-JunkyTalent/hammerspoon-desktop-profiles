@@ -104,14 +104,14 @@ function server_windows.select_unreached_windows(
     return windows
 end
 
----The one desktop out of view of each window of an application with a Dock icon, of the size of a
----window that a user works in, that the window server shows.
+---The one desktop out of view of each window of the applications, of the size of a window that a
+---user works in, that the window server shows.
 ---A window that macOS lists on several desktops, such as the window of an application assigned to
 ---all desktops, is on none of them.
 ---@param rows ServerWindowRow[]
 ---@param hidden_space_ids_by_window_id table<integer, integer[]> the desktops out of view that
 ---macOS lists for each window
----@param application_by_pid table<integer, ServerApplication> the applications with a Dock icon
+---@param application_by_pid table<integer, ServerApplication> the applications whose windows count
 ---@return table<integer, integer> the desktop of each window
 function server_windows.map_occupying_windows(
     rows,
