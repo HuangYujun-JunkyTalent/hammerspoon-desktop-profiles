@@ -704,7 +704,6 @@ The desktop manager works around them as follows.
   Check 3 of [the checks of the build](#four-commands-check-what-the-desktop-manager-assumes-of-the-build-and-of-macos-2701) tests the press by hand.
 - On 2026-10-19, three presses of the list or the search went to a window of VS Code on the Dell monitor while Slack or iTerm2 on the built-in display was the frontmost application.
   Two of them failed, and the third showed its desktop after 3.17 seconds.
-  The work record `history/macos-apps/2026-10-10-hammerspoon-desktop-and-window-manager/2026-10-19-1458.md` of the ai-workspace gives the three presses.
   In each of the three, the other window of VS Code had the focus of VS Code and lay on the desktop that the press replaced.
   In each of the two failures, the desktop of the press showed about one second after the press, when VS Code became active.
   The Dell monitor then showed the replaced desktop again, with that other window focused.
@@ -771,8 +770,6 @@ The desktop manager uses #3889 through a build of its branch, as the next sectio
 | [#3889](https://github.com/Hammerspoon/hammerspoon/pull/3889) | `hs.spaces.moveWindowToSpace` moves a window by its id through a private function of macOS, which the author tested on macOS 26.5 and a user reported working on macOS 27.0.1 | a move of any window to any desktop of its screen, also a window that Hammerspoon has not seen, without showing its desktop first, in use through the build |
 | [#3904](https://github.com/Hammerspoon/hammerspoon/pull/3904) | `hs.spaces` finds Mission Control under the process WindowManager of macOS 27 | `hs.spaces.gotoSpace`, `addSpaceToScreen` and `removeSpace` instead of the own module of Mission Control |
 | [#3859](https://github.com/Hammerspoon/hammerspoon/pull/3859) and [#3866](https://github.com/Hammerspoon/hammerspoon/pull/3866) | `hs.eventtap.event` writes the fields of an event as floating-point numbers | desktop switches through the swipe events of the Dock, in about 40 milliseconds, without the slide and without Mission Control in sight |
-
-The knowledge item `knowledge-bases/yujun-knowledge-base/macos/moving-windows-between-desktops.md` of the ai-workspace compares the ways to move a window between desktops.
 
 ### A build of Hammerspoon with pull request #3889 moves windows between the desktops of a screen
 
@@ -957,7 +954,7 @@ The extension adds two items to the search of Asyar.
 - The Finder adds no second confirmation, because the extension turns off its setting "Show warning before emptying the Trash" for the erase alone and then restores your value.
   When an erase stops halfway, check that setting in Finder, Settings, Advanced.
 
-Each item runs one AppleScript through `/usr/bin/osascript`, which counts, asks, erases and reports by itself, because Asyar gives the output of a program to no background command, as the knowledge item `knowledge-bases/yujun-knowledge-base/macos/asyar-background-workers.md` of the ai-workspace says.
+Each item runs one AppleScript through `/usr/bin/osascript`, which counts, asks, erases and reports by itself, because Asyar gives the output of a program to no background command.
 The notification of an empty Trash and of a failure in a script therefore comes from `osascript`, and macOS shows it under the name Script Editor.
 
 | Permission | Use |
