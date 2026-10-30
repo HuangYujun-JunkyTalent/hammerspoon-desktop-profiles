@@ -2,6 +2,7 @@ local expect = require("tests.expect")
 
 local DESKTOP_MANAGER_SETTINGS_MODULE_NAME = "desktop_manager.default_settings"
 local WINDOW_TILING_SETTINGS_MODULE_NAME = "window_tiling.default_settings"
+local TRASH_SETTINGS_MODULE_NAME = "trash.default_settings"
 
 ---Runs a generator of `tools/` from the repository root, with the default settings of the module
 ---under another `url_event_name`.
@@ -112,6 +113,23 @@ return {
                 "tiles"
             )
             expect.equal(read_file(path):find('"urlEventName": "tiles"', 1, true) ~= nil, true)
+        end)
+        os.remove(path)
+        if not is_checked then
+            error(message, 0)
+        end
+    end,
+
+    the_settings_of_the_asyar_trash_hold_the_setting_url_event_name = function()
+        local path = os.tmpname()
+        local is_checked, message = pcall(function()
+            run_generator_with_url_event_name(
+                "tools/write_asyar_trash_settings.lua",
+                path,
+                TRASH_SETTINGS_MODULE_NAME,
+                "bin"
+            )
+            expect.equal(read_file(path):find('"urlEventName": "bin"', 1, true) ~= nil, true)
         end)
         os.remove(path)
         if not is_checked then

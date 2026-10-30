@@ -286,6 +286,13 @@ function fake_hammerspoon.install(spec)
         execute_calls = 0,
         tasks = {},
         task_exit_code = 0,
+        applescript_runs = {},
+        applescript_exit_code = 0,
+        applescript_output = "",
+        applescript_error_output = "",
+        holds_applescript_runs = false,
+        held_applescript_ends = {},
+        is_applescript_start_failing = false,
         space_watchers = {},
         running_application_reads = 0,
         server_list_late_seconds = 0,
@@ -294,6 +301,7 @@ function fake_hammerspoon.install(spec)
         is_server_list_after_exit = false,
         alerts = {},
         notifications = {},
+        notification_titles = {},
         hotkeys = {},
         app_hotkeys = {},
         hotkey_by_shortcut = {},
@@ -1811,8 +1819,14 @@ function fake_hammerspoon.install(spec)
         },
         task = {
             ---A task of the fake lists the windows of the window server after 0.2 seconds, runs
-            ---the fake of the helper of the previews, or runs the script that turns one shortcut
-            ---of macOS off at once, and the fake runs no other script.
+            ---the fake of the helper of the previews, runs the script that turns one shortcut of
+            ---macOS off at once, or runs an AppleScript file of the Trash, and the fake runs no
+            ---other script.
+            ---A task of an AppleScript file records the file in `applescript_runs`, and ends at
+            ---once with `applescript_exit_code`, `applescript_output` and
+            ---`applescript_error_output`.
+            ---Under `holds_applescript_runs`, it ends when the test calls its function in
+            ---`held_applescript_ends`, and under `is_applescript_start_failing` it does not start.
             ---The streaming callback comes before the arguments, as in Hammerspoon.
             ---The list of the window server comes in two parts, the first through the streaming
             ---callback and the rest with the exit, when the task has a streaming callback.
@@ -1828,6 +1842,25 @@ function fake_hammerspoon.install(spec)
                 end
                 local task = {}
                 function task:start()
+                    if path == OSASCRIPT_PATH and arguments[1]:match("%.applescript$") then
+                        if world.is_applescript_start_failing then
+                            return false
+                        end
+                        table.insert(world.applescript_runs, arguments[1])
+                        local function end_run()
+                            callback(
+                                world.applescript_exit_code,
+                                world.applescript_output,
+                                world.applescript_error_output
+                            )
+                        end
+                        if world.holds_applescript_runs then
+                            table.insert(world.held_applescript_ends, end_run)
+                        else
+                            end_run()
+                        end
+                        return task
+                    end
                     if path == OSASCRIPT_PATH then
                         local script = arguments[3]
                         if script:match("capture_window_previews%.js$") then
@@ -2188,6 +2221,7 @@ function fake_hammerspoon.install(spec)
                 return {
                     send = function()
                         table.insert(world.notifications, attributes.informativeText)
+                        table.insert(world.notification_titles, attributes.title)
                     end,
                 }
             end,

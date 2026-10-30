@@ -1,11 +1,12 @@
 local expect = require("tests.expect")
 
----@return string[] the module names of every Lua file under desktop_manager, keyboard_shortcuts and
----window_tiling
+---@return string[] the module names of every Lua file under desktop_manager, keyboard_shortcuts,
+---window_tiling and trash
 local function list_module_names()
-    local listing = io.popen('find desktop_manager keyboard_shortcuts window_tiling -name "*.lua"')
+    local listing =
+        io.popen('find desktop_manager keyboard_shortcuts window_tiling trash -name "*.lua"')
     if not listing then
-        error("the folders desktop_manager, keyboard_shortcuts and window_tiling cannot be listed")
+        error("the folders of the modules cannot be listed")
     end
     local names = {}
     for path in listing:lines() do

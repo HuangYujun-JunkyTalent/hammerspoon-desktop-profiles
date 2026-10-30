@@ -237,11 +237,15 @@ Asyar has its own window management for the halves, so the extension leaves them
 A tiling started from Asyar acts on the window behind the search window of Asyar, and gives it the focus back.
 The window tiling shares no module with the desktop manager, and has its own folders, settings, tests and Asyar extension.
 
-## An Asyar extension opens and empties the Trash
+## The trash tool is a third tool that opens and empties the Trash from Asyar
 
 An Asyar extension of its own shows the items Trash and Empty Trash.
 Trash opens the Trash in the Finder.
 Empty Trash shows the same confirmation as Finder, Empty Trash, and erases the items in the Trash only after the user confirms.
+The extension opens a URL `hammerspoon://trash?...` that the trash tool binds.
+The trash tool runs the AppleScript of the item.
+Asyar lists in its window every program that an extension starts, and the user wants no such list for the Trash, as the user decided on 2026-10-30.
+The trash tool shares no module with the other two tools.
 
 ## Development practices that the project follows
 

@@ -2,13 +2,16 @@
   "id": "com.huangyujun.trash",
   "name": "Trash",
   "version": "1.0.0",
-  "description": "Open the Trash in the Finder, and empty it after the confirmation of the Finder.",
+  "description": "Open the Trash in the Finder, and empty it after the confirmation of the Finder, through Hammerspoon.",
   "author": "Yujun Huang",
   "icon": "🗑️",
   "type": "extension",
   "asyarSdk": "^4.14.1",
   "platforms": ["macos"],
-  "permissions": ["shell:spawn", "notifications:send"],
+  "permissions": ["shell:open-url"],
+  "permissionArgs": {
+    "shell:open-url": ["hammerspoon"]
+  },
   "commands": [
     {
       "id": "trash",

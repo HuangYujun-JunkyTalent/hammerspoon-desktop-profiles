@@ -1,43 +1,21 @@
-// The worker of the extension: it starts the AppleScript of a command of the manifest through
-// /usr/bin/osascript, and sends a notification when Asyar does not start it.
+// The worker of the extension: it opens the URL of the trash tool of Hammerspoon when one of the
+// commands of the manifest runs, and Hammerspoon runs the AppleScript of the command.
+// Asyar lists in its window every program that an extension starts, and leaves out the URLs that
+// an extension opens, so the worker opens a URL.
 
-import {
-  ExtensionContext as WorkerExtensionContext,
-  extensionBridge,
-  messageBroker,
-} from 'asyar-sdk/worker';
-import type {
-  Extension,
-  ExtensionContext,
-  IFeedbackService,
-  ILogService,
-} from 'asyar-sdk/contracts';
+import { ExtensionContext as WorkerExtensionContext, extensionBridge } from 'asyar-sdk/worker';
+import type { Extension, ExtensionContext, ILogService, IOpenerService } from 'asyar-sdk/contracts';
 
 import manifest from '../manifest.json';
-import {
-  buildFailureNotification,
-  buildOsascriptSpawn,
-  findTrashCommandScript,
-} from './trash-commands';
-import { type AppleScriptStarter, type ScriptStart, startProgramInWorker } from './worker-shell';
-
-/** Asyar answers `shell:spawn` after the user has chosen whether to trust the program. */
-const SPAWN_ANSWER_TIMEOUT_MS = 120_000;
-
-const startAppleScriptInWorker: AppleScriptStarter = (scriptLines) =>
-  startProgramInWorker(
-    (payload) =>
-      messageBroker.invoke('shell:spawn', { ...payload }, manifest.id, SPAWN_ANSWER_TIMEOUT_MS),
-    crypto.randomUUID(),
-    buildOsascriptSpawn(scriptLines),
-  );
+import settings from './settings.generated.json';
+import { buildTrashUrl } from './trash-commands';
 
 class TrashExtension implements Extension {
-  private feedback?: IFeedbackService;
+  private opener?: IOpenerService;
   private log?: ILogService;
 
   async initialize(context: ExtensionContext): Promise<void> {
-    this.feedback = context.getService<IFeedbackService>('feedback');
+    this.opener = context.getService<IOpenerService>('opener');
     this.log = context.getService<ILogService>('log');
   }
 
@@ -46,23 +24,12 @@ class TrashExtension implements Extension {
   async deactivate(): Promise<void> {}
 
   async executeCommand(commandId: string): Promise<unknown> {
-    const scriptLines = findTrashCommandScript(commandId);
-    const commandName = manifest.commands.find((declared) => declared.id === commandId)?.name;
-    if (!scriptLines || !commandName) {
-      this.log?.warn(`the command ${commandId} is unknown to Trash`);
-      return undefined;
-    }
     // An error that a command throws reaches only the console of the hidden worker, so the worker
-    // turns it into a failure that the log of Asyar and a notification show.
-    let start: ScriptStart;
+    // sends it to the log of Asyar.
     try {
-      start = await startAppleScriptInWorker(scriptLines);
+      await this.opener?.openUrl(buildTrashUrl(commandId, settings.urlEventName));
     } catch (error) {
-      start = { spawnError: String(error) };
-    }
-    if (start.spawnError) {
-      this.log?.error(`${commandName}: ${start.spawnError}`);
-      await this.feedback?.sendBackground(buildFailureNotification(commandName, start.spawnError));
+      this.log?.error(`${commandId}: ${String(error)}`);
     }
     return undefined;
   }
