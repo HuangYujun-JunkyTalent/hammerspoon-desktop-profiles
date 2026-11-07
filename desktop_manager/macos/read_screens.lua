@@ -61,6 +61,18 @@ function read_screens.read_signature()
     return table.concat(parts, ";")
 end
 
+---@return string[] the UUID of every screen that Hammerspoon lists
+function read_screens.list_uuids()
+    local uuids = {}
+    for _, screen in ipairs(hs.screen.allScreens()) do
+        local uuid = screen:getUUID()
+        if uuid then
+            table.insert(uuids, uuid)
+        end
+    end
+    return uuids
+end
+
 ---@param screen_uuid string
 ---@return table|nil screen an hs.screen
 function read_screens.find_screen(screen_uuid)

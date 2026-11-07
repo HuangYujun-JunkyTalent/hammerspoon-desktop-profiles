@@ -1348,8 +1348,11 @@ function fake_hammerspoon.install(spec)
     ---Disconnects a screen as macOS 27 does while displays have separate Spaces: the first desktop
     ---of the screen goes away and its windows go to the first desktop of the first other screen,
     ---and the other desktops of the screen move to the end of that screen with their windows.
+    ---With `is_screen_list_late`, `hs.screen` lists the old screens until `report_screens`, as
+    ---Hammerspoon lists them until it hears of the change.
     ---@param uuid string
-    function world.disconnect_screen(uuid)
+    ---@param is_screen_list_late boolean|nil
+    function world.disconnect_screen(uuid, is_screen_list_late)
         local display = find_screen_display(uuid)
         local remaining = nil
         for _, candidate in ipairs(world.displays) do
@@ -1396,6 +1399,13 @@ function fake_hammerspoon.install(spec)
                 table.remove(world.screens, index)
             end
         end
+        if not is_screen_list_late then
+            rebuild_screen_objects()
+        end
+    end
+
+    ---Lets `hs.screen` list the screens of the world, after a change that it lists late.
+    function world.report_screens()
         rebuild_screen_objects()
     end
 

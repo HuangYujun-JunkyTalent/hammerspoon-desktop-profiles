@@ -168,4 +168,33 @@ function monitor_configuration.find_slot(configuration, slot_key)
     return nil
 end
 
+---macOS changes its displays, and moves the windows of a display that goes away, before
+---Hammerspoon hears of the change, and the screens that Hammerspoon lists stay the old ones until
+---then.
+---A record in between would put the windows where macOS moved them under the old monitor
+---configuration.
+---@param screen_uuids string[] the screens that Hammerspoon lists
+---@param display_uuids string[]|nil the displays of the window server, or nil when the window
+---server names no display by its screen
+---@return boolean whether the screens and the displays are the same, or the displays give nothing
+---to compare
+function monitor_configuration.do_screens_match_displays(screen_uuids, display_uuids)
+    if not display_uuids then
+        return true
+    end
+    if #screen_uuids ~= #display_uuids then
+        return false
+    end
+    local is_screen = {}
+    for _, uuid in ipairs(screen_uuids) do
+        is_screen[uuid] = true
+    end
+    for _, uuid in ipairs(display_uuids) do
+        if not is_screen[uuid] then
+            return false
+        end
+    end
+    return true
+end
+
 return monitor_configuration

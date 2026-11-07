@@ -296,9 +296,12 @@ end
 ---While a switch or a restore runs, or while the monitors settle, nothing is recorded, because the
 ---windows and the desktops are on their way, and the end of that work schedules a save.
 ---Nothing is recorded while the active profile is paused or leaves the monitor configuration to
----macOS either.
+---macOS either, or while the screens of Hammerspoon lag behind the displays of macOS.
 function ProfileController:capture_active_arrangement()
     if self.is_switch_or_restore_running or self.are_saves_suspended then
+        return
+    end
+    if self:hold_records_while_screens_lag() then
         return
     end
     local configuration = self:read_monitor_configuration()
@@ -432,7 +435,11 @@ end
 ---profile, or the numbers of profile 0 while no profile is active.
 ---A held active profile, as `is_active_profile_held` says, keeps its record and its numbers, so the
 ---state is written for a change of the counts alone.
+---Nothing is updated while the screens of Hammerspoon lag behind the displays of macOS.
 function ProfileController:update_records_and_numbers()
+    if self:hold_records_while_screens_lag() then
+        return
+    end
     local are_counts_changed = self:track_desktop_counts()
     if self:is_active_profile_held() then
         if are_counts_changed then
@@ -1562,6 +1569,9 @@ function ProfileController:record_desktops_in_view()
     if self.is_switch_or_restore_running or self.are_saves_suspended then
         return
     end
+    if self:hold_records_while_screens_lag() then
+        return
+    end
     local configuration = self:read_monitor_configuration()
     local desktop_layout = read_desktops.read_desktop_layout()
     if
@@ -1592,6 +1602,9 @@ end
 ---@param slot_key string
 ---@param desktop_number integer
 function ProfileController:record_shown_desktop(configuration_key, slot_key, desktop_number)
+    if self:hold_records_while_screens_lag() then
+        return
+    end
     local number = profile_state.find_profile_number_to_update(self.state, configuration_key)
     local state = number
         and profile_state.with_shown_desktop(
@@ -1887,13 +1900,29 @@ function ProfileController:does_window_keep_desktop(window_id)
     return self:find_window_that_keeps_desktop({ window_id }) ~= nil
 end
 
+---@return boolean whether the screens that Hammerspoon lists differ from the displays of macOS, as
+---`monitor_configuration.do_screens_match_displays` says
+local function do_screens_lag()
+    return not monitor_configuration.do_screens_match_displays(
+        read_screens.list_uuids(),
+        read_desktops.read_display_uuids()
+    )
+end
+
 ---Waits for macOS to settle the screens, and restarts the wait while a switch, a restore or a press
 ---runs, so that the change is restored once that work has ended.
+---The wait restarts as well while the screens of Hammerspoon lag behind the displays of macOS, as
+---`do_screens_lag` says, because the restore reads the monitor configuration from those screens.
 function ProfileController:start_screen_timer()
     retained_timers.stop(self.screen_timer)
     self.screen_timer = retained_timers.after(self.settings.timing.screen_settle_seconds, function()
         self.screen_timer = nil
         if self:is_work_running() then
+            self:start_screen_timer()
+            return
+        end
+        if do_screens_lag() then
+            self.log.w("the screens of Hammerspoon still lag behind the displays of macOS")
             self:start_screen_timer()
             return
         end
@@ -1916,12 +1945,35 @@ function ProfileController:handle_screens_changed()
         self:redraw_settings_window()
         return
     end
+    self:wait_for_screens()
+end
+
+---Suspends the saves and waits for the monitors to settle before the restore.
+function ProfileController:wait_for_screens()
     self.are_saves_suspended = true
     self:stop_pending_saves()
     if self:find_profile_number_to_update() and not self:is_work_running() then
         self:show_busy_message(MONITORS_CHANGED_MESSAGE)
     end
     self:start_screen_timer()
+end
+
+---Records nothing while the screens of Hammerspoon lag behind the displays of macOS, as
+---`do_screens_lag` says, and handles the change of monitors at once, before the screen watcher of
+---Hammerspoon reports it.
+---Without an active profile, the screen watcher handles the change when it comes.
+---@return boolean whether the screens lag, so that nothing may be recorded
+function ProfileController:hold_records_while_screens_lag()
+    if not do_screens_lag() then
+        return false
+    end
+    self.log.i(
+        "the screens of Hammerspoon lag behind the displays of macOS, so nothing is recorded"
+    )
+    if self.state.active_profile_number then
+        self:wait_for_screens()
+    end
+    return true
 end
 
 ---Restores the arrangement of the active profile for the monitor configuration after a change, or

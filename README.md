@@ -90,6 +90,7 @@ The wait lasts `screen_settle_seconds` of `timing`, 3 seconds by default, and th
 The wait starts again while a switch or a press of the list or the search runs, so the restore follows once that work has ended.
 The message of the wait then shows again.
 A change during the restore of an earlier change starts the wait again as well, and the record of the profile stays as it was until the restore of the last change has ended.
+macOS moves the windows of a monitor that goes away a moment before Hammerspoon lists the new screens, so while the screens of Hammerspoon differ from the displays of macOS, the desktop manager records nothing, starts the wait, and keeps waiting until the two agree.
 
 - When the profile is deactivated during the wait, the message closes, and the windows and the desktops stay with macOS.
 - When the new configuration is one that the active profile recorded, the desktop manager then restores that record, and the message stays until the restore ends.

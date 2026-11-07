@@ -1,7 +1,10 @@
 local controller_world = require("tests.controller_world")
+local deep_copy = require("desktop_manager.core.deep_copy")
 local expect = require("tests.expect")
 local fake_worlds = require("tests.fake_worlds")
 local profile_state = require("desktop_manager.core.profile_state")
+
+local TWO_SCREEN_CONFIGURATION_KEY = "built-in + 1 external"
 
 ---A world in which profile 1 is active and has recorded the built-in display.
 ---@return table world
@@ -86,6 +89,65 @@ return {
         expect.equal(world.notifications, {})
         world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
         expect.equal(controller.state.desktop_counts.kept, { ["built-in"] = 3, ["external 1"] = 4 })
+    end,
+
+    a_save_before_hammerspoon_hears_of_a_removed_monitor_keeps_the_record = function()
+        local world, controller = controller_world.start_two_screen_world(
+            { 3, 14, 64 },
+            { 7, 8, 9, 10 }
+        )
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        local record_before = deep_copy.copy(
+            profile_state.find_arrangement(controller.state, 1, TWO_SCREEN_CONFIGURATION_KEY)
+        )
+        local counts_before = deep_copy.copy(controller.state.desktop_counts)
+        world.disconnect_screen(controller_world.DELL_SCREEN.uuid, true)
+        controller:schedule_save()
+        world.advance(3)
+        expect.equal(
+            profile_state.find_arrangement(controller.state, 1, TWO_SCREEN_CONFIGURATION_KEY),
+            record_before
+        )
+        expect.equal(controller.state.desktop_counts, counts_before)
+        expect.equal(controller.are_saves_suspended, true)
+        world.report_screens()
+        world.screen_watchers[1]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        expect.equal(
+            profile_state.find_arrangement(controller.state, 1, TWO_SCREEN_CONFIGURATION_KEY),
+            record_before
+        )
+        world.connect_screen(controller_world.DELL_SCREEN, { 20 })
+        world.screen_watchers[1]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(world.windows[41].space_id, 2000)
+        expect.equal(world.windows[43].space_id, 2001)
+        expect.equal(world.windows[42].space_id, 3)
+    end,
+
+    the_wait_after_a_change_goes_on_while_hammerspoon_lists_the_old_screens = function()
+        local world, controller = controller_world.start_two_screen_world(
+            { 3, 14, 64 },
+            { 7, 8, 9, 10 }
+        )
+        world.hotkeys["1"]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        world.advance(controller_world.AFTER_THE_MINUTE_UPDATE_SECONDS)
+        world.disconnect_screen(controller_world.DELL_SCREEN.uuid, true)
+        controller:schedule_save()
+        world.advance(3)
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(controller.are_saves_suspended, true)
+        expect.equal(controller.screen_timer ~= nil, true)
+        world.report_screens()
+        world.screen_watchers[1]()
+        world.advance(controller_world.SETTLE_SECONDS)
+        expect.equal(controller.screen_timer, nil)
+        expect.equal(controller.are_saves_suspended, false)
+        expect.equal(world.alerts[#world.alerts]:find("has no layout for built%-in") ~= nil, true)
     end,
 
     a_window_that_hammerspoon_has_not_seen_returns_to_the_monitor = function()

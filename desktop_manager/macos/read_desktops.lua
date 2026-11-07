@@ -23,6 +23,21 @@ local function resolve_screen_uuid(display_identifier)
     return display_identifier
 end
 
+---The window server lists a display that goes away no longer, while Hammerspoon may still list
+---its screen, as `monitor_configuration.do_screens_match_displays` says.
+---@return string[]|nil the UUID of every display that macOS manages, or nil while displays do not
+---have separate Spaces, when macOS names one display "Main" for them all
+function read_desktops.read_display_uuids()
+    local uuids = {}
+    for _, display in ipairs(read_managed_displays()) do
+        if display["Display Identifier"] == "Main" then
+            return nil
+        end
+        table.insert(uuids, display["Display Identifier"])
+    end
+    return uuids
+end
+
 ---@return DesktopLayout
 function read_desktops.read_desktop_layout()
     local frames_by_uuid = {}

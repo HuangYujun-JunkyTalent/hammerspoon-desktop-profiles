@@ -88,6 +88,53 @@ return {
         end, 'unknown monitor matching "by_colour"')
     end,
 
+    screens_match_the_displays_in_any_order = function()
+        expect.equal(
+            monitor_configuration.do_screens_match_displays(
+                { "BUILTIN-UUID", "DELL-UUID" },
+                { "DELL-UUID", "BUILTIN-UUID" }
+            ),
+            true
+        )
+    end,
+
+    screens_that_still_hold_a_display_that_went_away_do_not_match = function()
+        expect.equal(
+            monitor_configuration.do_screens_match_displays(
+                { "BUILTIN-UUID", "DELL-UUID" },
+                { "BUILTIN-UUID" }
+            ),
+            false
+        )
+    end,
+
+    screens_that_lack_a_display_that_came_do_not_match = function()
+        expect.equal(
+            monitor_configuration.do_screens_match_displays(
+                { "BUILTIN-UUID" },
+                { "BUILTIN-UUID", "DELL-UUID" }
+            ),
+            false
+        )
+    end,
+
+    screens_of_another_display_do_not_match = function()
+        expect.equal(
+            monitor_configuration.do_screens_match_displays(
+                { "BUILTIN-UUID", "LG-UUID" },
+                { "BUILTIN-UUID", "DELL-UUID" }
+            ),
+            false
+        )
+    end,
+
+    screens_match_when_the_displays_give_nothing_to_compare = function()
+        expect.equal(
+            monitor_configuration.do_screens_match_displays({ "BUILTIN-UUID", "DELL-UUID" }, nil),
+            true
+        )
+    end,
+
     find_slot_of_screen_returns_nil_for_a_missing_screen = function()
         local configuration = monitor_configuration.describe({ BUILTIN }, monitor_matching.BY_COUNT)
         expect.equal(monitor_configuration.find_slot_of_screen(configuration, "LG-UUID"), nil)
