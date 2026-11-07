@@ -1,6 +1,6 @@
 # Save the desktops and windows of macOS as profiles, bring applications to the front by number, and tile windows
 
-This repository holds two tools that run inside [Hammerspoon](https://www.hammerspoon.org).
+This repository holds three tools that run inside [Hammerspoon](https://www.hammerspoon.org).
 
 The desktop manager adds three kinds of shortcuts to macOS.
 
@@ -17,8 +17,9 @@ Command-Option-Shift-2 again deactivates profile 2, and macOS manages the window
 
 The window tiling puts the focused window on the whole screen or on one half of it, with Control-Option and Return or an arrow, as [Rectangle](https://rectangleapp.com) does.
 
+The trash tool opens the Trash in the Finder, and empties it after the same confirmation as Finder, Empty Trash.
+
 Each tool has an extension for the launcher [Asyar](https://asyar.org).
-A third Asyar extension, in `asyar-trash/`, opens the Trash and empties it after a confirmation.
 The scripts in `launcher-scripts/` run the actions of the desktop manager from Asyar or Raycast.
 
 The tools run on macOS 27.0.1 with a build of Hammerspoon that holds [pull request #3889](#a-build-of-hammerspoon-with-pull-request-3889-moves-windows-between-the-desktops-of-a-screen), the versions they were developed on.
@@ -969,9 +970,9 @@ The URL `hammerspoon://window-tiling?position=<position>` takes one of the posit
 In a terminal, `open -g "hammerspoon://window-tiling?position=left-half"` puts the focused window on the left half of its screen.
 A URL with another position shows a notification and moves no window.
 
-## The Asyar extension in `asyar-trash/` opens and empties the Trash
+## Trash and Empty Trash in Asyar open and empty the Trash through Hammerspoon
 
-The extension adds two items to the search of Asyar.
+The Asyar extension in `asyar-trash/` adds two items to the search of Asyar.
 
 | Item | Enter |
 |---|---|
@@ -981,18 +982,18 @@ The extension adds two items to the search of Asyar.
 - The confirmation takes its words from the Finder, in the language of macOS, and shows the icon of the Finder.
 - Cancel or Escape erases nothing.
 - With an empty Trash, Empty Trash shows no confirmation, and a notification says "The Trash is empty."
-- The Finder adds no second confirmation, because the extension turns off its setting "Show warning before emptying the Trash" for the erase alone and then restores your value.
+- The Finder adds no second confirmation, because the script turns off its setting "Show warning before emptying the Trash" for the erase alone and then restores your value.
   When an erase stops halfway, check that setting in Finder, Settings, Advanced.
 
-Each item runs one AppleScript through `/usr/bin/osascript`, which counts, asks, erases and reports by itself, because Asyar gives the output of a program to no background command.
-The notification of an empty Trash and of a failure in a script therefore comes from `osascript`, and macOS shows it under the name Script Editor.
+Each item opens the URL `hammerspoon://trash?command=trash` or `hammerspoon://trash?command=empty-trash`.
+Hammerspoon then runs `trash/macos/open_trash.applescript` or `trash/macos/empty_trash.applescript` through `/usr/bin/osascript`, and shows a notification when the Trash is empty or a script fails.
+Asyar lists in its window every program that an extension starts, and leaves out the URLs that an extension opens, so the extension opens a URL.
+The items work while Hammerspoon runs, because Hammerspoon handles no URL that starts it.
+A Reload Config of Hammerspoon ends a running script, so an Empty Trash whose confirmation still shows then erases nothing.
+In a terminal, `open -g "hammerspoon://trash?command=trash"` opens the Trash in the same way.
 
-| Permission | Use |
-|---|---|
-| `shell:spawn` | runs `/usr/bin/osascript`, which Asyar asks you to trust on first use |
-| `notifications:send` | tells you when Asyar does not start the script |
-
-On first use, macOS also asks whether Asyar may control the Finder, and may ask whether Script Editor may send notifications.
+The manifest, `asyar-trash/manifest.json`, gives the extension one permission, `shell:open-url` for the URLs that start with `hammerspoon://`.
+On first use, macOS asks whether Hammerspoon may control the Finder.
 
 Setting up the extension takes two steps, with Node and npm installed.
 
@@ -1001,33 +1002,44 @@ Setting up the extension takes two steps, with Node and npm installed.
 
 Quit Asyar and start it again, so that it loads the extension.
 
+### Settings of the trash tool live in `trash/default_settings.lua`
+
+To change a setting, edit the file and choose Reload Config.
+The extension takes `url_event_name` from `asyar-trash/src/settings.generated.json`, which a generator writes from this file, so a change of `url_event_name` also needs `make asyar-trash-settings` and a new build of the extension.
+
+| Setting | Default | What it sets |
+|---|---|---|
+| `url_event_name` | `trash` | the host of the URLs |
+
 ## The code of each tool splits into a tested core and a macOS layer
 
 | Folder or file | Content |
 |---|---|
-| `init.lua` | the file that Hammerspoon loads, which starts the center of the shortcuts and the two tools |
+| `init.lua` | the file that Hammerspoon loads, which starts the center of the shortcuts and the three tools |
 | `keyboard_shortcuts/core/` | the registry of the shortcuts of every tool, with the defaults, the overrides and the shortcuts left out, the shortcuts of macOS that a shortcut collides with, and the content of the window "Keyboard shortcuts…" |
-| `keyboard_shortcuts/macos/` | the center that binds the shortcuts and saves the overrides, the reading and turning off of macOS shortcuts, the window "Keyboard shortcuts…", and the frame of the web windows of both tools |
+| `keyboard_shortcuts/macos/` | the center that binds the shortcuts and saves the overrides, the reading and turning off of macOS shortcuts, the window "Keyboard shortcuts…", and the frame of the web windows of the desktop manager and the window tiling |
 | `desktop_manager/core/` | the decisions of the desktop manager: the checks of the settings, the settings that the window "Settings…" changes, the actions with their default shortcuts, monitor configurations, the desktops of each screen, window matching, profile records, the pool of managed applications, plans for concealing, restoring and opening missing windows, the way of each window to its place, the numbers of desktops and their removal, application numbers and the view of their list, the search of the windows and its scores, the pacing of the previews, the output of the helper of the previews, the windows of macOS that accessibility does not reach and the ones to bring into view, the text of the log of a press in Mission Control, the text of the console line of an opening of the search, the pause of the active profile after a login, URL commands, and the closed sets of the settings |
 | `desktop_manager/macos/` | the calls of the desktop manager to Hammerspoon: reading screens, desktops and windows, the windows that Hammerspoon knows, the list of all windows of macOS and its script, the helper script that takes the previews, showing, adding and removing desktops through Mission Control, bringing windows into view and moving them by their ids, opening new windows, the watchdog of a switch, switching to the application of a number, the list of the numbered applications and the panel of the search with the elements they share, the windows of hidden applications in them, the menu bar item, the message during a switch, the window of the managed applications, the window of the settings, the diagnostics and the controller |
 | `window_tiling/core/` | the positions of the window tiling and the frame of each position on a screen |
 | `window_tiling/macos/` | the controller of the window tiling, which hands its actions to the center of the shortcuts, binds its URLs and sets the frame of the focused window |
-| `tests/` | unit tests of the cores, and tests of the flows of the desktop manager, one file per subject, and of the tiling controller against `tests/fake_hammerspoon.lua`, with the world of the controller in `tests/controller_world.lua` and the fixtures that several files share in `tests/fake_worlds.lua` |
-| `tools/` | the generators of the launcher scripts and of the settings of the Asyar extensions of the desktop manager and of the window tiling, the script that turns one shortcut of macOS off, and the script that removes one rule of the code at a time to find the rules that no test checks |
+| `trash/core/` | the commands of the trash tool, the AppleScript of each, and what the end of a script reports |
+| `trash/macos/` | the controller of the trash tool, which binds its URLs and runs their AppleScripts, and the two AppleScripts |
+| `tests/` | unit tests of the cores, and tests of the flows of the desktop manager, one file per subject, and of the controllers of the tiling and of the trash tool against `tests/fake_hammerspoon.lua`, with the world of the controller in `tests/controller_world.lua` and the fixtures that several files share in `tests/fake_worlds.lua` |
+| `tools/` | the generators of the launcher scripts and of the settings of the Asyar extensions of the three tools, the script that turns one shortcut of macOS off, and the script that removes one rule of the code at a time to find the rules that no test checks |
 | `type_definitions/` | the signatures of the functions of Hammerspoon that the code calls with arguments that `tests/fake_hammerspoon.lua` leaves out, which lua-language-server reads in place of the functions of the fake, and which nothing loads at run time |
 | `launcher-scripts/` | the scripts for Asyar and Raycast, written by the generator |
 | `asyar-extension/` | the Asyar extension of the desktop manager, in TypeScript, with its manifest, its worker, its generated settings and the unit tests of its items and its worker |
 | `asyar-window-tiling/` | the Asyar extension of the window tiling, in TypeScript, with its manifest, its worker, its generated settings and the unit tests of its URL and its worker |
-| `asyar-trash/` | the Asyar extension that opens and empties the Trash, in TypeScript, with its manifest, its worker and the unit tests of its scripts |
+| `asyar-trash/` | the Asyar extension of the trash tool, in TypeScript, with its manifest, its worker, its generated settings and the unit tests of its URL and its worker |
 
-The two tools share the modules of `keyboard_shortcuts/` alone.
-The modules of `desktop_manager/core/`, `window_tiling/core/` and `keyboard_shortcuts/core/` call no Hammerspoon function, so `lua` 5.4 runs their tests outside Hammerspoon.
+The desktop manager and the window tiling share the modules of `keyboard_shortcuts/` alone, and the trash tool shares none.
+The modules of `desktop_manager/core/`, `window_tiling/core/`, `trash/core/` and `keyboard_shortcuts/core/` call no Hammerspoon function, so `lua` 5.4 runs their tests outside Hammerspoon.
 The fake of Hammerspoon unminimizes a window onto its own desktop, as macOS 27.0.1 does, presses the thumbnails of Mission Control, and moves windows by their ids.
 A press of the fake moves the focus to the display of its thumbnail, which check 3 tests, and a test can turn that move off.
 A test can turn on the return to the replaced desktop after a press from another application, as [the section on the limits of Hammerspoon and macOS 27.0.1](#hammerspoon-and-macos-2701-limit-what-the-desktop-manager-can-do) describes it.
 The tests check the logic of the tools, and say nothing about the behaviour of macOS.
 
-`make check` checks the syntax with `luac -p`, and the syntax of the two scripts of JavaScript for Automation in `desktop_manager/macos/` with `node --check`.
+`make check` checks the syntax with `luac -p`, the syntax of the two scripts of JavaScript for Automation in `desktop_manager/macos/` with `node --check`, and the two AppleScripts in `trash/macos/` with `osacompile`.
 It also lints with `luacheck`, checks the formatting with `stylua --check`, runs the tests, and compares the generated files with their generators.
 `make check` also runs `make type-check`, which checks the annotations with `lua-language-server --check . --checklevel=Warning` in about 6 seconds and fails on any warning.
 A warning that only a slower or less correct code would remove stays, with a `---@diagnostic disable-next-line: <code>` annotation and a comment beside it that gives the reason.
@@ -1043,6 +1055,8 @@ Two generators take the numbers of profiles and of applications, and the host of
 `make asyar-extension-settings` runs `tools/write_asyar_extension_settings.lua`, which writes `asyar-extension/src/settings.generated.json`.
 A third generator takes `url_event_name` from `window_tiling/default_settings.lua`.
 `make asyar-window-tiling-settings` runs `tools/write_asyar_window_tiling_settings.lua`, which writes `asyar-window-tiling/src/settings.generated.json`.
+A fourth generator takes `url_event_name` from `trash/default_settings.lua`.
+`make asyar-trash-settings` runs `tools/write_asyar_trash_settings.lua`, which writes `asyar-trash/src/settings.generated.json`.
 Run them after a change of the settings, because `make check` fails when a generated file differs from the output of its generator.
 
 `lua tools/remove_rules_one_at_a_time.lua <rules file> [word ...]` checks the tests against the rules of the code.
@@ -1080,6 +1094,7 @@ The code follows the [LuaRocks style guide](https://github.com/luarocks/lua-styl
 - Indentation is four spaces, as in the Lua extensions that Hammerspoon 1.1.1 ships, where the guide uses three.
 - Types are written as annotations of lua-language-server, such as `---@param`, where the guide uses LDoc, because the language server checks them.
 - Misuse of a function raises `error` with a message that states the fact and the value, where the guide uses `assert`.
-- `init.lua` sets one global per tool, `desktop_manager` and `window_tiler`, because Hammerspoon stops the hotkeys and watchers that Lua garbage-collects, and because the command-line tool `hs` reaches the controllers through them.
+- `init.lua` sets one global for each of the desktop manager and the window tiling, `desktop_manager` and `window_tiler`, because Hammerspoon stops the hotkeys and watchers that Lua garbage-collects, and because the command-line tool `hs` reaches the controllers through them.
+  The trash tool keeps its controller alive through the callback that `hs.urlevent` holds, and binds no hotkey, so it sets no global.
 
 Lines are at most 100 characters long, as `stylua.toml` and `.luacheckrc` set.
