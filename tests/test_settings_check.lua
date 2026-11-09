@@ -33,6 +33,16 @@ return {
         )
     end,
 
+    a_show_focus_trace_item_other_than_a_boolean_names_the_setting = function()
+        ---@type table the settings with a word where a boolean belongs
+        local settings = default_settings.create("/fake/state.json")
+        settings.show_focus_trace_item = "yes"
+        expect.equal({ settings_check.check(settings) }, {
+            nil,
+            "the setting show_focus_trace_item is yes, and it must be true or false",
+        })
+    end,
+
     the_message_names_the_faulty_setting_that_is_checked_first = function()
         ---@type table the settings with a value outside the closed set of the setting
         local settings = default_settings.create("/fake/state.json")

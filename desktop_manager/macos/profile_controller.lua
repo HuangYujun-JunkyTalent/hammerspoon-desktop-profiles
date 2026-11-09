@@ -11,6 +11,7 @@ local deep_copy = require("desktop_manager.core.deep_copy")
 local desktop_counts = require("desktop_manager.core.desktop_counts")
 local diagnostic_lines = require("desktop_manager.macos.diagnostic_lines")
 local extra_desktops = require("desktop_manager.macos.extra_desktops")
+local focus_trace = require("desktop_manager.macos.focus_trace")
 local hidden_application_filter = require("desktop_manager.macos.hidden_application_filter")
 local highlight_colors = require("desktop_manager.core.highlight_colors")
 local list_known_windows = require("desktop_manager.macos.list_known_windows")
@@ -161,6 +162,10 @@ function ProfileController:refresh_menu()
         print_diagnostics = function()
             self:print_diagnostics()
         end,
+        toggle_focus_trace = function()
+            self:toggle_focus_trace()
+        end,
+        is_focus_traced = focus_trace.is_running,
         clear_profile = function(number)
             self:clear_profile(number)
         end,
@@ -1653,7 +1658,21 @@ function ProfileController:show_space(space_id, after_shown, on_done, chosen_win
             and busy_message.describe_showing_desktop(location.desktop_number, slot.slot_key)
         or "Showing another desktop… please wait"
     self:run_press(text, function(on_pressed)
+        focus_trace.mark(function()
+            return string.format(
+                "Mission Control press to show desktop %s (number %s)",
+                tostring(space_id),
+                tostring(location and location.desktop_number)
+            )
+        end)
         mission_control_desktops.show_space(space_id, self.settings.timing, function(error_message)
+            focus_trace.mark(function()
+                return string.format(
+                    "Mission Control press ended for desktop %s: %s",
+                    tostring(space_id),
+                    error_message or "no error"
+                )
+            end)
             if error_message then
                 on_pressed(error_message)
                 return
@@ -2075,6 +2094,26 @@ function ProfileController:restore_after_screens_changed()
 end
 
 ---Prints what the tool reads of the screens, desktops and windows, without changing anything.
+---The file of the trace of the focus and the desktops.
+local FOCUS_TRACE_FILE_NAME = "desktop-manager-focus-trace.log"
+
+---Starts the trace of the focus and the desktops, or stops it while it runs, and names its file in
+---an alert, as `hs -c "desktop_manager:toggle_focus_trace()"` does from the command line.
+function ProfileController:toggle_focus_trace()
+    local path = hs.configdir .. "/" .. FOCUS_TRACE_FILE_NAME
+    if focus_trace.is_running() then
+        focus_trace.stop()
+        hs.alert.show("Focus trace stopped, in " .. path)
+    else
+        local error_message = focus_trace.start(path)
+        hs.alert.show(
+            error_message and ("Focus trace could not start: " .. error_message)
+                or ("Focus trace writes to " .. path)
+        )
+    end
+    self:refresh_menu()
+end
+
 function ProfileController:print_diagnostics()
     local hammerspoon_lines = diagnostic_lines.describe_hammerspoon()
     local menu_choice_lines = diagnostic_lines.describe_menu_choices(self.state)

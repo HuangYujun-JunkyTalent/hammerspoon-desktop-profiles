@@ -85,6 +85,9 @@ local default_settings = {}
 ---@field pause_after_login_seconds number the first start of Hammerspoon after a login pauses the
 ---updates of the active profile when it comes less than this many seconds after the minute of the
 ---login, or after the start of macOS when the login cannot be read, and 0 never pauses them
+---@field show_focus_trace_item boolean whether the menu bar item offers the trace of the focus
+---and the desktops, a debug mode that writes the activations of the applications, the focus of
+---the windows and the changes of the desktops to a file
 ---@field timing Timing
 
 ---@param state_file_path string
@@ -111,6 +114,7 @@ function default_settings.create(state_file_path)
         title_line_count = 2,
         builtin_screen_name_patterns = { "^Built%-in", "内建", "內建" },
         pause_after_login_seconds = 300,
+        show_focus_trace_item = false,
         timing = {
             poll_interval_seconds = 0.05,
             modifier_release_timeout_seconds = 3,

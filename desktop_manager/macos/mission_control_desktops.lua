@@ -1,4 +1,5 @@
 local focus_before_press = require("desktop_manager.macos.focus_before_press")
+local focus_trace = require("desktop_manager.macos.focus_trace")
 local keyboard_modifiers = require("desktop_manager.macos.keyboard_modifiers")
 local poll_until = require("desktop_manager.macos.poll_until")
 local read_desktops = require("desktop_manager.macos.read_desktops")
@@ -748,7 +749,13 @@ local function press_thumbnail(space_id, screen_id, timing, focus, on_done)
             tostring(position)
         )
     else
+        focus_trace.mark(function()
+            return string.format("pressing the thumbnail at position %s", tostring(position))
+        end)
         local error_message = perform_action(thumbnail, "AXPress")
+        focus_trace.mark(function()
+            return "pressed the thumbnail: " .. (error_message or "no error")
+        end)
         failure = error_message
             and string.format("Showing %s failed: %s", description, error_message)
     end

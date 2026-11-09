@@ -1,5 +1,6 @@
 local app_numbers = require("desktop_manager.core.app_numbers")
 local focus_before_press = require("desktop_manager.macos.focus_before_press")
+local focus_trace = require("desktop_manager.macos.focus_trace")
 local hidden_application_filter = require("desktop_manager.macos.hidden_application_filter")
 local hidden_application_windows = require("desktop_manager.core.hidden_application_windows")
 local new_windows = require("desktop_manager.macos.new_windows")
@@ -95,6 +96,14 @@ end
 ---@param window table an hs.window
 local function focus_window(window)
     local application = window:application()
+    focus_trace.mark_and_watch(function()
+        return string.format(
+            "focusing %s window %d on desktop %s",
+            application and application:name() or "?",
+            window:id(),
+            tostring(read_desktops.find_window_space_id(window:id()))
+        )
+    end)
     if application and application:isHidden() then
         application:unhide()
     end
@@ -111,6 +120,14 @@ end
 ---@param on_done fun(error_message: string|nil)
 function app_switcher.bring_to_front(window, context, on_done)
     local space_id = read_desktops.find_window_space_id(window:id())
+    focus_trace.mark(function()
+        return string.format(
+            "bring window %d to the front, on desktop %s, active=%s",
+            window:id(),
+            tostring(space_id),
+            tostring(space_id and read_desktops.is_space_active(space_id))
+        )
+    end)
     if space_id and not read_desktops.is_space_active(space_id) then
         context.show_space(space_id, nil, function(error_message)
             if error_message then
@@ -133,6 +150,14 @@ end
 ---@param context SwitcherContext
 ---@param on_done fun(error_message: string|nil)
 function app_switcher.reach_window(window, context, on_done)
+    focus_trace.mark(function()
+        return string.format(
+            "reach unreached %s window %d on desktop %s",
+            window.app_name,
+            window.window_id,
+            tostring(window.space_id)
+        )
+    end)
     local timeout_seconds = context.timing.window_reach_timeout_seconds
     context.show_space(window.space_id, function(on_reached)
         track_windows.wait_until_reached({ window }, timeout_seconds, function(reached)

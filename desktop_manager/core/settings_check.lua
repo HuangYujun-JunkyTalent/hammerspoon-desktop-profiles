@@ -102,6 +102,17 @@ local function check_pause_after_login_seconds(settings)
 end
 
 ---@type SettingCheck
+local function check_show_focus_trace_item(settings)
+    if type(settings.show_focus_trace_item) ~= "boolean" then
+        return string.format(
+            "the setting show_focus_trace_item is %s, and it must be true or false",
+            tostring(settings.show_focus_trace_item)
+        )
+    end
+    return nil
+end
+
+---@type SettingCheck
 local function check_search_highlight_colors(settings)
     local _, message = highlight_colors.complete(settings.search_highlight_colors)
     return message
@@ -159,6 +170,7 @@ local CHECKS = {
     build_closed_set_check("hidden_application_windows", hidden_application_windows, "choice"),
     build_closed_set_check("concealment_method", concealment_method, "concealment method"),
     check_pause_after_login_seconds,
+    check_show_focus_trace_item,
 }
 
 ---@param settings Settings

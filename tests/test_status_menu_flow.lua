@@ -44,4 +44,14 @@ return {
             false
         )
     end,
+
+    the_menu_offers_the_focus_trace_only_with_its_setting = function()
+        local world = controller_world.start_world({ show_focus_trace_item = true })
+        local titles = read_titles_after_profiles(world)
+        expect.equal(titles[#titles], "Trace focus and desktops to a log")
+        expect.equal(
+            controller_world.find_menu_item(world, "Trace focus and desktops to a log").state,
+            "off"
+        )
+    end,
 }

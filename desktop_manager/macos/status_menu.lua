@@ -11,6 +11,8 @@ local MENU_BAR_SYMBOL = "◧"
 ---@field rename_active_profile fun()
 ---@field save_arrangement fun()
 ---@field print_diagnostics fun()
+---@field toggle_focus_trace fun()
+---@field is_focus_traced fun(): boolean
 ---@field choose_app_number fun(app_number: integer, bundle_id: string, app_name: string)
 ---@field release_app_number fun(app_number: integer)
 ---@field clear_profile fun(number: integer)
@@ -138,7 +140,8 @@ local function build_active_profile_items(state, settings, actions)
 end
 
 ---The menu in four groups: the profiles, the actions on the active profile, the application
----numbers, and the windows of the desktop manager with the diagnostics.
+---numbers, and the windows of the desktop manager with the diagnostics, and the trace of the focus
+---while the setting show_focus_trace_item is on.
 ---@param state State
 ---@param settings Settings
 ---@param actions StatusMenuActions
@@ -164,6 +167,13 @@ local function build_items(state, settings, actions)
         items,
         { title = "Print diagnostics to the console", fn = actions.print_diagnostics }
     )
+    if settings.show_focus_trace_item then
+        table.insert(items, {
+            title = "Trace focus and desktops to a log",
+            state = actions.is_focus_traced() and "on" or "off",
+            fn = actions.toggle_focus_trace,
+        })
+    end
     return items
 end
 
