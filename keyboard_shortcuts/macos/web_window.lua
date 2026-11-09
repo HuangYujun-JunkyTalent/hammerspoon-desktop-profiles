@@ -5,9 +5,21 @@
 ---require a module of the desktop manager.
 local web_window = {}
 
----The rules of style that the pages of the colors and of the shortcuts share, which each page
----follows with its own rules.
-web_window.SHARED_STYLE = [[
+---The rules of style that every page of a web window holds.
+---Hammerspoon gives the window of a web view a clear background, so on macOS 27 the title bar,
+---which is glass, shows the windows behind it unless the page reaches under it.
+---The page therefore reaches under the title bar through the style mask fullSizeContentView, and
+---its body scrolls inside itself, so that only the background of the page shows under the title
+---bar and no scrolled text.
+web_window.FRAME_STYLE = [[
+html { height: 100%; overflow: hidden; overscroll-behavior: none; }
+body { position: fixed; inset: 0; overflow-y: auto; overscroll-behavior: none; }
+]]
+
+---The rules of style that the pages of the settings, the colors and the shortcuts share, after
+---the rules of the frame, which each page follows with its own rules.
+web_window.SHARED_STYLE = web_window.FRAME_STYLE
+    .. [[
 :root { color-scheme: light dark; --accent: #0a84ff; --card: rgba(127, 127, 127, 0.08);
   --line: rgba(127, 127, 127, 0.18); font: 13px -apple-system, BlinkMacSystemFont, sans-serif; }
 h1 { font-size: 17px; margin: 0 0 4px; }
@@ -66,7 +78,7 @@ function web_window.new(options)
             h = options.size.h,
         }, {}, user_content)
         :windowTitle(options.title)
-        :windowStyle({ "titled", "closable", "resizable" })
+        :windowStyle({ "titled", "closable", "resizable", "fullSizeContentView" })
         :allowTextEntry(true)
         :closeOnEscape(options.does_escape_close)
         :deleteOnClose(true)

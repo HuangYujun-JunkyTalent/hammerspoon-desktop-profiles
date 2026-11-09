@@ -73,6 +73,7 @@ updateWarning();
 function app_pool_window.build_page(pool, choices)
     local parts = {
         "<!DOCTYPE html><html><head><meta charset='utf-8'><style>",
+        web_window.FRAME_STYLE,
         STYLE,
         "</style></head><body>",
         "<h1>Managed applications</h1>",
