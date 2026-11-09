@@ -489,6 +489,7 @@ The file writes each choice through its module, such as `list_layout.ROWS` for `
 | `title_line_count` | 2 | yes | the most lines of a title under `wrap` |
 | `url_event_name` | `desktop-manager` | no | the host of the URLs, as [the section on URLs](#a-url-reaches-every-action-of-the-desktop-manager) explains |
 | `pause_after_login_seconds` | 300 | yes | the time after a login within which the first start of Hammerspoon pauses the active profile, and 0 turns the pause off, as [the section on the pause](#the-first-start-of-hammerspoon-soon-after-a-login-pauses-the-active-profile) explains |
+| `show_focus_trace_item` | `false` | no | whether the menu bar item offers the trace of the focus and the desktops, as [the section on the diagnostics](#diagnostics-in-the-hammerspoon-console-show-what-the-desktop-manager-reads) explains |
 | `timing` | | no | the waits and time limits of a switch, in seconds |
 
 The shortcuts are no settings of this file, as [the section on keyboard shortcuts](#keyboard-shortcuts-in-the-menu-bar-item-changes-the-shortcut-of-every-action) explains.
@@ -739,6 +740,11 @@ The desktop manager works around them as follows.
   No test on macOS 27.0.1 has confirmed yet that the focus of such a window keeps the desktops as they are.
   The desktop manager then waits up to `application_focus_timeout_seconds` of `timing`, 1 second by default, until the application is the frontmost application, and opens Mission Control also when it is not.
   The presses of a switch or a restore get no focus before the press.
+- On 2026-11-09, the trace of the focus showed that a press on a thumbnail through accessibility activates, within about 40 milliseconds, the application that macOS remembers for each desktop of the screen, in the order of the desktops, and then the application of the desktop shown.
+  A swipe or a click on a thumbnail by hand activated the application of the desktop shown alone.
+  Slack 4.52.178 with its window open activated itself again about 0.2 seconds after the focus of the chosen window, and macOS then showed the desktop of the window of Slack, under the setting "When switching to an application, switch to a Space with open windows for the application".
+  Slack with its window closed did not, and no other application of the trace did.
+  The desktop manager keeps the press through accessibility, because a synthetic click would move the pointer, and could miss a thumbnail that moves as the row of the desktops grows under the pointer.
 - Adding a desktop presses the add button of Mission Control through accessibility, under the process WindowManager, which worked on 2026-10-10.
   Removing a desktop asks the desktop in the list of Mission Control to remove itself, as `hs.spaces.removeSpace` does, which no test on macOS 27.0.1 has confirmed yet.
   One opening of Mission Control holds the additions or the removals of every screen.
@@ -913,6 +919,15 @@ The same line gives the seconds until macOS reported the desktop and until Missi
 A press that focused a window and then could not open Mission Control or press the thumbnail writes the focus and the failure.
 A press whose desktop did not show by the end of the wait also writes a warning with the desktop that its screen shows, whether Mission Control still showed, and the error of the second press.
 A press whose second opening failed gives the failure at the end of its log line instead.
+
+The trace of the focus and the desktops writes a line to `~/.hammerspoon/desktop-manager-focus-trace.log` for each activation of an application, each focus of a window and each change of the desktop that a screen shows.
+Each line gives the time to the millisecond, the desktop that each screen shows, such as `Built-in Retina Display 6/7 (1187)`, and the application and the window in front.
+A press of the list or the search adds marks: the window it brings to the front, the start and the end of the press in Mission Control, the press on the thumbnail and the focus of the window.
+Three lines 0.5, 1.5 and 3 seconds after the focus show whether the desktop stayed.
+With `show_focus_trace_item` set to `true`, "Trace focus and desktops to a log" in the menu bar item starts and stops the trace, and a check mark shows while it runs.
+`hs -c "desktop_manager:toggle_focus_trace()"` does the same under any value of the setting.
+The trace stops at a reload, and while it is off the desktop manager keeps no watcher, window filter or timer for it.
+A trace that starts on a file larger than 5 MB moves the file to the same name with `.1` after it.
 The rest of a switch is the animation of macOS, which "Reduce motion" in step 6 of the installation shortens.
 
 Each opening of the search writes one line to the console when the panel closes.
